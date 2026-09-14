@@ -33,11 +33,19 @@
     const MAX_SCHEMATIC_CELLS = 2500;
     const THUMBNAIL_MAX_MARKS = 500; // Dots and hexagons beyond this are thinned in tile thumbnails.
 
-    const HOST_METHODS = ["status", "preview", "clearPreview", "generate", "clear", "setGridLayer", "drawTestLine"];
+    const formats = window.MullionFormats || { GROUPS: [], FORMATS: [], find: () => null, toPoints: () => ({}), label: () => "" };
+
+    const HOST_METHODS = ["status", "preview", "clearPreview", "generate", "clear", "setGridLayer", "resizeArtboards", "alignSelection", "textMetrics", "drawTestLine"];
     const LENGTH_FIELDS = ["columnGutter", "rowGutter", "marginTop", "marginRight", "marginBottom", "marginLeft", "baselineSpacing", "baselineOffset", "patternSize"];
     const MARGIN_FIELDS = ["marginTop", "marginRight", "marginBottom", "marginLeft"];
     const NUMBER_FIELDS = LENGTH_FIELDS.concat(["columns", "rows", "strokeWidth", "opacity", "dotSize", "rings", "spokes", "gutterOpacity"]);
-    const BOOLEAN_FIELDS = ["extendToEdges", "lockLayer", "marginColorOn", "shadeGutters"].concat(core ? core.COMPOSITION_FLAGS : []);
+    const BOOLEAN_FIELDS = ["extendToEdges", "lockLayer", "marginColorOn", "shadeGutters", "addBaseline"].concat(core ? core.COMPOSITION_FLAGS : []);
+    const TEXT_FIELDS = ["columnRatios", "rowRatios"];
+    // Host vocabulary: Illustrator has artboards, InDesign has pages.
+    const NOUNS = {
+        illustrator: { one: "artboard", many: "artboards", title: "Artboard" },
+        indesign: { one: "page", many: "pages", title: "Page" }
+    };
     const COLOR_FIELDS = ["strokeColor", "marginColor", "gutterColor"];
     const CHOICE_FIELDS = ["type", "output", "lineStyle"];
     const SELECT_FIELDS = { units: "pt", spiralFocus: "bottom-right", pattern: "square" };
@@ -182,7 +190,8 @@
         const state = {
             hasDocument: !params.has("nodoc"),
             groups: [], // { kind, artboard }
-            layer: null // { visible, locked }
+            layer: null, // { visible, locked }
+            selection: params.has("selection") ? [[100, 700, 300, 500], [320, 700, 520, 500]] : []
         };
         const shades = { dark: 50, mediumdark: 83, mediumlight: 184, light: 240 };
         const shade = shades[params.get("theme")] || shades.dark;
@@ -201,8 +210,10 @@
             }
             const onActive = state.groups.filter((g) => g.artboard === 0);
             return {
+                host: "illustrator",
                 hasDocument: true,
                 documentName: "Mock document",
+                selection: { count: state.selection.length, objects: state.selection.map((rect) => ({ rect, artboard: 0 })) },
                 colorSpace: "RGB",
                 artboardCount: boards.length,
                 artboard: describeBoard(boards[0]),
@@ -217,6 +228,12 @@
 
         function targets(target) {
             const mode = (target && target.mode) || "active";
+            if (mode === "selection") {
+                if (!state.selection.length) {
+                    return fail("NO_SELECTION", "Select one or more objects to put a grid inside them.");
+                }
+                return { ok: true, boards: state.selection.map((rect) => ({ index: 0, name: "Object on Artboard 1", rect, areaLabel: "object" })) };
+            }
             if (mode === "active") {
                 return { ok: true, boards: [boards[0]] };
             }
@@ -241,7 +258,7 @@
             let shapes = 0;
             let metrics = null;
             for (const board of resolved.boards) {
-                const grid = core.buildGrid(board.rect, payload.settings || {});
+                const grid = core.buildGrid(board.rect, payload.settings || {}, { areaLabel: board.areaLabel });
                 if (!grid.ok) {
                     const prefix = resolved.boards.length > 1 ? board.name + ": " : "";
                     return fail("INVALID_SETTINGS", prefix + grid.errors[0].message, grid.errors);
@@ -307,6 +324,49 @@
                 }
                 return ok({ changed: true, status: status() });
             },
+            resizeArtboards: (p) => {
+                if (!state.hasDocument) {
+                    return noDocument;
+                }
+                const resolved = targets(p.target);
+                if (!resolved.ok) {
+                    return resolved;
+                }
+                const width = core.toPoints(Number(p.width), p.units);
+                const height = core.toPoints(Number(p.height), p.units);
+                resolved.boards.forEach((b) => {
+                    b.rect = [b.rect[0], b.rect[1], b.rect[0] + width, b.rect[1] - height];
+                });
+                return ok({ resized: resolved.boards.length, width, height, status: status() });
+            },
+            alignSelection: (p) => {
+                if (!state.hasDocument) {
+                    return noDocument;
+                }
+                if (!state.selection.length) {
+                    return fail("NO_SELECTION", "Select the objects to check against the grid.");
+                }
+                const grid = core.buildGrid(boards[0].rect, p.settings || {});
+                const lines = core.snapLines(grid);
+                let offGrid = 0;
+                let maxOffset = 0;
+                state.selection = state.selection.map((rect) => {
+                    const snap = core.snapRect(rect, lines);
+                    if (snap.onGrid) {
+                        return rect;
+                    }
+                    offGrid++;
+                    maxOffset = Math.max(maxOffset, Math.abs(snap.dx), Math.abs(snap.dy));
+                    return p.action === "snap" ? [rect[0] + snap.dx, rect[1] + snap.dy, rect[2] + snap.dx, rect[3] + snap.dy] : rect;
+                });
+                return ok({ checked: state.selection.length, offGrid, maxOffset, moved: p.action === "snap" ? offGrid : 0, skipped: 0, status: status() });
+            },
+            textMetrics: () => {
+                if (!state.hasDocument) {
+                    return noDocument;
+                }
+                return ok({ size: 11, leading: 14, autoLeading: false, font: "Helvetica" });
+            },
             drawTestLine: () => {
                 if (!state.hasDocument) {
                     return noDocument;
@@ -347,7 +407,7 @@
     function createQueue(bridge, onBusyChange) {
         const jobs = [];
         let active = null;
-        const background = { preview: true, status: true, clearPreview: true, setGridLayer: true };
+        const background = { preview: true, status: true, clearPreview: true, setGridLayer: true, textMetrics: true };
 
         function isBusy() {
             return Boolean((active && !background[active.method]) || jobs.some((j) => !background[j.method]));
@@ -485,6 +545,17 @@
         targetRange: $("target-range"),
         targetRangeHint: $("target-range-hint"),
         addMode: $("add-mode"),
+        leadingFromText: $("leading-from-text"),
+        blocksSummary: $("blocks-summary"),
+        blocksClear: $("blocks-clear"),
+        alignCheck: $("align-check"),
+        alignSelect: $("align-select"),
+        alignSnap: $("align-snap"),
+        formatSelect: $("format-select"),
+        formatRotate: $("format-rotate"),
+        formatApply: $("format-apply"),
+        presetsExport: $("presets-export"),
+        presetsImport: $("presets-import"),
         toggleVisible: $("toggle-visible"),
         toggleLock: $("toggle-lock"),
         refresh: $("refresh"),
@@ -580,6 +651,10 @@
         NUMBER_FIELDS.forEach((name) => {
             s[name] = field(name).value;
         });
+        TEXT_FIELDS.forEach((name) => {
+            s[name] = field(name).value;
+        });
+        s.blocks = currentBlocks.map((b) => Object.assign({}, b));
         if (core.UNITS.indexOf(s.units) !== -1) {
             LENGTH_FIELDS.forEach((name) => {
                 const exact = exactValue(name, s.units);
@@ -606,6 +681,9 @@
             }
             if (typeof defaults[key] === "string" && typeof value !== "string") {
                 value = defaults[key];
+            }
+            if (Array.isArray(defaults[key])) {
+                value = Array.isArray(value) ? value.map((item) => Object.assign({}, item)) : [];
             }
             out[key] = value;
         });
@@ -638,6 +716,10 @@
         NUMBER_FIELDS.forEach((name) => {
             field(name).value = formatNumber(s[name]);
         });
+        TEXT_FIELDS.forEach((name) => {
+            field(name).value = s[name];
+        });
+        currentBlocks = s.blocks;
         syncSwatches();
         currentUnits = field("units").value;
         LENGTH_FIELDS.forEach((name) => rememberExact(name, s[name], currentUnits));
@@ -673,6 +755,8 @@
     let lastPreviewKey = "";
     let lastStatusAt = 0;
     let statusIsValidation = false;
+    let currentBlocks = [];
+    let formatSwapped = false;
 
     const bridge = window.__adobe_cep__ && typeof window.CSInterface === "function" ? createCepBridge() : createMockBridge();
     const queue = createQueue(bridge, (isBusy) => {
@@ -683,7 +767,8 @@
 
     // ------------------------------------------------------------------ status
 
-    function say(message, tone) {
+    // Shows a status message, optionally with one follow-up action button.
+    function say(message, tone, action) {
         statusIsValidation = false;
         els.status.textContent = message || "";
         if (tone) {
@@ -691,6 +776,34 @@
         } else {
             delete els.status.dataset.tone;
         }
+        if (action) {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "link-button";
+            button.textContent = action.label;
+            button.addEventListener("click", action.run);
+            els.status.appendChild(button);
+        }
+    }
+
+    function nouns() {
+        return NOUNS[hostStatus.host] || NOUNS.illustrator;
+    }
+
+    function areaWords(count) {
+        return plural(count, nouns().one, nouns().many);
+    }
+
+    // Uses the host's word (artboard or page) throughout the panel.
+    function applyNouns() {
+        const n = nouns();
+        const labels = { active: "This " + n.one, all: "All " + n.many, range: "Chosen " + n.many, selection: "Selected objects" };
+        Array.from(els.targetMode.options).forEach((option) => {
+            option.textContent = labels[option.value];
+        });
+        document.querySelectorAll("[data-noun]").forEach((node) => {
+            node.textContent = n.one;
+        });
     }
 
     function sayError(result) {
@@ -737,6 +850,22 @@
         els.targetRangeRow.hidden = target.mode !== "range";
         els.targetRangeHint.textContent = hostStatus.hasDocument ? "of " + boards.length : "";
 
+        if (target.mode === "selection") {
+            const objects = hostStatus.hasDocument && hostStatus.selection ? hostStatus.selection.objects : [];
+            if (!objects.length) {
+                return { ok: false, error: "Select one or more objects to put a grid inside them.", boards: [] };
+            }
+            return {
+                ok: true,
+                boards: objects.map((object, i) => ({
+                    index: object.artboard,
+                    name: "Object " + (i + 1),
+                    rect: object.rect,
+                    areaLabel: "object",
+                    object: true
+                }))
+            };
+        }
         if (target.mode === "all") {
             return { ok: true, boards };
         }
@@ -791,7 +920,7 @@
         return general;
     }
 
-    const VISIBILITY_SELECTOR = "[data-for], [data-for-output], [data-hide-for-output], [data-for-spiral], [data-for-pattern], [data-hide-for-pattern], [data-when]";
+    const VISIBILITY_SELECTOR = "[data-for], [data-for-output], [data-hide-for-output], [data-for-spiral], [data-for-pattern], [data-hide-for-pattern], [data-when], [data-baseline-fields]";
 
     // Shows each conditional element only when every condition on it holds.
     function syncVisibility(settings) {
@@ -820,6 +949,9 @@
             }
             if (d.when !== undefined) {
                 visible = visible && settings[d.when] === true;
+            }
+            if (d.baselineFields !== undefined) {
+                visible = visible && (settings.type === "baseline" || ((settings.type === "columns" || settings.type === "modular") && settings.addBaseline === true));
             }
             node.hidden = !visible;
         });
@@ -912,7 +1044,9 @@
 
             result.boxes.forEach((b) => {
                 const rectAttrs = { x: x(b.left), y: y(b.top), width: b.right - b.left, height: b.top - b.bottom };
-                if (b.kind === "gutter") {
+                if (b.kind === "block") {
+                    frag.appendChild(svgNode("rect", Object.assign({ class: "schematic__block", fill: color }, rectAttrs)));
+                } else if (b.kind === "gutter") {
                     frag.appendChild(svgNode("rect", Object.assign({ class: "schematic__gutter", fill: s.gutterColor, "fill-opacity": s.gutterOpacity / 100 }, rectAttrs)));
                 } else {
                     frag.appendChild(svgNode("rect", Object.assign({ class: "schematic__box", stroke: color, fill: color, "stroke-opacity": strokeOpacity }, rectAttrs)));
@@ -987,6 +1121,179 @@
 
     function renderSchematic(result, rect) {
         paintGrid(els.svg, result, rect, { empty: !hostStatus.hasDocument });
+        els.svg.classList.toggle("schematic--editable", blocksEditable(result));
+    }
+
+    // ------------------------------------------------------------------ blocks
+
+    function blocksEditable(result) {
+        return Boolean(result && result.ok && (result.settings.type === "columns" || result.settings.type === "modular"));
+    }
+
+    function renderBlocksSummary(result, settings) {
+        if (settings.type !== "columns" && settings.type !== "modular") {
+            return;
+        }
+        const count = currentBlocks.length;
+        els.blocksSummary.textContent = count
+            ? plural(count, "block", "blocks") + " marked. Click a block in the drawing to remove it."
+            : "Drag across the drawing to mark content blocks.";
+        els.blocksClear.hidden = count === 0;
+    }
+
+    // Converts a pointer position to artboard coordinates using the drawing's transform.
+    function pointerToArtboard(event) {
+        const matrix = els.svg.getScreenCTM();
+        if (!matrix) {
+            return null;
+        }
+        const point = els.svg.createSVGPoint();
+        point.x = event.clientX;
+        point.y = event.clientY;
+        const local = point.matrixTransform(matrix.inverse());
+        const rect = currentRect();
+        return { x: rect[0] + local.x, y: rect[1] - local.y };
+    }
+
+    // Index of the track containing a position, or the nearest track when in a gutter.
+    function trackIndex(tracks, value, startKey, endKey, descending) {
+        let best = -1;
+        let bestDistance = Infinity;
+        tracks.forEach((track, i) => {
+            const lo = descending ? track[endKey] : track[startKey];
+            const hi = descending ? track[startKey] : track[endKey];
+            const distance = value < lo ? lo - value : value > hi ? value - hi : 0;
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                best = i;
+            }
+        });
+        return best;
+    }
+
+    function cellAt(point) {
+        const result = lastResult;
+        if (!blocksEditable(result) || !point) {
+            return null;
+        }
+        const column = trackIndex(result.tracks.columns, point.x, "left", "right", false);
+        const row = result.settings.type === "modular" ? trackIndex(result.tracks.rows, point.y, "top", "bottom", true) : 0;
+        return column === -1 || row === -1 ? null : { column, row };
+    }
+
+    function blockFromCells(a, b) {
+        return {
+            column: Math.min(a.column, b.column) + 1,
+            row: Math.min(a.row, b.row) + 1,
+            columns: Math.abs(a.column - b.column) + 1,
+            rows: Math.abs(a.row - b.row) + 1
+        };
+    }
+
+    function bindBlockEditing() {
+        let start = null;
+        let draft = null;
+        let startClient = null;
+
+        const draftRect = (cells) => {
+            const result = lastResult;
+            const block = blockFromCells(cells[0], cells[1]);
+            const rect = currentRect();
+            const cols = result.tracks.columns;
+            const left = cols[block.column - 1].left;
+            const right = cols[block.column + block.columns - 2].right;
+            let top = result.content.top;
+            let bottom = result.content.bottom;
+            if (result.settings.type === "modular") {
+                top = result.tracks.rows[block.row - 1].top;
+                bottom = result.tracks.rows[block.row + block.rows - 2].bottom;
+            }
+            return { x: left - rect[0], y: rect[1] - top, width: right - left, height: top - bottom };
+        };
+
+        els.svg.addEventListener("pointerdown", (event) => {
+            const cell = cellAt(pointerToArtboard(event));
+            if (!cell || event.button !== 0) {
+                return;
+            }
+            event.preventDefault();
+            els.svg.setPointerCapture(event.pointerId);
+            start = cell;
+            startClient = [event.clientX, event.clientY];
+            draft = svgNode("rect", Object.assign({ class: "schematic__draft" }, draftRect([cell, cell])));
+            els.svg.appendChild(draft);
+        });
+
+        els.svg.addEventListener("pointermove", (event) => {
+            if (!start || !draft) {
+                return;
+            }
+            const cell = cellAt(pointerToArtboard(event)) || start;
+            const r = draftRect([start, cell]);
+            Object.keys(r).forEach((key) => draft.setAttribute(key, r[key]));
+        });
+
+        const finish = (event, cancelled) => {
+            if (!start) {
+                return;
+            }
+            const point = pointerToArtboard(event);
+            const end = cellAt(point) || start;
+            const moved = Math.hypot(event.clientX - startClient[0], event.clientY - startClient[1]) > 4;
+            if (draft && draft.parentNode) {
+                draft.parentNode.removeChild(draft);
+            }
+            if (!cancelled) {
+                const hit = !moved ? findBlockAt(point) : -1;
+                if (hit !== -1) {
+                    currentBlocks.splice(hit, 1);
+                    say("Removed a block.");
+                } else {
+                    currentBlocks.push(blockFromCells(start, end));
+                    const b = currentBlocks[currentBlocks.length - 1];
+                    say("Marked a " + b.columns + " \u00d7 " + b.rows + " block.");
+                }
+                update();
+            }
+            start = null;
+            draft = null;
+        };
+        els.svg.addEventListener("pointerup", (event) => finish(event, false));
+        els.svg.addEventListener("pointercancel", (event) => finish(event, true));
+
+        els.blocksClear.addEventListener("click", () => {
+            currentBlocks = [];
+            update();
+            say("Cleared all blocks.");
+        });
+    }
+
+    // Index into currentBlocks of the drawn block containing a point, or -1.
+    function findBlockAt(point) {
+        const result = lastResult;
+        if (!point || !blocksEditable(result)) {
+            return -1;
+        }
+        const blocks = result.boxes.filter((b) => b.kind === "block");
+        for (let i = blocks.length - 1; i >= 0; i--) {
+            const b = blocks[i];
+            if (point.x >= b.left && point.x <= b.right && point.y <= b.top && point.y >= b.bottom) {
+                // Drawn blocks follow currentBlocks order, skipping blocks outside the grid.
+                let drawn = -1;
+                for (let j = 0; j < currentBlocks.length; j++) {
+                    const block = currentBlocks[j];
+                    const inside = block.column <= result.tracks.columns.length &&
+                        (result.settings.type !== "modular" || block.row <= result.tracks.rows.length);
+                    if (inside) {
+                        drawn++;
+                    }
+                    if (drawn === i) {
+                        return j;
+                    }
+                }
+            }
+        }
+        return -1;
     }
 
     function measure(points, units) {
@@ -1013,7 +1320,11 @@
         const width = rect[2] - rect[0];
         const height = rect[1] - rect[3];
 
-        if (hostStatus.hasDocument) {
+        if (hostStatus.hasDocument && els.targetMode.value === "selection") {
+            const count = hostStatus.selection ? hostStatus.selection.count : 0;
+            els.artboardName.textContent = count ? (count === 1 ? "Selected object" : "Object 1 of " + count) : "No objects selected";
+            els.artboardName.title = "";
+        } else if (hostStatus.hasDocument) {
             els.artboardName.textContent = hostStatus.artboard.name;
             els.artboardName.title = hostStatus.documentName + ", " + hostStatus.artboard.name;
         } else {
@@ -1062,8 +1373,19 @@
 
     // ------------------------------------------------------------------ update
 
+    // The area the drawing shows: the first selected object in selection mode, else the active artboard.
     function currentRect() {
-        return hostStatus.hasDocument ? hostStatus.artboard.rect : FALLBACK_RECT;
+        if (!hostStatus.hasDocument) {
+            return FALLBACK_RECT;
+        }
+        if (els.targetMode.value === "selection" && hostStatus.selection && hostStatus.selection.objects.length) {
+            return hostStatus.selection.objects[0].rect;
+        }
+        return hostStatus.artboard.rect;
+    }
+
+    function currentAreaLabel() {
+        return els.targetMode.value === "selection" ? "object" : nouns().one;
     }
 
     function update() {
@@ -1074,17 +1396,17 @@
         targetState = resolveTarget();
         showRangeError(targetState.ok ? "" : targetState.error);
 
-        const result = core.buildGrid(rect, settings);
+        const result = core.buildGrid(rect, settings, { areaLabel: currentAreaLabel() });
         const general = showErrors(result.errors);
 
         // Check the other target artboards too, so Generate never fails on the host.
         let targetError = null;
         if (result.ok && targetState.ok && hostStatus.hasDocument) {
             for (const board of targetState.boards) {
-                if (board.index === hostStatus.artboard.index) {
+                if (!board.object && board.index === hostStatus.artboard.index) {
                     continue;
                 }
-                const other = core.buildGrid(board.rect, settings);
+                const other = core.buildGrid(board.rect, settings, { areaLabel: board.areaLabel || nouns().one });
                 if (!other.ok) {
                     targetError = board.name + ": " + other.errors[0].message;
                     break;
@@ -1105,6 +1427,7 @@
         renderSchematic(result, rect);
         renderReadout(result, settings, rect);
         renderAppearanceSummary(settings);
+        renderBlocksSummary(result, settings);
         updateButtons();
         schedulePersist();
         if (els.previewToggle.checked) {
@@ -1125,6 +1448,13 @@
         els.toggleLock.disabled = !hasDoc;
         els.presetDelete.disabled = els.presetSelect.value.indexOf("user:") !== 0;
         els.presetNew.disabled = library.open;
+        const selectionMode = els.targetMode.value === "selection";
+        els.formatApply.disabled = busy || !hasDoc || selectionMode || !els.formatSelect.value;
+        els.formatRotate.disabled = !els.formatSelect.value;
+        [els.alignCheck, els.alignSelect, els.alignSnap].forEach((button) => {
+            button.disabled = busy || !hasDoc;
+        });
+        els.leadingFromText.disabled = !hasDoc;
     }
 
     function setIconButton(button, icon, label, engaged) {
@@ -1175,6 +1505,7 @@
             }
         }
         syncLayerButtons();
+        applyNouns();
         update();
         refreshLibraryIfStale();
     }
@@ -1228,7 +1559,9 @@
             if (response.ok) {
                 hostStatus = response.data.status;
                 syncLayerButtons();
-                const where = response.data.artboards > 1 ? plural(response.data.artboards, "artboard", "artboards") : hostStatus.artboard.name;
+                const where = readTarget().mode === "selection"
+                    ? plural(response.data.artboards, "object", "objects")
+                    : response.data.artboards > 1 ? areaWords(response.data.artboards) : hostStatus.artboard.name;
                 say("Previewing on " + where + ".");
             } else {
                 lastPreviewKey = "";
@@ -1283,7 +1616,9 @@
             const data = response.data;
             hostStatus = data.status;
             syncLayerButtons();
-            const where = data.artboards > 1 ? plural(data.artboards, "artboard", "artboards") : data.status.artboard.name;
+            const where = target.mode === "selection"
+                ? (data.artboards === 1 ? "the selected object" : plural(data.artboards, "object", "objects"))
+                : data.artboards > 1 ? areaWords(data.artboards) : data.status.artboard.name;
             const name = GRID_NAMES[settings.type];
             const article = /^[aeiou]/.test(name) ? "an " : "a ";
             const shapes = " (" + plural(data.shapes, "shape", "shapes") + ").";
@@ -1323,7 +1658,9 @@
         const data = response.data;
         hostStatus = data.status;
         syncLayerButtons();
-        const where = target.mode === "active" ? data.status.artboard.name : plural(data.targetArtboards, "artboard", "artboards");
+        const where = target.mode === "active" ? data.status.artboard.name
+            : target.mode === "selection" ? plural(data.targetArtboards, "selected object", "selected objects")
+                : areaWords(data.targetArtboards);
         let message = data.removed
             ? "Cleared " + plural(data.removed, "grid", "grids") + " from " + where + "."
             : "No Mullion grids to clear on " + where + ".";
@@ -1383,6 +1720,202 @@
         } else {
             sayError(response);
         }
+    }
+
+    // ----------------------------------------------------------------- resize
+
+    function renderFormats() {
+        const select = els.formatSelect;
+        select.textContent = "";
+        const placeholder = document.createElement("option");
+        placeholder.value = "";
+        placeholder.textContent = "Choose a size";
+        select.appendChild(placeholder);
+        formats.GROUPS.forEach((groupName) => {
+            const group = document.createElement("optgroup");
+            group.label = groupName;
+            formats.FORMATS.filter((f) => f.group === groupName).forEach((format) => {
+                const option = document.createElement("option");
+                option.value = format.id;
+                option.textContent = formats.label(format, formatSwapped);
+                group.appendChild(option);
+            });
+            select.appendChild(group);
+        });
+    }
+
+    async function resizeTo(width, height, units, label) {
+        const target = els.targetMode.value === "selection" ? { mode: "active" } : readTarget();
+        const response = await queue.enqueue("resizeArtboards", { width, height, units, target });
+        if (response.superseded) {
+            return;
+        }
+        if (!response.ok) {
+            sayError(response);
+            return;
+        }
+        applyStatus(response.data.status);
+        const where = target.mode === "active" ? response.data.status.artboard.name : areaWords(response.data.resized);
+        const size = width + " \u00d7 " + height + " " + units;
+        say("Resized " + where + " to " + (label ? label + " (" + size + ")" : size) + ". Generate to fit the grid to the new size.", "ok");
+    }
+
+    function resizeToFormat() {
+        const format = formats.find(els.formatSelect.value);
+        if (!format) {
+            return;
+        }
+        const width = formatSwapped ? format.height : format.width;
+        const height = formatSwapped ? format.width : format.height;
+        resizeTo(width, height, format.units, format.name);
+    }
+
+    // ------------------------------------------------------------------ align
+
+    async function alignObjects(action) {
+        const response = await queue.enqueue("alignSelection", { settings: readSettings(), action });
+        if (response.superseded) {
+            return;
+        }
+        if (!response.ok) {
+            sayError(response);
+            return;
+        }
+        const d = response.data;
+        hostStatus = d.status;
+        const checked = plural(d.checked, "object", "objects");
+        if (action === "snap") {
+            const skipped = d.skipped ? " Skipped " + plural(d.skipped, "locked or hidden object", "locked or hidden objects") + "." : "";
+            say(d.moved ? "Snapped " + plural(d.moved, "object", "objects") + " to the grid." + skipped : "All " + checked + " already sit on the grid.", "ok");
+        } else if (action === "select") {
+            say(d.offGrid ? "Selected " + plural(d.offGrid, "off-grid object", "off-grid objects") + "." : "All " + checked + " sit on the grid; nothing selected.");
+        } else {
+            say(d.offGrid
+                ? d.offGrid + " of " + checked + " " + (d.offGrid === 1 ? "is" : "are") + " off the grid, by up to " + measure(d.maxOffset, currentUnits) + "."
+                : "All " + checked + " sit on the grid.", d.offGrid ? undefined : "ok",
+            d.offGrid ? { label: "Snap to grid", run: () => alignObjects("snap") } : null);
+        }
+        update();
+    }
+
+    async function leadingFromText() {
+        const response = await queue.enqueue("textMetrics");
+        if (response.superseded) {
+            return;
+        }
+        if (!response.ok) {
+            sayError(response);
+            return;
+        }
+        const t = response.data;
+        const spacing = formatNumber(core.fromPoints(t.leading, currentUnits));
+        field("baselineSpacing").value = spacing;
+        rememberExact("baselineSpacing", t.leading, "pt");
+        update();
+        say("Baseline set to " + formatNumber(t.leading) + " pt from the selected text (" +
+            (t.font ? t.font + ", " : "") + formatNumber(t.size) + "/" + formatNumber(t.leading) + (t.autoLeading ? " auto" : "") + ").", "ok");
+    }
+
+    // ------------------------------------------------------- export / import
+
+    const PRESET_FILE_FORMAT = "mullion-presets";
+
+    function presetFileText() {
+        return JSON.stringify({
+            format: PRESET_FILE_FORMAT,
+            version: 1,
+            presets: loadPresets().map((p) => ({ name: p.name, settings: p.settings }))
+        }, null, 2);
+    }
+
+    function exportPresets() {
+        const presets = loadPresets();
+        if (!presets.length) {
+            say("Save a preset first; there are no presets to export.", "error");
+            return;
+        }
+        const text = presetFileText();
+        const fileName = "grid-presets.json";
+        const cepFs = window.cep && window.cep.fs;
+        if (cepFs) {
+            const choice = cepFs.showSaveDialogEx("Export presets", "", ["json"], fileName);
+            if (choice.err || !choice.data) {
+                return;
+            }
+            const written = cepFs.writeFile(choice.data, text);
+            if (written.err) {
+                say("Couldn't write the presets file. Choose a folder you can save to.", "error");
+                return;
+            }
+        } else {
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(new Blob([text], { type: "application/json" }));
+            link.download = fileName;
+            link.click();
+            URL.revokeObjectURL(link.href);
+        }
+        say("Exported " + plural(presets.length, "preset", "presets") + ".", "ok");
+    }
+
+    // Adds presets from a file; names that already exist get a number instead of being overwritten.
+    function importPresetText(text) {
+        let data;
+        try {
+            data = JSON.parse(text);
+        } catch (e) {
+            say("That file isn't a presets file.", "error");
+            return;
+        }
+        if (!data || data.format !== PRESET_FILE_FORMAT || !Array.isArray(data.presets)) {
+            say("That file isn't a presets file.", "error");
+            return;
+        }
+        const presets = loadPresets();
+        const names = new Set(presets.map((p) => p.name));
+        let added = 0;
+        data.presets.forEach((entry) => {
+            if (!entry || typeof entry.name !== "string" || !entry.name.trim() || !entry.settings || typeof entry.settings !== "object") {
+                return;
+            }
+            let name = entry.name.trim().slice(0, 40);
+            for (let n = 2; names.has(name); n++) {
+                name = entry.name.trim().slice(0, 34) + " (" + n + ")";
+            }
+            names.add(name);
+            presets.push({ name, settings: cleanSettings(entry.settings), savedAt: new Date().toISOString() });
+            added++;
+        });
+        presets.sort((a, b) => a.name.localeCompare(b.name));
+        storage.set(STORAGE_PRESETS, presets);
+        renderPresets("");
+        say(added ? "Imported " + plural(added, "preset", "presets") + "." : "The file had no presets to import.", added ? "ok" : undefined);
+    }
+
+    function importPresets() {
+        const cepFs = window.cep && window.cep.fs;
+        if (cepFs) {
+            const choice = cepFs.showOpenDialogEx(false, false, "Import presets", "", ["json"]);
+            if (choice.err || !choice.data || !choice.data.length) {
+                return;
+            }
+            const read = cepFs.readFile(choice.data[0]);
+            if (read.err) {
+                say("Couldn't read that file.", "error");
+                return;
+            }
+            importPresetText(read.data);
+            return;
+        }
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = ".json,application/json";
+        input.addEventListener("change", () => {
+            const file = input.files && input.files[0];
+            if (file) {
+                file.text().then(importPresetText);
+            }
+        });
+        input.click();
     }
 
     // ----------------------------------------------------------------- presets
@@ -1486,8 +2019,21 @@
             return;
         }
         const resolved = layouts.resolveLayout(layout, currentRect(), currentUnits);
-        const note = layout.relative ? "Margins are sized for this artboard." : layouts.describeArtboard(layout);
+        const note = layout.relative ? "Margins are sized for this " + currentAreaLabel() + "." : layouts.describeArtboard(layout);
         applySettings(Object.assign(cleanSettings(readSettings()), resolved), "Applied \u201c" + layout.name + "\u201d." + (note ? " " + note : ""));
+        // Offer to resize when a layout made for a size lands on a different artboard.
+        const a = layout.artboard;
+        if (a && hostStatus.hasDocument && els.targetMode.value !== "selection") {
+            const rect = currentRect();
+            const wanted = { width: core.toPoints(a.width, a.units), height: core.toPoints(a.height, a.units) };
+            const differs = Math.abs(rect[2] - rect[0] - wanted.width) > 1 || Math.abs(rect[1] - rect[3] - wanted.height) > 1;
+            if (differs) {
+                say(els.status.textContent, undefined, {
+                    label: "Resize " + nouns().one + " to " + a.width + " \u00d7 " + a.height + " " + a.units,
+                    run: () => resizeTo(a.width, a.height, a.units, layout.name)
+                });
+            }
+        }
         library.selected = id;
         els.libraryGrid.querySelectorAll(".tile").forEach((tile) => {
             tile.setAttribute("aria-pressed", String(tile.dataset.layout === id));
@@ -1822,12 +2368,32 @@
         });
 
         els.targetMode.addEventListener("change", () => {
+            if (els.targetMode.value === "selection") {
+                refreshStatus(true);
+            }
             update();
             if (els.targetMode.value === "range") {
                 els.targetRange.focus();
             }
         });
         els.targetRange.addEventListener("input", update);
+        bindBlockEditing();
+        els.leadingFromText.addEventListener("click", leadingFromText);
+        els.alignCheck.addEventListener("click", () => alignObjects("check"));
+        els.alignSelect.addEventListener("click", () => alignObjects("select"));
+        els.alignSnap.addEventListener("click", () => alignObjects("snap"));
+        els.formatSelect.addEventListener("change", updateButtons);
+        els.formatRotate.addEventListener("click", () => {
+            formatSwapped = !formatSwapped;
+            els.formatRotate.setAttribute("aria-pressed", String(formatSwapped));
+            const selected = els.formatSelect.value;
+            renderFormats();
+            els.formatSelect.value = selected;
+            updateButtons();
+        });
+        els.formatApply.addEventListener("click", resizeToFormat);
+        els.presetsExport.addEventListener("click", exportPresets);
+        els.presetsImport.addEventListener("click", importPresets);
         els.addMode.addEventListener("change", () => {
             storage.updateUi({ addMode: els.addMode.checked });
             update();
@@ -1926,6 +2492,10 @@
         });
 
         window.addEventListener("beforeunload", () => {
+            // Save now: the debounced save may not have run yet when the panel closes.
+            window.clearTimeout(persistTimer);
+            storage.set(STORAGE_SETTINGS, cleanSettings(readSettings()));
+            storage.updateUi({ target: readTarget() });
             if (els.previewToggle.checked) {
                 bridge.fire("clearPreview");
             }
@@ -1957,12 +2527,16 @@
         }
 
         renderPresets("");
+        renderFormats();
+        applyNouns();
         syncLayerButtons();
         bindEvents();
         update();
         refreshStatus(true);
         if (bridge.kind === "mock") {
             document.documentElement.dataset.host = "mock";
+            // Browser-only hooks for the smoke test; never present inside Illustrator.
+            window.__mullionTest = { importPresetText, presetFileText };
         }
     }
 

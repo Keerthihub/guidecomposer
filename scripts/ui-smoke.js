@@ -476,6 +476,123 @@ async function main() {
         await evaluate(click("reset"));
         await evaluate(setField("strokeColor", "#E0457B"));
 
+        // ---------------------------------------------------------------- new layout controls
+        await evaluate(click("reset"));
+        await evaluate(setField("columnRatios", "2 1 1"));
+        check(await evaluate(text("grid-count")) === "8 lines", "2 1 1 widths draw 3 columns (6 edges + 2 margins)");
+        check((await evaluate(text("grid-metrics"))).startsWith("Columns 2 : 1 : 1") || (await evaluate(text("grid-metrics"))).startsWith("Columns"), "readout for unequal columns: " + await evaluate(text("grid-metrics")));
+        await evaluate(setField("columnRatios", "2 x"));
+        check(/positive numbers separated by spaces/.test(await evaluate(text("err-columnRatios"))), "bad widths explained");
+        await evaluate(setField("columnRatios", ""));
+        check(await evaluate(`document.querySelector("[data-baseline-fields]").hidden`) === true, "baseline fields hidden until enabled");
+        await evaluate(setField("addBaseline", true));
+        check(await evaluate(`document.querySelector("[data-baseline-fields]").hidden`) === false, "baseline fields shown with Add a baseline grid");
+        check(await evaluate(text("grid-count")) === "85 lines", "12 columns + 12 pt baseline = 85 lines");
+        await evaluate(click("leading-from-text"));
+        await sleep(250);
+        check(await evaluate(value("baselineSpacing")) === "14", "From text sets the baseline to 14 pt");
+        check(/Baseline set to 14 pt from the selected text \(Helvetica, 11\/14\)/.test(await evaluate(text("status"))), "leading message");
+        await evaluate(setField("addBaseline", false));
+
+        // blocks: drag across modules in the drawing
+        await evaluate(setField("type", "modular"));
+        await evaluate(setField("columns", "4"));
+        await evaluate(setField("rows", "4"));
+        // Points are module centers in the drawing's own coordinates (Letter, 36 pt margins, 4 x 4 modules,
+        // 12 pt gutters: modules are 129 x 171 pt), mapped to the screen with the SVG's transform.
+        const center = (column, row) => [36 + column * 141 + 64.5, 36 + row * 183 + 85.5];
+        const dragBlock = (from, to) => `(() => {
+            const svg = document.getElementById("schematic");
+            const ctm = svg.getScreenCTM();
+            const at = ([x, y]) => {
+                const p = svg.createSVGPoint();
+                p.x = x; p.y = y;
+                const s = p.matrixTransform(ctm);
+                return { clientX: s.x, clientY: s.y, button: 0, pointerId: 1, bubbles: true };
+            };
+            svg.dispatchEvent(new PointerEvent("pointerdown", at(${JSON.stringify(from)})));
+            svg.dispatchEvent(new PointerEvent("pointermove", at(${JSON.stringify(to)})));
+            svg.dispatchEvent(new PointerEvent("pointerup", at(${JSON.stringify(to)})));
+        })()`;
+        await evaluate(dragBlock(center(0, 0), center(1, 0)));
+        check(/Marked a 2 × 1 block/.test(await evaluate(text("status"))), "dragging marks a block: " + await evaluate(text("status")));
+        check(await evaluate(`document.querySelectorAll("#schematic rect.schematic__block").length`) === 1, "block drawn");
+        check(/1 block marked/.test(await evaluate(text("blocks-summary"))), "block summary");
+        await shoot("dark-blocks");
+        await evaluate(dragBlock(center(1, 0), center(1, 0)));
+        check(await evaluate(`document.querySelectorAll("#schematic rect.schematic__block").length`) === 0, "clicking a block removes it");
+        await evaluate(dragBlock(center(2, 2), center(2, 2)));
+        await evaluate(click("blocks-clear"));
+        check(await evaluate(`document.querySelectorAll("#schematic rect.schematic__block").length`) === 0, "Clear blocks removes all");
+        await evaluate(setField("type", "columns"));
+        await evaluate(setField("columns", "12"));
+
+        // resize
+        await evaluate(`document.querySelector("#align-section").open = true; document.querySelectorAll("details.section")[2].open = true;`);
+        await evaluate(`(() => { const s = document.getElementById("format-select"); s.value = "a4"; s.dispatchEvent(new Event("change", { bubbles: true })); })()`);
+        await evaluate(click("format-rotate"));
+        check((await evaluate(`document.getElementById("format-select").selectedOptions[0].textContent`)) === "A4 (297 × 210 mm)", "rotate swaps the format label");
+        await evaluate(click("format-rotate"));
+        await evaluate(click("format-apply"));
+        await sleep(300);
+        check(/Resized Artboard 1 to A4 \(210 × 297 mm\)/.test(await evaluate(text("status"))), "resize message: " + await evaluate(text("status")));
+        check(await evaluate(text("artboard-size")) === "595.276 × 841.89 pt", "readout shows the new size: " + await evaluate(text("artboard-size")));
+
+        // layout made for another size offers a resize
+        await evaluate(click("library-open"));
+        await evaluate(`(() => { const s = document.getElementById("library-search"); s.value = "portrait post"; s.dispatchEvent(new Event("input", { bubbles: true })); })()`);
+        await evaluate(`document.querySelector('#library-grid .tile[data-layout="portrait-post"]').click()`);
+        check(await evaluate(`document.querySelector("#status .link-button") && document.querySelector("#status .link-button").textContent`) === "Resize artboard to 1080 × 1350 px", "resize offered for a fixed-size layout");
+        await evaluate(`document.querySelector("#status .link-button").click()`);
+        await sleep(300);
+        check(await evaluate(text("artboard-size")) === "1080 × 1350 px", "one click resizes to the layout's size: " + await evaluate(text("artboard-size")));
+        await evaluate(click("library-close"));
+
+        // export / import
+        await evaluate(click("reset"));
+        await evaluate(click("preset-new"));
+        await evaluate(`document.getElementById("preset-name").value = "Shared grid"`);
+        await evaluate(click("preset-save"));
+        const exported = await evaluate(`window.__mullionTest.presetFileText()`);
+        check(JSON.parse(exported).presets[0].name === "Shared grid", "export file contains the preset");
+        await evaluate(`window.__mullionTest.importPresetText(${JSON.stringify(exported)})`);
+        check(await evaluate(`Array.from(document.getElementById("preset-select").options).map(o => o.textContent).join("|")`) === "Your presets|Shared grid|Shared grid (2)", "import keeps both presets with a numbered name");
+        await evaluate(`window.__mullionTest.importPresetText("nonsense")`);
+        check(/isn't a presets file/.test(await evaluate(text("status"))), "bad import explained");
+
+        // grids inside selected objects, and aligning them
+        await load("?theme=dark&selection");
+        check(await evaluate(`localStorage.getItem("mullion.presets.v1").includes("Shared grid")`) === true, "presets survive the reload");
+        await evaluate(`(() => { const s = document.getElementById("target-mode"); s.value = "selection"; s.dispatchEvent(new Event("change", { bubbles: true })); })()`);
+        await sleep(250);
+        check(await evaluate(text("artboard-name")) === "Object 1 of 2", "readout names the selected objects");
+        check(await evaluate(text("artboard-size")) === "200 × 200 pt", "drawing shows the first object's size");
+        await evaluate(setField("marginTop", "10"));
+        await evaluate(setField("columns", "2"));
+        await evaluate(setField("columnGutter", "10"));
+        await evaluate(click("generate"));
+        await sleep(300);
+        check(/Added a column grid to 2 objects/.test(await evaluate(text("status"))), "generate inside objects: " + await evaluate(text("status")));
+        await shoot("dark-selection");
+        await evaluate(setField("marginTop", "150"));
+        check(/less than the object height of 200 pt/.test(await evaluate(text("err-margins"))), "object-sized validation wording");
+        await evaluate(setField("marginTop", "10"));
+        await evaluate(`(() => { const s = document.getElementById("target-mode"); s.value = "active"; s.dispatchEvent(new Event("change", { bubbles: true })); })()`);
+        await evaluate(`document.querySelector("#align-section").open = true`);
+        await evaluate(setField("marginTop", "36"));
+        await evaluate(click("align-check"));
+        await sleep(250);
+        check(/2 of 2 objects are off the grid/.test(await evaluate(text("status"))), "check reports off-grid objects: " + await evaluate(text("status")));
+        check(await evaluate(`document.querySelector("#status .link-button").textContent`) === "Snap to grid", "check offers Snap to grid");
+        await evaluate(`document.querySelector("#status .link-button").click()`);
+        await sleep(250);
+        check(/Snapped 2 objects to the grid/.test(await evaluate(text("status"))), "snap: " + await evaluate(text("status")));
+        await evaluate(click("align-check"));
+        await sleep(250);
+        check(/All 2 objects sit on the grid/.test(await evaluate(text("status"))), "re-check after snapping");
+        await evaluate(`(() => { const s = document.getElementById("target-mode"); s.value = "selection"; s.dispatchEvent(new Event("change", { bubbles: true })); })()`);
+        check(await evaluate(`document.getElementById("format-apply").disabled`) === true, "resize is off while targeting objects");
+
         // ---------------------------------------------------------------- keyboard
         await evaluate(`(() => { const el = document.querySelector('[name="columnGutter"]'); el.value = "12"; el.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", shiftKey: true, bubbles: true })); })()`);
         check(await evaluate(value("columnGutter")) === "22", "Shift+ArrowUp steps by 10");

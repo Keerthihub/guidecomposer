@@ -555,6 +555,83 @@ input[type="number"]::-webkit-outer-spin-button {
   accent-color: var(--accent);
 }
 
+/* ------------------------------------------------------------- extras */
+
+.field__label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-1);
+}
+
+.link-button {
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.link-button:hover {
+  color: var(--fg);
+}
+
+.baseline-toggle {
+  margin-bottom: var(--space-1);
+}
+
+.blocks-note {
+  margin: 0 0 var(--space-2);
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.resize {
+  display: grid;
+  gap: 2px;
+}
+
+.resize__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.resize__row select {
+  flex: 1 1 auto;
+}
+
+.resize__row .icon-button[aria-pressed="true"] {
+  color: var(--accent);
+  background: var(--pressed);
+}
+
+.status .link-button {
+  margin-left: 4px;
+}
+
+.schematic--editable {
+  cursor: crosshair;
+}
+
+.schematic__block {
+  stroke: none;
+  fill-opacity: 0.28;
+}
+
+.schematic__draft {
+  fill: none;
+  stroke: var(--focus);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 2;
+  vector-effect: non-scaling-stroke;
+}
+
 /* ------------------------------------------------------------ line styling */
 
 .line-style {

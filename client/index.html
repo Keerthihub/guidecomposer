@@ -17,6 +17,7 @@
   <symbol id="i-minus" viewBox="0 0 16 16"><path d="M3.5 8h9"/></symbol>
   <symbol id="i-trash" viewBox="0 0 16 16"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 8.5h5.6l.7-8.5"/></symbol>
   <symbol id="i-chevron" viewBox="0 0 16 16"><path d="M4.5 9.5L8 6l3.5 3.5"/></symbol>
+  <symbol id="i-rotate" viewBox="0 0 16 16"><rect x="2.5" y="5.5" width="7" height="8" rx=".5"/><path d="M8 2.5h2.5a3 3 0 0 1 3 3V8"/><path d="M12 6.5l1.5 1.5L15 6.5"/></symbol>
   <symbol id="i-library" viewBox="0 0 16 16"><rect x="2.5" y="2.5" width="4.5" height="4.5" rx=".5"/><rect x="9" y="2.5" width="4.5" height="4.5" rx=".5"/><rect x="2.5" y="9" width="4.5" height="4.5" rx=".5"/><rect x="9" y="9" width="4.5" height="4.5" rx=".5"/></symbol>
 </svg>
 
@@ -59,6 +60,7 @@
         <option value="active">This artboard</option>
         <option value="all">All artboards</option>
         <option value="range">Chosen artboards</option>
+        <option value="selection">Selected objects</option>
       </select>
       <button type="button" class="icon-button" id="toggle-visible" title="Hide grids">
         <svg class="icon"><use href="#i-eye"/></svg>
@@ -111,6 +113,7 @@
       <p class="field__error" id="err-columns" data-error-for="columns"></p>
       <p class="field__error" id="err-columnGutter" data-error-for="columnGutter"></p>
 
+
       <div class="pair" data-for="modular">
         <div class="field">
           <label class="field__label" for="f-rows">Rows</label>
@@ -131,9 +134,29 @@
       <p class="field__error" id="err-rows" data-error-for="rows" data-for="modular"></p>
       <p class="field__error" id="err-rowGutter" data-error-for="rowGutter" data-for="modular"></p>
 
-      <div class="pair" data-for="baseline">
+      <div class="pair" data-for="columns modular">
+        <label class="field">
+          <span class="field__label">Column widths</span>
+          <input class="field__input" type="text" name="columnRatios" placeholder="Equal" spellcheck="false" title="Proportions such as 2 1 1 or 1 1 2 3 5. Leave empty for equal columns." aria-describedby="err-columnRatios">
+        </label>
+        <label class="field" data-for="modular">
+          <span class="field__label">Row heights</span>
+          <input class="field__input" type="text" name="rowRatios" placeholder="Equal" spellcheck="false" title="Proportions such as 1 2 1. Leave empty for equal rows." aria-describedby="err-columnRatios">
+        </label>
+      </div>
+      <p class="field__error" id="err-columnRatios" data-error-for="columnRatios rowRatios"></p>
+
+      <label class="check baseline-toggle" data-for="columns modular">
+        <input type="checkbox" name="addBaseline">
+        <span>Add a baseline grid</span>
+      </label>
+
+      <div class="pair" data-baseline-fields>
         <div class="field">
-          <label class="field__label" for="f-baselineSpacing">Spacing</label>
+          <span class="field__label-row">
+            <label class="field__label" for="f-baselineSpacing">Baseline</label>
+            <button type="button" class="link-button" id="leading-from-text" title="Use the leading of the selected text">From text</button>
+          </span>
           <span class="field__control">
             <input class="field__input" id="f-baselineSpacing" type="number" name="baselineSpacing" min="0" step="1" inputmode="decimal" aria-describedby="err-baselineSpacing">
             <span class="field__unit" data-unit></span>
@@ -147,8 +170,14 @@
           </span>
         </div>
       </div>
-      <p class="field__error" id="err-baselineSpacing" data-error-for="baselineSpacing" data-for="baseline"></p>
-      <p class="field__error" id="err-baselineOffset" data-error-for="baselineOffset" data-for="baseline"></p>
+      <p class="field__error" id="err-baselineSpacing" data-error-for="baselineSpacing" data-baseline-fields></p>
+      <p class="field__error" id="err-baselineOffset" data-error-for="baselineOffset" data-baseline-fields></p>
+
+      <p class="note blocks-note" data-for="columns modular">
+        <span id="blocks-summary">Drag across the drawing to mark content blocks.</span>
+        <button type="button" class="link-button" id="blocks-clear" hidden>Clear blocks</button>
+      </p>
+      <p class="field__error" id="err-blocks" data-error-for="blocks"></p>
 
       <div class="guides" data-for="composition" role="group" aria-label="Composition guides">
         <label class="check"><input type="checkbox" name="compThirds"><span>Rule of thirds</span></label>
@@ -336,9 +365,36 @@
       </div>
     </details>
 
+    <details class="group section" id="align-section">
+      <summary class="section__summary"><span class="group__title section__title">Align objects</span></summary>
+      <div class="section__body more">
+        <p class="note">Compares the selected objects with these grid settings on their <span data-noun>artboard</span>s.</p>
+        <div class="button-row">
+          <button type="button" class="button button--quiet" id="align-check">Check</button>
+          <button type="button" class="button button--quiet" id="align-select">Select off-grid</button>
+          <button type="button" class="button button--quiet" id="align-snap">Snap to grid</button>
+        </div>
+      </div>
+    </details>
+
     <details class="group section">
       <summary class="section__summary"><span class="group__title section__title">More</span></summary>
       <div class="section__body more">
+        <div class="resize">
+          <span class="field__label" id="resize-label">Resize <span data-noun>artboard</span></span>
+          <div class="resize__row">
+            <select class="field__input" id="format-select" aria-labelledby="resize-label"></select>
+            <button type="button" class="icon-button" id="format-rotate" aria-pressed="false" title="Swap width and height">
+              <svg class="icon"><use href="#i-rotate"/></svg>
+              <span class="visually-hidden">Swap width and height</span>
+            </button>
+            <button type="button" class="button button--quiet" id="format-apply">Resize</button>
+          </div>
+        </div>
+        <div class="button-row">
+          <button type="button" class="button button--quiet" id="presets-export">Export presets</button>
+          <button type="button" class="button button--quiet" id="presets-import">Import presets</button>
+        </div>
         <button type="button" class="button button--quiet" id="reset">Reset settings to defaults</button>
         <button type="button" class="button button--quiet" id="test-line">Draw test line</button>
         <p class="note">The test line checks that Mullion can draw in this document. Clear removes it.</p>
@@ -401,6 +457,7 @@
 <script src="vendor/CSInterface.js"></script>
 <script src="../shared/grid-core.js"></script>
 <script src="../shared/layouts.js"></script>
+<script src="../shared/formats.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
