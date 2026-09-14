@@ -1769,12 +1769,46 @@
         refreshGeometry();
     }
 
+    /*
+     * A panel left open keeps running the code it loaded, even after the
+     * extension's files change (an update, or a development build). Remember
+     * the files' modification times and offer a reload when they move on.
+     */
+    const PANEL_FILES = ["client/app.js", "client/index.html", "client/styles.css", "shared/grid-core.js", "shared/layouts.js", "shared/formats.js", "host/index.jsx"];
+    let loadedStamp = null;
+    let updateOffered = false;
+
+    function filesStamp() {
+        const cepFs = window.cep && window.cep.fs;
+        if (!cepFs || typeof cepFs.stat !== "function") {
+            return null;
+        }
+        const root = decodeURIComponent(window.location.pathname).replace(/client\/index\.html$/, "");
+        return PANEL_FILES.map((file) => {
+            const info = cepFs.stat(root + file);
+            return info && info.err === 0 && info.data.mtime ? String(info.data.mtime) : "";
+        }).join("|");
+    }
+
+    // Offers the reload once, and again each time the user comes back to the panel.
+    function checkForUpdate(force) {
+        if ((updateOffered && !force) || loadedStamp === null) {
+            return;
+        }
+        const stamp = filesStamp();
+        if (stamp !== null && stamp !== loadedStamp) {
+            updateOffered = true;
+            say("Mullion was updated.", "warning", { label: "Reload panel", run: () => window.location.reload() });
+        }
+    }
+
     async function refreshStatus(force) {
         const now = Date.now();
         if (!force && now - lastStatusAt < STATUS_THROTTLE_MS) {
             return;
         }
         lastStatusAt = now;
+        checkForUpdate(force);
         const result = await queue.enqueue("status", undefined, { coalesce: true });
         if (result.superseded) {
             return;
@@ -2801,6 +2835,7 @@
         renderFormats();
         applyNouns();
         syncLayerButtons();
+        loadedStamp = filesStamp();
         bindEvents();
         setMode(PANEL_MODES.indexOf(ui.panelMode) !== -1 ? ui.panelMode : "grid", { silent: true });
         refreshStatus(true);

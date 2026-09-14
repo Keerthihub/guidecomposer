@@ -55,6 +55,7 @@ First release candidate.
 - Live drawing of the grid with column width, module size, and shape count; collapsible.
 - Matches all four host UI brightness settings; keyboard accessible; works docked down to 240 px wide.
 - Draw test line diagnostic.
+- When the extension's files change while the panel is open, the panel says so and offers Reload panel, so it never runs stale code against newer host scripts.
 
 ### Hosts
 

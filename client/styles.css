@@ -1472,6 +1472,17 @@ input[type="number"]::-webkit-outer-spin-button {
   background: var(--danger);
 }
 
+.status[data-tone="warning"] {
+  background: rgba(230, 160, 20, 0.16);
+  color: var(--fg);
+}
+
+.status[data-tone="warning"]::before {
+  content: "!";
+  background: #d98e04;
+  color: #ffffff;
+}
+
 .status[data-tone="ok"] {
   background: rgba(40, 190, 120, 0.14);
   color: var(--fg);
