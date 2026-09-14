@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mullion</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<svg class="icon-sprite" aria-hidden="true" focusable="false">
+  <symbol id="i-eye" viewBox="0 0 16 16"><path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8Z"/><circle cx="8" cy="8" r="2"/></symbol>
+  <symbol id="i-eye-off" viewBox="0 0 16 16"><path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8Z"/><path d="M2.5 13.5l11-11"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 16 16"><rect x="3.5" y="7" width="9" height="6.5" rx="1"/><path d="M5.5 7V5.25a2.5 2.5 0 0 1 5 0V7"/></symbol>
+  <symbol id="i-unlock" viewBox="0 0 16 16"><rect x="3.5" y="7" width="9" height="6.5" rx="1"/><path d="M5.5 7V5.25a2.5 2.5 0 0 1 4.85-.85"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 16 16"><path d="M13 8a5 5 0 1 1-1.46-3.54"/><path d="M12.5 2v3h-3"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 16 16"><path d="M8 3.5v9M3.5 8h9"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 16 16"><path d="M3.5 8h9"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 16 16"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 8.5h5.6l.7-8.5"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 16 16"><path d="M4.5 9.5L8 6l3.5 3.5"/></symbol>
+  <symbol id="i-library" viewBox="0 0 16 16"><rect x="2.5" y="2.5" width="4.5" height="4.5" rx=".5"/><rect x="9" y="2.5" width="4.5" height="4.5" rx=".5"/><rect x="2.5" y="9" width="4.5" height="4.5" rx=".5"/><rect x="9" y="9" width="4.5" height="4.5" rx=".5"/></symbol>
+</svg>
+
+<div class="panel" id="panel">
+
+  <section class="stage" aria-label="Grid preview">
+    <div class="stage__canvas" id="stage-canvas">
+      <svg id="schematic" class="schematic" role="img" aria-labelledby="schematic-title" preserveAspectRatio="xMidYMid meet">
+        <title id="schematic-title">Grid on the active artboard</title>
+      </svg>
+    </div>
+    <div class="readout">
+      <p class="readout__row">
+        <span id="artboard-name" class="readout__name">No document</span>
+        <span id="artboard-size" class="readout__size"></span>
+      </p>
+      <p class="readout__row readout__row--metrics">
+        <span id="grid-metrics"></span>
+        <span id="grid-count" class="readout__count"></span>
+      </p>
+    </div>
+    <button type="button" class="icon-button stage__toggle" id="stage-toggle" aria-expanded="true" aria-controls="stage-canvas" title="Hide the drawing">
+      <svg class="icon"><use href="#i-chevron"/></svg>
+      <span class="visually-hidden">Show or hide the drawing</span>
+    </button>
+  </section>
+
+  <div class="controls" id="controls">
+    <div class="segmented segmented--tabs" role="radiogroup" aria-label="Grid type">
+      <label class="segmented__option"><input type="radio" name="type" value="columns" form="settings" checked><span>Columns</span></label>
+      <label class="segmented__option"><input type="radio" name="type" value="modular" form="settings"><span>Modular</span></label>
+      <label class="segmented__option"><input type="radio" name="type" value="baseline" form="settings"><span>Baseline</span></label>
+      <label class="segmented__option"><input type="radio" name="type" value="composition" form="settings"><span>Composition</span></label>
+      <label class="segmented__option"><input type="radio" name="type" value="pattern" form="settings"><span>Patterns</span></label>
+    </div>
+
+    <div class="target">
+      <label class="target__label" for="target-mode">Apply to</label>
+      <select class="field__input target__select" id="target-mode">
+        <option value="active">This artboard</option>
+        <option value="all">All artboards</option>
+        <option value="range">Chosen artboards</option>
+      </select>
+      <button type="button" class="icon-button" id="toggle-visible" title="Hide grids">
+        <svg class="icon"><use href="#i-eye"/></svg>
+        <span class="visually-hidden" data-label>Hide grids</span>
+      </button>
+      <button type="button" class="icon-button" id="toggle-lock" title="Lock grids">
+        <svg class="icon"><use href="#i-unlock"/></svg>
+        <span class="visually-hidden" data-label>Lock grids</span>
+      </button>
+      <button type="button" class="icon-button" id="refresh" title="Read the document again">
+        <svg class="icon"><use href="#i-refresh"/></svg>
+        <span class="visually-hidden">Read the document again</span>
+      </button>
+    </div>
+
+    <div class="target__range" id="target-range-row" hidden>
+      <label class="visually-hidden" for="target-range">Artboard numbers</label>
+      <input class="field__input" type="text" id="target-range" placeholder="1-3, 5" spellcheck="false" aria-describedby="err-range target-range-hint">
+      <span class="target__hint" id="target-range-hint"></span>
+    </div>
+    <p class="field__error" id="err-range" data-error-for="range"></p>
+    <label class="check target__add" title="Keep the grids already on these artboards, to combine grid types">
+      <input type="checkbox" id="add-mode">
+      <span>Add to existing grids</span>
+    </label>
+  </div>
+
+  <form id="settings" class="settings" novalidate autocomplete="off">
+
+    <fieldset class="group">
+      <legend class="group__title">Layout</legend>
+
+      <div class="pair" data-for="columns modular">
+        <div class="field">
+          <label class="field__label" for="f-columns">Columns</label>
+          <div class="stepper">
+            <button type="button" class="stepper__button" data-step="-1" data-field="columns" tabindex="-1" aria-label="Fewer columns"><svg class="icon"><use href="#i-minus"/></svg></button>
+            <input class="field__input stepper__input" id="f-columns" type="number" name="columns" min="1" max="100" step="1" inputmode="numeric" aria-describedby="err-columns">
+            <button type="button" class="stepper__button" data-step="1" data-field="columns" tabindex="-1" aria-label="More columns"><svg class="icon"><use href="#i-plus"/></svg></button>
+          </div>
+        </div>
+        <div class="field">
+          <label class="field__label" for="f-columnGutter">Gutter</label>
+          <span class="field__control">
+            <input class="field__input" id="f-columnGutter" type="number" name="columnGutter" min="0" step="1" inputmode="decimal" aria-describedby="err-columnGutter">
+            <span class="field__unit" data-unit></span>
+          </span>
+        </div>
+      </div>
+      <p class="field__error" id="err-columns" data-error-for="columns"></p>
+      <p class="field__error" id="err-columnGutter" data-error-for="columnGutter"></p>
+
+      <div class="pair" data-for="modular">
+        <div class="field">
+          <label class="field__label" for="f-rows">Rows</label>
+          <div class="stepper">
+            <button type="button" class="stepper__button" data-step="-1" data-field="rows" tabindex="-1" aria-label="Fewer rows"><svg class="icon"><use href="#i-minus"/></svg></button>
+            <input class="field__input stepper__input" id="f-rows" type="number" name="rows" min="1" max="100" step="1" inputmode="numeric" aria-describedby="err-rows">
+            <button type="button" class="stepper__button" data-step="1" data-field="rows" tabindex="-1" aria-label="More rows"><svg class="icon"><use href="#i-plus"/></svg></button>
+          </div>
+        </div>
+        <div class="field">
+          <label class="field__label" for="f-rowGutter">Gutter</label>
+          <span class="field__control">
+            <input class="field__input" id="f-rowGutter" type="number" name="rowGutter" min="0" step="1" inputmode="decimal" aria-describedby="err-rowGutter">
+            <span class="field__unit" data-unit></span>
+          </span>
+        </div>
+      </div>
+      <p class="field__error" id="err-rows" data-error-for="rows" data-for="modular"></p>
+      <p class="field__error" id="err-rowGutter" data-error-for="rowGutter" data-for="modular"></p>
+
+      <div class="pair" data-for="baseline">
+        <div class="field">
+          <label class="field__label" for="f-baselineSpacing">Spacing</label>
+          <span class="field__control">
+            <input class="field__input" id="f-baselineSpacing" type="number" name="baselineSpacing" min="0" step="1" inputmode="decimal" aria-describedby="err-baselineSpacing">
+            <span class="field__unit" data-unit></span>
+          </span>
+        </div>
+        <div class="field">
+          <label class="field__label" for="f-baselineOffset">Offset</label>
+          <span class="field__control">
+            <input class="field__input" id="f-baselineOffset" type="number" name="baselineOffset" min="0" step="1" inputmode="decimal" aria-describedby="err-baselineOffset">
+            <span class="field__unit" data-unit></span>
+          </span>
+        </div>
+      </div>
+      <p class="field__error" id="err-baselineSpacing" data-error-for="baselineSpacing" data-for="baseline"></p>
+      <p class="field__error" id="err-baselineOffset" data-error-for="baselineOffset" data-for="baseline"></p>
+
+      <div class="guides" data-for="composition" role="group" aria-label="Composition guides">
+        <label class="check"><input type="checkbox" name="compThirds"><span>Rule of thirds</span></label>
+        <label class="check"><input type="checkbox" name="compGolden"><span>Golden sections</span></label>
+        <label class="check"><input type="checkbox" name="compDiagonals"><span>Diagonals</span></label>
+        <label class="check"><input type="checkbox" name="compCenter"><span>Center lines</span></label>
+        <label class="check"><input type="checkbox" name="compSpiral"><span>Golden spiral</span></label>
+        <label class="field guides__focus" data-for-spiral>
+          <span class="visually-hidden">Spiral focus</span>
+          <select class="field__input" name="spiralFocus" title="Where the spiral converges">
+            <option value="top-left">Focus top left</option>
+            <option value="top-right">Focus top right</option>
+            <option value="bottom-left">Focus bottom left</option>
+            <option value="bottom-right">Focus bottom right</option>
+          </select>
+        </label>
+      </div>
+      <p class="field__error" id="err-composition" data-error-for="composition spiralFocus" data-for="composition"></p>
+
+      <div class="pair" data-for="pattern">
+        <label class="field">
+          <span class="field__label">Pattern</span>
+          <select class="field__input" name="pattern">
+            <option value="square">Square</option>
+            <option value="dots">Dots</option>
+            <option value="isometric">Isometric</option>
+            <option value="hexagon">Hexagons</option>
+            <option value="diagonal">Diagonal</option>
+            <option value="radial">Radial</option>
+          </select>
+        </label>
+        <div class="field" data-for-pattern="square dots isometric hexagon diagonal">
+          <label class="field__label" for="f-patternSize" id="pattern-size-label">Size</label>
+          <span class="field__control">
+            <input class="field__input" id="f-patternSize" type="number" name="patternSize" min="0" step="1" inputmode="decimal" aria-describedby="err-pattern">
+            <span class="field__unit" data-unit></span>
+          </span>
+        </div>
+        <div class="field" data-for-pattern="radial">
+          <label class="field__label" for="f-rings">Rings</label>
+          <div class="stepper">
+            <button type="button" class="stepper__button" data-step="-1" data-field="rings" tabindex="-1" aria-label="Fewer rings"><svg class="icon"><use href="#i-minus"/></svg></button>
+            <input class="field__input stepper__input" id="f-rings" type="number" name="rings" min="1" max="50" step="1" inputmode="numeric" aria-describedby="err-pattern">
+            <button type="button" class="stepper__button" data-step="1" data-field="rings" tabindex="-1" aria-label="More rings"><svg class="icon"><use href="#i-plus"/></svg></button>
+          </div>
+        </div>
+      </div>
+      <div class="pair" data-for="pattern" data-for-pattern="dots radial">
+        <div class="field" data-for-pattern="dots">
+          <label class="field__label" for="f-dotSize">Dot size</label>
+          <span class="field__control">
+            <input class="field__input" id="f-dotSize" type="number" name="dotSize" min="0.25" max="50" step="0.5" inputmode="decimal" aria-describedby="err-pattern">
+            <span class="field__unit">pt</span>
+          </span>
+        </div>
+        <div class="field" data-for-pattern="radial">
+          <label class="field__label" for="f-spokes">Spokes</label>
+          <div class="stepper">
+            <button type="button" class="stepper__button" data-step="-1" data-field="spokes" tabindex="-1" aria-label="Fewer spokes"><svg class="icon"><use href="#i-minus"/></svg></button>
+            <input class="field__input stepper__input" id="f-spokes" type="number" name="spokes" min="0" max="72" step="1" inputmode="numeric" aria-describedby="err-pattern">
+            <button type="button" class="stepper__button" data-step="1" data-field="spokes" tabindex="-1" aria-label="More spokes"><svg class="icon"><use href="#i-plus"/></svg></button>
+          </div>
+        </div>
+      </div>
+      <p class="field__error" id="err-pattern" data-error-for="pattern patternSize dotSize rings spokes" data-for="pattern"></p>
+
+      <div class="pair">
+        <label class="field">
+          <span class="field__label">Units</span>
+          <select class="field__input" name="units">
+            <option value="pt">Points</option>
+            <option value="px">Pixels</option>
+            <option value="mm">Millimeters</option>
+            <option value="in">Inches</option>
+          </select>
+        </label>
+        <label class="check check--inline" data-for="columns modular baseline">
+          <input type="checkbox" name="extendToEdges">
+          <span>Extend to edges</span>
+        </label>
+      </div>
+    </fieldset>
+
+    <fieldset class="group">
+      <legend class="group__title">Margins <span class="group__unit" data-unit></span></legend>
+      <div class="margins">
+        <label class="margins__cell margins__cell--top">
+          <span class="visually-hidden">Top margin</span>
+          <input class="field__input" type="number" name="marginTop" title="Top margin" min="0" step="1" inputmode="decimal" aria-describedby="err-margins">
+        </label>
+        <label class="margins__cell margins__cell--left">
+          <span class="visually-hidden">Left margin</span>
+          <input class="field__input" type="number" name="marginLeft" title="Left margin" min="0" step="1" inputmode="decimal" aria-describedby="err-margins">
+        </label>
+        <button type="button" class="margins__link" id="margin-link" aria-pressed="true" title="Use the same margin on all sides">
+          <svg class="margins__glyph" viewBox="0 0 28 22" aria-hidden="true">
+            <rect class="margins__glyph-page" x="0.5" y="0.5" width="27" height="21" rx="1"/>
+            <rect class="margins__glyph-content" x="7.5" y="5.5" width="13" height="11"/>
+            <path class="margins__glyph-ties" d="M14 1v4M14 17v4M1 11h6M21 11h6"/>
+          </svg>
+          <span class="visually-hidden">Same margin on all sides</span>
+        </button>
+        <label class="margins__cell margins__cell--right">
+          <span class="visually-hidden">Right margin</span>
+          <input class="field__input" type="number" name="marginRight" title="Right margin" min="0" step="1" inputmode="decimal" aria-describedby="err-margins">
+        </label>
+        <label class="margins__cell margins__cell--bottom">
+          <span class="visually-hidden">Bottom margin</span>
+          <input class="field__input" type="number" name="marginBottom" title="Bottom margin" min="0" step="1" inputmode="decimal" aria-describedby="err-margins">
+        </label>
+      </div>
+      <p class="field__error" id="err-margins" data-error-for="marginTop marginRight marginBottom marginLeft"></p>
+    </fieldset>
+
+    <details class="group section" id="appearance" open>
+      <summary class="section__summary">
+        <span class="group__title section__title">Appearance</span>
+        <span class="section__meta" id="appearance-summary"></span>
+      </summary>
+      <div class="section__body">
+        <div class="segmented segmented--three" role="radiogroup" aria-label="Output">
+          <label class="segmented__option"><input type="radio" name="output" value="lines" checked><span>Lines</span></label>
+          <label class="segmented__option" data-hide-for-pattern="dots"><input type="radio" name="output" value="guides"><span>Guides</span></label>
+          <label class="segmented__option" data-for="columns modular"><input type="radio" name="output" value="boxes"><span>Boxes</span></label>
+        </div>
+
+        <div class="stroke" data-hide-for-output="guides">
+          <label class="field field--color">
+            <span class="field__label">Color</span>
+            <span class="field__control">
+              <input class="swatch" type="color" id="stroke-swatch" data-swatch-for="strokeColor" aria-label="Pick stroke color">
+              <input class="field__input" type="text" name="strokeColor" maxlength="7" spellcheck="false" aria-describedby="err-strokeColor">
+            </span>
+          </label>
+          <label class="field" data-hide-for-pattern="dots">
+            <span class="field__label">Width</span>
+            <span class="field__control">
+              <input class="field__input" type="number" name="strokeWidth" min="0.1" max="100" step="0.25" inputmode="decimal" aria-describedby="err-strokeWidth">
+              <span class="field__unit">pt</span>
+            </span>
+          </label>
+          <label class="field">
+            <span class="field__label">Opacity</span>
+            <span class="field__control">
+              <input class="field__input" type="number" name="opacity" min="0" max="100" step="5" inputmode="decimal" aria-describedby="err-opacity">
+              <span class="field__unit">%</span>
+            </span>
+          </label>
+        </div>
+        <div class="line-style" data-hide-for-output="guides" data-hide-for-pattern="dots">
+          <span class="field__label" id="line-style-label">Line style</span>
+          <div class="segmented segmented--three" role="radiogroup" aria-labelledby="line-style-label">
+            <label class="segmented__option"><input type="radio" name="lineStyle" value="solid" checked><span>Solid</span></label>
+            <label class="segmented__option"><input type="radio" name="lineStyle" value="dashed"><span>Dashed</span></label>
+            <label class="segmented__option"><input type="radio" name="lineStyle" value="dotted"><span>Dotted</span></label>
+          </div>
+        </div>
+
+        <div class="accent" data-hide-for-output="guides" data-hide-for-pattern="dots">
+          <label class="check"><input type="checkbox" name="marginColorOn"><span>Margin color</span></label>
+          <span class="field__control accent__controls" data-when="marginColorOn">
+            <input class="swatch" type="color" data-swatch-for="marginColor" aria-label="Pick margin color">
+            <input class="field__input accent__hex" type="text" name="marginColor" maxlength="7" spellcheck="false" aria-label="Margin color" aria-describedby="err-marginColor">
+          </span>
+        </div>
+        <div class="accent" data-for="columns modular" data-hide-for-output="guides">
+          <label class="check"><input type="checkbox" name="shadeGutters"><span>Shade gutters</span></label>
+          <span class="field__control accent__controls" data-when="shadeGutters">
+            <input class="swatch" type="color" data-swatch-for="gutterColor" aria-label="Pick gutter color">
+            <input class="field__input accent__hex" type="text" name="gutterColor" maxlength="7" spellcheck="false" aria-label="Gutter color" aria-describedby="err-gutterColor">
+            <span class="field__control accent__opacity">
+              <input class="field__input" type="number" name="gutterOpacity" min="0" max="100" step="5" inputmode="decimal" aria-label="Gutter opacity" aria-describedby="err-gutterColor">
+              <span class="field__unit">%</span>
+            </span>
+          </span>
+        </div>
+        <p class="field__error" id="err-marginColor" data-error-for="marginColor lineStyle"></p>
+        <p class="field__error" id="err-gutterColor" data-error-for="gutterColor gutterOpacity"></p>
+        <p class="field__error" id="err-output" data-error-for="output"></p>
+        <p class="field__error" id="err-strokeColor" data-error-for="strokeColor" data-hide-for-output="guides"></p>
+        <p class="field__error" id="err-strokeWidth" data-error-for="strokeWidth" data-hide-for-output="guides"></p>
+        <p class="field__error" id="err-opacity" data-error-for="opacity" data-hide-for-output="guides"></p>
+        <p class="note" data-for-output="guides">Guides use the guide color set in Illustrator's preferences.</p>
+        <input type="checkbox" name="lockLayer" hidden>
+      </div>
+    </details>
+
+    <details class="group section">
+      <summary class="section__summary"><span class="group__title section__title">More</span></summary>
+      <div class="section__body more">
+        <button type="button" class="button button--quiet" id="reset">Reset settings to defaults</button>
+        <button type="button" class="button button--quiet" id="test-line">Draw test line</button>
+        <p class="note">The test line checks that Mullion can draw in this document. Clear removes it.</p>
+      </div>
+    </details>
+  </form>
+
+  <section class="library" id="library" aria-labelledby="library-title" hidden>
+    <div class="library__head">
+      <h2 class="library__title" id="library-title">Layouts</h2>
+      <label class="visually-hidden" for="library-search">Search layouts</label>
+      <input class="field__input library__search" id="library-search" type="search" placeholder="Search" spellcheck="false" autocomplete="off">
+      <button type="button" class="button button--quiet" id="library-close">Done</button>
+    </div>
+    <div class="library__chips" id="library-chips" role="radiogroup" aria-label="Layout categories"></div>
+    <p class="library__hint" id="library-hint" aria-live="polite"></p>
+    <ul class="library__grid" id="library-grid"></ul>
+  </section>
+
+  <footer class="actions">
+    <div class="actions__row">
+      <label class="switch">
+        <input type="checkbox" id="preview-toggle" role="switch">
+        <span class="switch__track" aria-hidden="true"></span>
+        <span>Preview</span>
+      </label>
+      <div class="actions__buttons">
+        <button type="button" class="button" id="clear">Clear</button>
+        <button type="button" class="button button--primary" id="generate">Generate</button>
+      </div>
+    </div>
+
+    <div class="presets" id="presets">
+      <button type="button" class="button button--quiet presets__library" id="library-open" aria-controls="library" aria-expanded="false">
+        <svg class="icon"><use href="#i-library"/></svg>
+        <span>Layouts</span>
+      </button>
+      <label class="visually-hidden" for="preset-select">Your presets</label>
+      <select class="field__input presets__select" id="preset-select" title="Your saved presets"></select>
+      <button type="button" class="icon-button" id="preset-new" title="Save settings as a preset">
+        <svg class="icon"><use href="#i-plus"/></svg>
+        <span class="visually-hidden">Save settings as a preset</span>
+      </button>
+      <button type="button" class="icon-button" id="preset-delete" title="Delete this preset">
+        <svg class="icon"><use href="#i-trash"/></svg>
+        <span class="visually-hidden">Delete this preset</span>
+      </button>
+    </div>
+    <div class="presets" id="preset-save-row" hidden>
+      <label class="visually-hidden" for="preset-name">Preset name</label>
+      <input class="field__input presets__select" type="text" id="preset-name" maxlength="40" placeholder="Preset name">
+      <button type="button" class="button button--quiet" id="preset-save">Save</button>
+      <button type="button" class="button button--quiet" id="preset-cancel">Cancel</button>
+    </div>
+
+    <p class="status" id="status" role="status" aria-live="polite"></p>
+  </footer>
+</div>
+
+<script src="vendor/CSInterface.js"></script>
+<script src="../shared/grid-core.js"></script>
+<script src="../shared/layouts.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

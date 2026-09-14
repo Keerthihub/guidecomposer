@@ -1,0 +1,109 @@
+# Packaging, signing, and releasing Mullion
+
+CEP extensions ship as signed `.zxp` files. Don't package Mullion as `.ccx`; that is the UXP format, and Illustrator doesn't run UXP plugins.
+
+## 1. One-time setup
+
+**Get ZXPSignCmd.** Download the latest ZXPSignCmd for your OS from Adobe's [CEP-Resources repository](https://github.com/Adobe-CEP/CEP-Resources) (`ZXPSignCMD` folder). On macOS, allow it to run with `chmod +x ZXPSignCmd` (and approve it in System Settings > Privacy & Security if macOS blocks it).
+
+**Create a certificate.** Adobe accepts self-signed certificates for ZXP packages. Store the certificate **outside this repository** and the password in a password manager.
+
+```sh
+ZXPSignCmd -selfSignedCert US CA "Your Company" "Your Name" "<password>" ~/Certificates/mullion.p12 -validityDays 3650
+```
+
+Use the same certificate for every release. Updates signed with a different certificate may fail to install over the previous version.
+
+Passing a password as a command argument can expose it to other processes on the machine. Create certificates on a machine you control.
+
+## 2. Prepare the release
+
+1. Update the version in **all four** places (the build refuses to run if they differ):
+   - `package.json` → `version`
+   - `CSXS/manifest.xml` → `ExtensionBundleVersion` and the `<Extension ... Version>` in `ExtensionList`
+   - `host/index.jsx` → `M.VERSION`
+   - `CHANGELOG.md` → a new top entry `## [x.y.z] - YYYY-MM-DD`
+2. Narrow `<Host Name="ILST" Version="[26.0,99.9]"/>` in the manifest to the versions you have actually tested, if appropriate.
+3. Run the automated checks:
+
+   ```sh
+   npm run check
+   npm run test:ui
+   ```
+
+4. Complete the manual QA checklist in `README.md` on macOS and Windows.
+
+## 3. Build and sign
+
+`npm run build` runs the checks, then copies only `CSXS/`, `client/`, `host/`, `shared/`, and `icons/` to `dist/mullion/`. It then verifies the output contains no `.debug`, tests, scripts, `node_modules`, certificates, or source maps.
+
+**macOS / Linux**
+
+```sh
+export ZXPSIGNCMD=~/Tools/ZXPSignCmd
+export MULLION_CERT=~/Certificates/mullion.p12
+npm run sign:mac          # prompts for the password; writes dist/mullion-<version>.zxp
+```
+
+**Windows** (PowerShell)
+
+```powershell
+npm run build
+$version = node -p "require('./package.json').version"
+$password = Read-Host "Certificate password" -AsSecureString
+$plain = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($password))
+& C:\Tools\ZXPSignCmd.exe -sign dist\mullion "dist\mullion-$version.zxp" C:\Certificates\mullion.p12 $plain -tsa http://timestamp.digicert.com
+& C:\Tools\ZXPSignCmd.exe -verify "dist\mullion-$version.zxp" -certinfo
+```
+
+The timestamp (`-tsa`) keeps the signature valid after the certificate expires. If the timestamp server is unreachable, try another RFC 3161 server rather than signing without one.
+
+## 4. Test the signed package
+
+Test on **clean user accounts** (or virtual machines) on macOS and Windows, with debug mode **off** so the signature is what's being tested.
+
+1. Remove the development link: `scripts/install-dev-mac.sh --uninstall` or `install-dev-windows.ps1 -Uninstall`.
+2. Turn off `PlayerDebugMode` (see the install scripts' header comments).
+3. Install the `.zxp` with Adobe's Unified Plugin Installer Agent, which ships with Creative Cloud:
+
+   ```sh
+   # macOS
+   "/Library/Application Support/Adobe/Adobe Desktop Common/RemoteComponents/UPI/UnifiedPluginInstallerAgent/UnifiedPluginInstallerAgent.app/Contents/MacOS/UnifiedPluginInstallerAgent" --install /path/to/mullion-0.1.0.zxp
+   ```
+
+   ```powershell
+   # Windows
+   & "C:\Program Files\Common Files\Adobe\Adobe Desktop Common\RemoteComponents\UPI\UnifiedPluginInstallerAgent\UnifiedPluginInstallerAgent.exe" /install C:\path\to\mullion-0.1.0.zxp
+   ```
+
+   List installed extensions with `--list all` (macOS) or `/list all` (Windows). Remove one with `--remove` / `/remove` followed by the name exactly as the list shows it.
+
+4. Verify: install, launch, Draw test line, generate each grid type, Clear, restart Illustrator, **update** (install the next version over this one), and **uninstall**.
+
+Don't promise customers that a `.zxp` installs by double-clicking. Document the installer command above, or a ZXP installer app you have tested, for both operating systems.
+
+## 5. Distribute
+
+**Direct sale (for example Gumroad)**. Ship a zip like:
+
+```text
+mullion-0.1.0.zip
+├── mullion-0.1.0.zxp
+├── Installation.pdf         tested steps for macOS and Windows
+├── License.txt
+└── Quick-start-video-link.txt
+```
+
+**Adobe Creative Cloud Marketplace**. Through [Adobe Developer Distribution](https://developer.adobe.com/developer-distribution/): complete the publisher profile, create a listing, and upload the signed `.zxp`. Add the description, icons, screenshots, support email, help URL, privacy policy (`PRIVACY.md`), and terms (`TERMS.md`). Declare supported Illustrator and OS versions, then submit for review. Paid listings require Adobe's commerce setup. Marketplace listings need larger icon artwork than the 23 × 23 panel icons in `icons/`.
+
+If you sell through both channels, keep separate release records and document how each channel delivers updates.
+
+## Release checklist
+
+- [ ] Versions updated in package.json, manifest (2 places), host/index.jsx, CHANGELOG.md
+- [ ] `npm run check` and `npm run test:ui` pass
+- [ ] Manual QA checklist complete on macOS and Windows
+- [ ] `npm run build` succeeds; `dist/mullion/` contains no development files
+- [ ] Signed with the release certificate and a timestamp; `-verify` passes
+- [ ] Signed package tested with debug mode off: install, launch, generate, clear, update, uninstall
+- [ ] Release notes written; package archived with its version number

@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Build output and signed packages
+dist/
+*.zxp
+*.zip
+
+# Signing material: never commit certificates or passwords
+*.p12
+*.pfx
+*.cer
+*.crt
+*.key
+*.pem
+cert/
+certs/
+.cert-password
+*.password
+.env
+.env.*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

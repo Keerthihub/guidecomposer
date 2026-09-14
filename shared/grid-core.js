@@ -1,0 +1,1180 @@
+/*
+ * Mullion grid core: pure geometry and validation.
+ *
+ * ES3-compatible so the same file runs in Illustrator's ExtendScript engine,
+ * in the CEP panel, and under Node for tests. No DOM, no Illustrator objects,
+ * no JSON, no ES5 array helpers.
+ *
+ * Coordinates follow Illustrator's scripting model: an artboard rectangle is
+ * [left, top, right, bottom] in points, and Y grows upward, so top > bottom.
+ * Moving down the page means subtracting from Y.
+ *
+ * A built grid is made of these shape lists:
+ *   segments: straight lines    { kind, x1, y1, x2, y2 }
+ *   boxes:    rectangles        { kind, left, top, right, bottom }
+ *   polygons: closed polygons   { kind, points: [[x, y], ...] }
+ *   curves:   Bezier paths      { kind, closed, points: [{ anchor, left, right }] }
+ *             where left/right are the incoming/outgoing handles, as [x, y]
+ *   dots:     filled circles    { kind, x, y, d }
+ *
+ * Kinds decide styling: "margin" shapes can take the margin color, "gutter"
+ * boxes are filled, everything else uses the stroke color.
+ */
+(function (root, factory) {
+    var core = factory();
+    if (typeof module === "object" && module && module.exports) {
+        module.exports = core;
+    } else {
+        root.MullionCore = core;
+    }
+}((typeof $ !== "undefined" && $ && $.global) ? $.global : this, function () {
+    var EPSILON = 1e-6;
+    var PRECISION = 10000; // Output coordinates are rounded to 1/10000 pt.
+    var PHI = (1 + Math.sqrt(5)) / 2;
+    var KAPPA = 0.5522847498307936; // Bezier handle length for a quarter circle of radius 1.
+    var SQRT3 = Math.sqrt(3);
+
+    var POINTS_PER_UNIT = {
+        pt: 1,
+        px: 1, // Illustrator maps 1 px to 1 pt (72 ppi).
+        mm: 72 / 25.4,
+        "in": 72
+    };
+
+    var UNIT_LABELS = { pt: "pt", px: "px", mm: "mm", "in": "in" };
+
+    var GRID_TYPES = { columns: true, modular: true, baseline: true, composition: true, pattern: true };
+    var OUTPUTS = { lines: true, guides: true, boxes: true };
+    var SPIRAL_FOCI = { "top-left": true, "top-right": true, "bottom-left": true, "bottom-right": true };
+    var PATTERNS = { square: true, dots: true, isometric: true, hexagon: true, radial: true, diagonal: true };
+    var LINE_STYLES = { solid: true, dashed: true, dotted: true };
+    var COMPOSITION_FLAGS = ["compThirds", "compGolden", "compDiagonals", "compCenter", "compSpiral"];
+
+    // Whole-number fields: [minimum, maximum].
+    var COUNT_LIMITS = {
+        columns: [1, 100],
+        rows: [1, 100],
+        rings: [1, 50],
+        spokes: [0, 72]
+    };
+
+    var LIMITS = {
+        maxColumns: 100,
+        maxRows: 100,
+        maxBaselines: 1000,
+        maxShapes: 5000,       // per artboard
+        maxTotalShapes: 10000, // per request, across artboards (enforced by the host)
+        maxStrokeWidth: 100,
+        maxDotSize: 50,
+        spiralSquares: 10
+    };
+
+    var DEFAULTS = {
+        type: "columns",
+        units: "pt",
+        columns: 12,
+        rows: 8,
+        columnGutter: 12,
+        rowGutter: 12,
+        marginTop: 36,
+        marginRight: 36,
+        marginBottom: 36,
+        marginLeft: 36,
+        baselineSpacing: 12,
+        baselineOffset: 0,
+        compThirds: true,
+        compGolden: false,
+        compDiagonals: false,
+        compCenter: false,
+        compSpiral: false,
+        spiralFocus: "bottom-right",
+        pattern: "square",
+        patternSize: 24,
+        dotSize: 2,
+        rings: 6,
+        spokes: 12,
+        extendToEdges: false,
+        output: "lines",
+        strokeColor: "#E0457B",
+        strokeWidth: 0.5,
+        opacity: 100,
+        lineStyle: "solid",
+        marginColorOn: false,
+        marginColor: "#1C9B8E",
+        shadeGutters: false,
+        gutterColor: "#E0457B",
+        gutterOpacity: 15,
+        lockLayer: true
+    };
+
+    var FIELD_NAMES = {
+        columns: "Columns",
+        rows: "Rows",
+        columnGutter: "Column gutter",
+        rowGutter: "Row gutter",
+        marginTop: "Top margin",
+        marginRight: "Right margin",
+        marginBottom: "Bottom margin",
+        marginLeft: "Left margin",
+        baselineSpacing: "Baseline spacing",
+        baselineOffset: "Baseline offset",
+        composition: "Composition guides",
+        spiralFocus: "Spiral focus",
+        pattern: "Pattern",
+        patternSize: "Size",
+        dotSize: "Dot size",
+        rings: "Rings",
+        spokes: "Spokes",
+        strokeWidth: "Stroke width",
+        opacity: "Opacity",
+        strokeColor: "Stroke color",
+        lineStyle: "Line style",
+        marginColor: "Margin color",
+        gutterColor: "Gutter color",
+        gutterOpacity: "Gutter opacity",
+        units: "Units",
+        type: "Grid type",
+        output: "Output",
+        range: "Artboards"
+    };
+
+    // ----------------------------------------------------------------- numbers
+
+    function round(value) {
+        var r = Math.round(value * PRECISION) / PRECISION;
+        return r === 0 ? 0 : r; // Avoid -0 in output.
+    }
+
+    function isFiniteNumber(value) {
+        return typeof value === "number" && !isNaN(value) && isFinite(value);
+    }
+
+    function stripSpace(text) {
+        return String(text).replace(/^\s+|\s+$/g, "");
+    }
+
+    // Accepts numbers and numeric strings. Returns NaN for anything else,
+    // including empty strings and trailing garbage such as "12pt".
+    function parseNumber(value) {
+        if (typeof value === "number") {
+            return value;
+        }
+        if (typeof value !== "string") {
+            return NaN;
+        }
+        var text = stripSpace(value);
+        if (!/^[+\-]?(\d+\.?\d*|\.\d+)([eE][+\-]?\d+)?$/.test(text)) {
+            return NaN;
+        }
+        return Number(text);
+    }
+
+    function hasOwn(obj, key) {
+        return Object.prototype.hasOwnProperty.call(obj, key);
+    }
+
+    function plural(count, one, many) {
+        return count + " " + (count === 1 ? one : many);
+    }
+
+    function isHexColor(value) {
+        return typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value);
+    }
+
+    // ------------------------------------------------------------------- units
+
+    function isUnit(unit) {
+        return typeof unit === "string" && hasOwn(POINTS_PER_UNIT, unit);
+    }
+
+    function toPoints(value, unit) {
+        if (!isUnit(unit)) {
+            throw new Error("Unknown unit: " + unit);
+        }
+        return value * POINTS_PER_UNIT[unit];
+    }
+
+    function fromPoints(points, unit) {
+        if (!isUnit(unit)) {
+            throw new Error("Unknown unit: " + unit);
+        }
+        return points / POINTS_PER_UNIT[unit];
+    }
+
+    // Formats a point measurement in the user's unit with at most 2 decimals.
+    function formatMeasure(points, unit) {
+        var value = Math.round(fromPoints(points, unit) * 100) / 100;
+        if (value === 0) {
+            value = 0;
+        }
+        return String(value) + " " + UNIT_LABELS[unit];
+    }
+
+    // -------------------------------------------------------------- validation
+
+    function relevantFields(type, pattern) {
+        var fields = ["marginTop", "marginRight", "marginBottom", "marginLeft"];
+        if (type === "columns") {
+            fields.push("columns", "columnGutter");
+        } else if (type === "modular") {
+            fields.push("columns", "rows", "columnGutter", "rowGutter");
+        } else if (type === "baseline") {
+            fields.push("baselineSpacing", "baselineOffset");
+        } else if (type === "pattern") {
+            if (pattern === "radial") {
+                fields.push("rings", "spokes");
+            } else {
+                fields.push("patternSize");
+            }
+        }
+        return fields;
+    }
+
+    function isProvided(raw, key) {
+        return !!raw && hasOwn(raw, key) && raw[key] !== undefined && raw[key] !== null;
+    }
+
+    function pick(raw, key) {
+        return isProvided(raw, key) ? raw[key] : DEFAULTS[key];
+    }
+
+    /*
+     * Validates raw panel settings and converts every length to points.
+     * Only the fields used by the chosen grid type are validated.
+     * Returns { ok, errors: [{ field, message }], settings }.
+     */
+    function normalizeSettings(raw) {
+        var errors = [];
+        var s = {};
+        var i;
+
+        function addError(field, message) {
+            errors.push({ field: field, message: message });
+        }
+
+        function readColor(key) {
+            var color = pick(raw, key);
+            if (!isHexColor(color)) {
+                addError(key, FIELD_NAMES[key] + " must be a hex color such as #E0457B.");
+                return DEFAULTS[key];
+            }
+            return color.toUpperCase();
+        }
+
+        s.type = pick(raw, "type");
+        if (typeof s.type !== "string" || !hasOwn(GRID_TYPES, s.type)) {
+            addError("type", "Choose a grid type: columns, modular, baseline, composition, or pattern.");
+            s.type = DEFAULTS.type;
+        }
+
+        s.units = pick(raw, "units");
+        if (!isUnit(s.units)) {
+            addError("units", "Choose a unit: pt, px, mm, or in.");
+            s.units = DEFAULTS.units;
+        }
+
+        if (s.type === "pattern") {
+            s.pattern = pick(raw, "pattern");
+            if (typeof s.pattern !== "string" || !hasOwn(PATTERNS, s.pattern)) {
+                addError("pattern", "Choose a pattern: square, dots, isometric, hexagon, radial, or diagonal.");
+                s.pattern = DEFAULTS.pattern;
+            }
+        }
+
+        var fields = relevantFields(s.type, s.pattern);
+        for (i = 0; i < fields.length; i++) {
+            var key = fields[i];
+            var label = FIELD_NAMES[key];
+            var value = parseNumber(pick(raw, key));
+            var isCount = hasOwn(COUNT_LIMITS, key);
+            if (!isProvided(raw, key) && !isCount) {
+                // Length defaults are stored in points; express them in the chosen unit.
+                value = fromPoints(DEFAULTS[key], s.units);
+            }
+
+            if (isCount) {
+                var min = COUNT_LIMITS[key][0];
+                var max = COUNT_LIMITS[key][1];
+                if (!isFiniteNumber(value) || Math.floor(value) !== value || value < min || value > max) {
+                    addError(key, label + " must be a whole number from " + min + " to " + max + ".");
+                    continue;
+                }
+                s[key] = value;
+            } else if (key === "baselineSpacing" || key === "patternSize") {
+                if (!isFiniteNumber(value) || value <= 0) {
+                    addError(key, label + " must be greater than 0.");
+                    continue;
+                }
+                s[key] = toPoints(value, s.units);
+            } else {
+                if (!isFiniteNumber(value) || value < 0) {
+                    addError(key, label + " must be a number of 0 or more.");
+                    continue;
+                }
+                s[key] = toPoints(value, s.units);
+            }
+        }
+
+        if (s.type === "composition") {
+            var any = false;
+            for (i = 0; i < COMPOSITION_FLAGS.length; i++) {
+                s[COMPOSITION_FLAGS[i]] = pick(raw, COMPOSITION_FLAGS[i]) === true;
+                any = any || s[COMPOSITION_FLAGS[i]];
+            }
+            if (!any) {
+                addError("composition", "Choose at least one composition guide.");
+            }
+            if (s.compSpiral) {
+                s.spiralFocus = pick(raw, "spiralFocus");
+                if (typeof s.spiralFocus !== "string" || !hasOwn(SPIRAL_FOCI, s.spiralFocus)) {
+                    addError("spiralFocus", "Choose where the spiral should focus: top left, top right, bottom left, or bottom right.");
+                    s.spiralFocus = DEFAULTS.spiralFocus;
+                }
+            }
+        }
+
+        s.extendToEdges = pick(raw, "extendToEdges") === true;
+        s.lockLayer = pick(raw, "lockLayer") === true;
+
+        s.output = pick(raw, "output");
+        if (typeof s.output !== "string" || !hasOwn(OUTPUTS, s.output)) {
+            addError("output", "Choose an output: lines, guides, or boxes.");
+            s.output = DEFAULTS.output;
+        } else if (s.output === "boxes" && s.type !== "columns" && s.type !== "modular") {
+            addError("output", "Boxes work with column and modular grids. Choose lines or guides.");
+        } else if (s.output === "guides" && s.type === "pattern" && s.pattern === "dots") {
+            addError("output", "Dot grids draw filled dots, which can't be guides. Choose lines.");
+        }
+
+        if (s.type === "pattern" && s.pattern === "dots") {
+            var dot = parseNumber(pick(raw, "dotSize"));
+            if (!isFiniteNumber(dot) || dot <= 0 || dot > LIMITS.maxDotSize) {
+                addError("dotSize", "Dot size must be more than 0 and at most " + LIMITS.maxDotSize + " pt.");
+            } else {
+                s.dotSize = dot; // Always points, like stroke width.
+            }
+        }
+
+        if (s.output !== "guides") {
+            s.strokeColor = readColor("strokeColor");
+
+            // Stroke width is always in points, whatever the layout unit.
+            var width = parseNumber(pick(raw, "strokeWidth"));
+            if (!isFiniteNumber(width) || width <= 0 || width > LIMITS.maxStrokeWidth) {
+                addError("strokeWidth", "Stroke width must be more than 0 and at most " + LIMITS.maxStrokeWidth + " pt.");
+            } else {
+                s.strokeWidth = width;
+            }
+
+            var opacity = parseNumber(pick(raw, "opacity"));
+            if (!isFiniteNumber(opacity) || opacity < 0 || opacity > 100) {
+                addError("opacity", "Opacity must be from 0 to 100.");
+            } else {
+                s.opacity = opacity;
+            }
+
+            s.lineStyle = pick(raw, "lineStyle");
+            if (typeof s.lineStyle !== "string" || !hasOwn(LINE_STYLES, s.lineStyle)) {
+                addError("lineStyle", "Choose a line style: solid, dashed, or dotted.");
+                s.lineStyle = DEFAULTS.lineStyle;
+            }
+
+            s.marginColorOn = pick(raw, "marginColorOn") === true;
+            if (s.marginColorOn) {
+                s.marginColor = readColor("marginColor");
+            }
+
+            s.shadeGutters = pick(raw, "shadeGutters") === true && (s.type === "columns" || s.type === "modular");
+            if (s.shadeGutters) {
+                s.gutterColor = readColor("gutterColor");
+                var gutterOpacity = parseNumber(pick(raw, "gutterOpacity"));
+                if (!isFiniteNumber(gutterOpacity) || gutterOpacity < 0 || gutterOpacity > 100) {
+                    addError("gutterOpacity", "Gutter opacity must be from 0 to 100.");
+                } else {
+                    s.gutterOpacity = gutterOpacity;
+                }
+            }
+        }
+
+        return { ok: errors.length === 0, errors: errors, settings: s };
+    }
+
+    /*
+     * Parses an artboard list typed by the user, such as "1-3, 5", using
+     * 1-based artboard numbers like Illustrator's own dialogs.
+     * Returns { ok, indices } with sorted 0-based indices, or { ok: false, error }.
+     */
+    function parseArtboardRange(text, count) {
+        var str = stripSpace(text === undefined || text === null ? "" : text);
+        if (str === "") {
+            return { ok: false, error: "Enter artboard numbers, such as 1-3, 5." };
+        }
+        var parts = str.split(",");
+        var seen = {};
+        var indices = [];
+        for (var i = 0; i < parts.length; i++) {
+            var part = stripSpace(parts[i]);
+            if (part === "") {
+                continue;
+            }
+            var match = /^(\d+)(?:\s*-\s*(\d+))?$/.exec(part);
+            if (!match) {
+                return { ok: false, error: "“" + part + "” isn't an artboard number or range. Use numbers such as 1-3, 5." };
+            }
+            var first = parseInt(match[1], 10);
+            var last = match[2] ? parseInt(match[2], 10) : first;
+            if (first > last) {
+                var swap = first;
+                first = last;
+                last = swap;
+            }
+            if (first < 1) {
+                return { ok: false, error: "Artboard numbers start at 1." };
+            }
+            if (last > count) {
+                return { ok: false, error: "Artboard " + last + " doesn't exist. This document has " + plural(count, "artboard", "artboards") + "." };
+            }
+            for (var n = first; n <= last; n++) {
+                if (!hasOwn(seen, String(n))) {
+                    seen[String(n)] = true;
+                    indices.push(n - 1);
+                }
+            }
+        }
+        if (!indices.length) {
+            return { ok: false, error: "Enter artboard numbers, such as 1-3, 5." };
+        }
+        indices.sort(function (a, b) { return a - b; });
+        return { ok: true, indices: indices };
+    }
+
+    // ---------------------------------------------------------------- geometry
+
+    /*
+     * Reads an Illustrator artboard rectangle [left, top, right, bottom].
+     * Returns { ok, error, box } where box has left/top/right/bottom/width/height.
+     */
+    function readRect(rect) {
+        if (!rect || typeof rect.length !== "number" || rect.length !== 4) {
+            return { ok: false, error: "The artboard rectangle must have four numbers: left, top, right, bottom." };
+        }
+        for (var i = 0; i < 4; i++) {
+            if (!isFiniteNumber(rect[i])) {
+                return { ok: false, error: "The artboard rectangle contains a value that is not a number." };
+            }
+        }
+        var box = {
+            left: rect[0],
+            top: rect[1],
+            right: rect[2],
+            bottom: rect[3],
+            width: rect[2] - rect[0],
+            height: rect[1] - rect[3]
+        };
+        if (box.width <= EPSILON || box.height <= EPSILON) {
+            return { ok: false, error: "The artboard has no usable size. Its right edge must be right of its left edge and its top above its bottom." };
+        }
+        return { ok: true, box: box };
+    }
+
+    /*
+     * Splits a span into equal tracks separated by gutters.
+     * Returns { ok, size, tracks: [{ start, end }] } measured as distances
+     * from the start of the span (always increasing). Callers map distances
+     * onto X (left to right) or Y (top to bottom).
+     */
+    function divideSpan(length, count, gutter) {
+        var size = (length - gutter * (count - 1)) / count;
+        if (size <= EPSILON) {
+            return { ok: false, size: size };
+        }
+        var tracks = [];
+        for (var i = 0; i < count; i++) {
+            var start = i * (size + gutter);
+            tracks.push({ start: start, end: start + size });
+        }
+        return { ok: true, size: size, tracks: tracks };
+    }
+
+    // Collects track edges as sorted distances with coincident edges merged.
+    function trackEdges(tracks) {
+        var edges = [];
+        for (var i = 0; i < tracks.length; i++) {
+            pushUnique(edges, tracks[i].start);
+            pushUnique(edges, tracks[i].end);
+        }
+        return edges;
+    }
+
+    function pushUnique(list, value) {
+        for (var i = 0; i < list.length; i++) {
+            if (Math.abs(list[i] - value) <= EPSILON) {
+                return;
+            }
+        }
+        list.push(value);
+    }
+
+    function segment(kind, x1, y1, x2, y2) {
+        return { kind: kind, x1: round(x1), y1: round(y1), x2: round(x2), y2: round(y2) };
+    }
+
+    function vertical(kind, x, yTop, yBottom) {
+        return segment(kind, x, yTop, x, yBottom);
+    }
+
+    function horizontal(kind, y, xLeft, xRight) {
+        return segment(kind, xLeft, y, xRight, y);
+    }
+
+    function box(kind, left, top, right, bottom) {
+        return { kind: kind, left: round(left), top: round(top), right: round(right), bottom: round(bottom) };
+    }
+
+    function frame(area, out) {
+        out.push(horizontal("margin", area.top, area.left, area.right));
+        out.push(horizontal("margin", area.bottom, area.left, area.right));
+        out.push(vertical("margin", area.left, area.top, area.bottom));
+        out.push(vertical("margin", area.right, area.top, area.bottom));
+    }
+
+    // Removes segments matching an earlier one in either direction, to 1/1000 pt.
+    function dedupeSegments(segments) {
+        var seen = {};
+        var out = [];
+        function point(x, y) {
+            var rx = Math.round(x * 1000) / 1000;
+            var ry = Math.round(y * 1000) / 1000;
+            return (rx === 0 ? 0 : rx) + "," + (ry === 0 ? 0 : ry);
+        }
+        for (var i = 0; i < segments.length; i++) {
+            var s = segments[i];
+            var a = point(s.x1, s.y1);
+            var b = point(s.x2, s.y2);
+            var key = a < b ? a + "|" + b : b + "|" + a;
+            if (!hasOwn(seen, key)) {
+                seen[key] = true;
+                out.push(s);
+            }
+        }
+        return out;
+    }
+
+    /*
+     * Golden spiral stretched to fill an area.
+     *
+     * Built in a landscape golden rectangle (width PHI, height 1, v downward)
+     * by cutting squares off the left, top, right and bottom in turn and
+     * drawing a quarter circle through each square. Portrait areas use the
+     * transposed rectangle. The result is flipped so the spiral's focus (where
+     * it converges) lands in the requested quadrant, then scaled to the area.
+     *
+     * Returns { curve, squares: [segments] } in Illustrator coordinates.
+     */
+    function goldenSpiral(area, focus, squareCount) {
+        var x = 0;
+        var y = 0;
+        var w = PHI;
+        var h = 1;
+        var arcs = [];
+        var cuts = [];
+
+        for (var i = 0; i < squareCount; i++) {
+            var side = i % 4;
+            var s, p0, p3, c;
+            if (side === 0) {       // square on the left
+                s = h;
+                p0 = [x, y + s]; p3 = [x + s, y]; c = [x + s, y + s];
+                cuts.push([x + s, y, x + s, y + h]);
+                x += s; w -= s;
+            } else if (side === 1) { // square on the top
+                s = w;
+                p0 = [x, y]; p3 = [x + s, y + s]; c = [x, y + s];
+                cuts.push([x, y + s, x + w, y + s]);
+                y += s; h -= s;
+            } else if (side === 2) { // square on the right
+                s = h;
+                p0 = [x + w, y]; p3 = [x + w - s, y + s]; c = [x + w - s, y];
+                cuts.push([x + w - s, y, x + w - s, y + h]);
+                w -= s;
+            } else {                 // square on the bottom
+                s = w;
+                p0 = [x + w, y + h]; p3 = [x, y + h - s]; c = [x + w, y + h - s];
+                cuts.push([x, y + h - s, x + w, y + h - s]);
+                h -= s;
+            }
+            arcs.push({
+                p0: p0,
+                p1: [p0[0] + KAPPA * (p3[0] - c[0]), p0[1] + KAPPA * (p3[1] - c[1])],
+                p2: [p3[0] + KAPPA * (p0[0] - c[0]), p3[1] + KAPPA * (p0[1] - c[1])],
+                p3: p3
+            });
+        }
+
+        var portrait = area.height > area.width + EPSILON;
+        function normalize(pt) {
+            var nx = pt[0] / PHI;
+            var ny = pt[1];
+            return portrait ? [ny, nx] : [nx, ny];
+        }
+        var eye = normalize([x + w / 2, y + h / 2]);
+        var wantLeft = focus === "top-left" || focus === "bottom-left";
+        var wantTop = focus === "top-left" || focus === "top-right";
+        var flipX = (eye[0] < 0.5) !== wantLeft;
+        var flipY = (eye[1] < 0.5) !== wantTop;
+
+        function place(pt) {
+            var n = normalize(pt);
+            var nx = flipX ? 1 - n[0] : n[0];
+            var ny = flipY ? 1 - n[1] : n[1];
+            return [round(area.left + nx * area.width), round(area.top - ny * area.height)];
+        }
+
+        var points = [];
+        var start = place(arcs[0].p0);
+        points.push({ anchor: start, left: start, right: place(arcs[0].p1) });
+        for (var a = 0; a < arcs.length; a++) {
+            var anchor = place(arcs[a].p3);
+            points.push({
+                anchor: anchor,
+                left: place(arcs[a].p2),
+                right: a + 1 < arcs.length ? place(arcs[a + 1].p1) : anchor
+            });
+        }
+
+        var squares = [];
+        for (var k = 0; k < cuts.length; k++) {
+            var from = place([cuts[k][0], cuts[k][1]]);
+            var to = place([cuts[k][2], cuts[k][3]]);
+            squares.push(segment("spiral", from[0], from[1], to[0], to[1]));
+        }
+
+        return { curve: { kind: "spiral", closed: false, points: points }, squares: squares };
+    }
+
+    // A circle as four smooth Bezier points, clockwise from the top.
+    function circle(kind, cx, cy, r) {
+        var k = KAPPA * r;
+        function pt(ax, ay, lx, ly, rx, ry) {
+            return { anchor: [round(ax), round(ay)], left: [round(lx), round(ly)], right: [round(rx), round(ry)] };
+        }
+        return {
+            kind: kind,
+            closed: true,
+            points: [
+                pt(cx, cy + r, cx - k, cy + r, cx + k, cy + r),
+                pt(cx + r, cy, cx + r, cy + k, cx + r, cy - k),
+                pt(cx, cy - r, cx + k, cy - r, cx - k, cy - r),
+                pt(cx - r, cy, cx - r, cy - k, cx - r, cy + k)
+            ]
+        };
+    }
+
+    /*
+     * A family of parallel lines at angleDeg (0 = horizontal, counterclockwise),
+     * spaced `spacing` apart measured perpendicular to the lines, with one line
+     * through the area's top-left corner, clipped to the area.
+     * Returns { ok, count, segments } where ok is false if the family would exceed `limit`.
+     */
+    function lineFamily(kind, area, angleDeg, spacing, limit) {
+        var angle = angleDeg * Math.PI / 180;
+        var ux = Math.cos(angle);
+        var uy = Math.sin(angle);
+        var nx = -uy;
+        var ny = ux;
+        var corners = [[area.left, area.top], [area.right, area.top], [area.right, area.bottom], [area.left, area.bottom]];
+        var anchor = nx * area.left + ny * area.top;
+        var pMin = Infinity;
+        var pMax = -Infinity;
+        for (var c = 0; c < 4; c++) {
+            var p = nx * corners[c][0] + ny * corners[c][1];
+            pMin = Math.min(pMin, p);
+            pMax = Math.max(pMax, p);
+        }
+        var kMin = Math.ceil((pMin - anchor) / spacing - EPSILON);
+        var kMax = Math.floor((pMax - anchor) / spacing + EPSILON);
+        var count = kMax - kMin + 1;
+        if (count > limit) {
+            return { ok: false, count: count, segments: [] };
+        }
+        var out = [];
+        for (var k = kMin; k <= kMax; k++) {
+            var offset = anchor + k * spacing;
+            var bx = nx * offset;
+            var by = ny * offset;
+            var t0 = -Infinity;
+            var t1 = Infinity;
+            var inside = true;
+            var axes = [[bx, ux, area.left, area.right], [by, uy, area.bottom, area.top]];
+            for (var ax = 0; ax < 2; ax++) {
+                var base = axes[ax][0];
+                var dir = axes[ax][1];
+                var lo = axes[ax][2];
+                var hi = axes[ax][3];
+                if (Math.abs(dir) < EPSILON) {
+                    if (base < lo - EPSILON || base > hi + EPSILON) {
+                        inside = false;
+                    }
+                } else {
+                    var ta = (lo - base) / dir;
+                    var tb = (hi - base) / dir;
+                    t0 = Math.max(t0, Math.min(ta, tb));
+                    t1 = Math.min(t1, Math.max(ta, tb));
+                }
+            }
+            if (inside && t1 - t0 > 1e-4) {
+                out.push(segment(kind, bx + t0 * ux, by + t0 * uy, bx + t1 * ux, by + t1 * uy));
+            }
+        }
+        return { ok: true, count: count, segments: out };
+    }
+
+    function failure(errors) {
+        return { ok: false, errors: errors, segments: [], boxes: [], polygons: [], curves: [], dots: [] };
+    }
+
+    function tooMany(field, count, noun) {
+        return {
+            field: field,
+            message: "That makes " + count + " " + noun + ". Use a larger size or fewer divisions to stay at or under " + LIMITS.maxShapes + "."
+        };
+    }
+
+    /*
+     * Pattern grids fill the content area.
+     * Pushes shapes into `shapes` and returns an error object or null.
+     */
+    function buildPattern(s, area, shapes, metrics, unit) {
+        var size = s.patternSize;
+        var limit = LIMITS.maxShapes;
+        var i, j, fam;
+
+        if (s.pattern !== "dots") {
+            frame(area, shapes.segments);
+        }
+
+        if (s.pattern === "square" || s.pattern === "diagonal" || s.pattern === "isometric") {
+            var families;
+            if (s.pattern === "square") {
+                families = [[90, size], [0, size]];
+            } else if (s.pattern === "diagonal") {
+                // Diamond cells `size` wide along each edge.
+                families = [[45, size / Math.SQRT2], [135, size / Math.SQRT2]];
+            } else {
+                // Equilateral triangles with sides `size`.
+                families = [[90, size * SQRT3 / 2], [30, size * SQRT3 / 2], [150, size * SQRT3 / 2]];
+            }
+            for (i = 0; i < families.length; i++) {
+                fam = lineFamily("pattern", area, families[i][0], families[i][1], limit);
+                if (!fam.ok) {
+                    return tooMany("patternSize", fam.count * families.length, "lines");
+                }
+                for (j = 0; j < fam.segments.length; j++) {
+                    shapes.segments.push(fam.segments[j]);
+                }
+            }
+            metrics.cellSize = round(size);
+            return null;
+        }
+
+        if (s.pattern === "dots") {
+            var across = Math.floor(area.width / size + EPSILON) + 1;
+            var down = Math.floor(area.height / size + EPSILON) + 1;
+            if (across * down > limit) {
+                return tooMany("patternSize", across * down, "dots");
+            }
+            for (j = 0; j < down; j++) {
+                for (i = 0; i < across; i++) {
+                    shapes.dots.push({ kind: "dot", x: round(area.left + i * size), y: round(area.top - j * size), d: s.dotSize });
+                }
+            }
+            metrics.cellSize = round(size);
+            metrics.dotCount = across * down;
+            return null;
+        }
+
+        if (s.pattern === "hexagon") {
+            // Pointy-top hexagons with sides `size`; only whole hexagons, centered as a block.
+            var w = SQRT3 * size;
+            var rowStep = 1.5 * size;
+            var rows = area.height + EPSILON >= 2 * size ? Math.floor((area.height - 2 * size) / rowStep + EPSILON) + 1 : 0;
+            var evenCount = Math.floor(area.width / w + EPSILON);
+            var oddCount = rows > 1 ? Math.floor((area.width - w / 2) / w + EPSILON) : evenCount;
+            if (rows < 1 || evenCount < 1) {
+                return {
+                    field: "patternSize",
+                    message: "Hexagons with " + formatMeasure(size, unit) + " sides don't fit between the margins. Use a smaller size."
+                };
+            }
+            var total = 0;
+            for (j = 0; j < rows; j++) {
+                total += j % 2 === 0 ? evenCount : oddCount;
+            }
+            if (total > limit) {
+                return tooMany("patternSize", total, "hexagons");
+            }
+            var blockWidth = rows > 1 ? Math.max(evenCount * w, oddCount * w + w / 2) : evenCount * w;
+            var blockHeight = 2 * size + (rows - 1) * rowStep;
+            var originX = area.left + (area.width - blockWidth) / 2;
+            var originY = area.top - (area.height - blockHeight) / 2;
+            for (j = 0; j < rows; j++) {
+                var count = j % 2 === 0 ? evenCount : oddCount;
+                var cy = originY - size - j * rowStep;
+                for (i = 0; i < count; i++) {
+                    var cx = originX + w / 2 + i * w + (j % 2 === 1 ? w / 2 : 0);
+                    var pts = [];
+                    for (var v = 0; v < 6; v++) {
+                        var a = (90 - v * 60) * Math.PI / 180;
+                        pts.push([round(cx + size * Math.cos(a)), round(cy + size * Math.sin(a))]);
+                    }
+                    shapes.polygons.push({ kind: "hexagon", points: pts });
+                }
+            }
+            metrics.cellSize = round(size);
+            metrics.hexagonCount = total;
+            return null;
+        }
+
+        // Radial: evenly spaced rings and spokes from the center of the area.
+        var radius = Math.min(area.width, area.height) / 2;
+        var centerX = area.left + area.width / 2;
+        var centerY = area.top - area.height / 2;
+        for (i = 1; i <= s.rings; i++) {
+            shapes.curves.push(circle("ring", centerX, centerY, radius * i / s.rings));
+        }
+        for (i = 0; i < s.spokes; i++) {
+            var angle = (90 - i * 360 / s.spokes) * Math.PI / 180;
+            shapes.segments.push(segment("spoke", centerX, centerY, centerX + radius * Math.cos(angle), centerY + radius * Math.sin(angle)));
+        }
+        metrics.ringSpacing = round(radius / s.rings);
+        return null;
+    }
+
+    /*
+     * Builds the full grid for one artboard.
+     *   rect: Illustrator artboardRect [left, top, right, bottom]
+     *   raw:  panel settings (lengths in raw.units)
+     * Returns {
+     *   ok, errors, settings,
+     *   artboard: { left, top, right, bottom, width, height },
+     *   content:  { left, top, right, bottom, width, height },
+     *   metrics:  { columnWidth, rowHeight, baselineCount, cellSize, dotCount, hexagonCount, ringSpacing },
+     *   tracks:   { columns: [{ left, right }], rows: [{ top, bottom }] },
+     *   segments, boxes, polygons, curves, dots (see the file header),
+     *   shapeCount
+     * }
+     */
+    function buildGrid(rect, raw) {
+        var normalized = normalizeSettings(raw);
+        if (!normalized.ok) {
+            return failure(normalized.errors);
+        }
+        var s = normalized.settings;
+        var unit = s.units;
+
+        var board = readRect(rect);
+        if (!board.ok) {
+            return failure([{ field: "artboard", message: board.error }]);
+        }
+        var a = board.box;
+
+        var content = {
+            left: a.left + s.marginLeft,
+            right: a.right - s.marginRight,
+            top: a.top - s.marginTop,
+            bottom: a.bottom + s.marginBottom
+        };
+        content.width = content.right - content.left;
+        content.height = content.top - content.bottom;
+
+        var errors = [];
+        if (content.width <= EPSILON) {
+            errors.push({
+                field: "marginLeft",
+                message: "Left and right margins leave no room. Together they must be less than the artboard width of " + formatMeasure(a.width, unit) + "."
+            });
+        }
+        if (content.height <= EPSILON) {
+            errors.push({
+                field: "marginTop",
+                message: "Top and bottom margins leave no room. Together they must be less than the artboard height of " + formatMeasure(a.height, unit) + "."
+            });
+        }
+        if (errors.length) {
+            return failure(errors);
+        }
+
+        // Lines along a column run between these Y values; lines along a row between these X values.
+        var spanTop = s.extendToEdges ? a.top : content.top;
+        var spanBottom = s.extendToEdges ? a.bottom : content.bottom;
+        var spanLeft = s.extendToEdges ? a.left : content.left;
+        var spanRight = s.extendToEdges ? a.right : content.right;
+
+        var shapes = { segments: [], boxes: [], polygons: [], curves: [], dots: [] };
+        var segments = shapes.segments;
+        var boxes = shapes.boxes;
+        var metrics = { columnWidth: null, rowHeight: null, baselineCount: null };
+        var tracks = { columns: [], rows: [] };
+        var asBoxes = s.output === "boxes";
+        var i, j, edges;
+
+        if (s.type === "columns" || s.type === "modular") {
+            var cols = divideSpan(content.width, s.columns, s.columnGutter);
+            if (!cols.ok) {
+                errors.push({
+                    field: "columnGutter",
+                    message: "Columns don't fit. " + s.columns + " columns with " + formatMeasure(s.columnGutter, unit) +
+                        " gutters need more than " + formatMeasure(s.columnGutter * (s.columns - 1), unit) +
+                        " of width; the space between margins is " + formatMeasure(content.width, unit) + "."
+                });
+            } else {
+                metrics.columnWidth = round(cols.size);
+                for (i = 0; i < cols.tracks.length; i++) {
+                    tracks.columns.push({ left: round(content.left + cols.tracks[i].start), right: round(content.left + cols.tracks[i].end) });
+                }
+                if (!asBoxes) {
+                    edges = trackEdges(cols.tracks);
+                    for (i = 0; i < edges.length; i++) {
+                        segments.push(vertical("column", content.left + edges[i], spanTop, spanBottom));
+                    }
+                }
+            }
+        }
+
+        if (s.type === "modular") {
+            var rows = divideSpan(content.height, s.rows, s.rowGutter);
+            if (!rows.ok) {
+                errors.push({
+                    field: "rowGutter",
+                    message: "Rows don't fit. " + s.rows + " rows with " + formatMeasure(s.rowGutter, unit) +
+                        " gutters need more than " + formatMeasure(s.rowGutter * (s.rows - 1), unit) +
+                        " of height; the space between margins is " + formatMeasure(content.height, unit) + "."
+                });
+            } else {
+                metrics.rowHeight = round(rows.size);
+                for (i = 0; i < rows.tracks.length; i++) {
+                    tracks.rows.push({ top: round(content.top - rows.tracks[i].start), bottom: round(content.top - rows.tracks[i].end) });
+                }
+                if (!asBoxes) {
+                    edges = trackEdges(rows.tracks);
+                    for (i = 0; i < edges.length; i++) {
+                        // Distances run downward from the top margin, so Y decreases.
+                        segments.push(horizontal("row", content.top - edges[i], spanLeft, spanRight));
+                    }
+                }
+            }
+        }
+
+        if (s.shadeGutters && errors.length === 0) {
+            // Column gutters run full height; row gutters are split around them so fills never overlap.
+            var gaps = [];
+            for (i = 0; i + 1 < tracks.columns.length; i++) {
+                if (tracks.columns[i + 1].left - tracks.columns[i].right > EPSILON) {
+                    gaps.push([tracks.columns[i].right, tracks.columns[i + 1].left]);
+                    boxes.push(box("gutter", tracks.columns[i].right, spanTop, tracks.columns[i + 1].left, spanBottom));
+                }
+            }
+            for (j = 0; j + 1 < tracks.rows.length; j++) {
+                var gTop = tracks.rows[j].bottom;
+                var gBottom = tracks.rows[j + 1].top;
+                if (gTop - gBottom <= EPSILON) {
+                    continue;
+                }
+                var from = spanLeft;
+                for (i = 0; i <= gaps.length; i++) {
+                    var to = i < gaps.length ? gaps[i][0] : spanRight;
+                    if (to - from > EPSILON) {
+                        boxes.push(box("gutter", from, gTop, to, gBottom));
+                    }
+                    if (i < gaps.length) {
+                        from = gaps[i][1];
+                    }
+                }
+            }
+        }
+
+        if (asBoxes && errors.length === 0) {
+            if (s.type === "columns") {
+                for (i = 0; i < tracks.columns.length; i++) {
+                    boxes.push(box("column", tracks.columns[i].left, spanTop, tracks.columns[i].right, spanBottom));
+                }
+            } else if (tracks.columns.length * tracks.rows.length <= LIMITS.maxShapes) {
+                for (j = 0; j < tracks.rows.length; j++) {
+                    for (i = 0; i < tracks.columns.length; i++) {
+                        boxes.push(box("module", tracks.columns[i].left, tracks.rows[j].top, tracks.columns[i].right, tracks.rows[j].bottom));
+                    }
+                }
+            } else {
+                errors.push({
+                    field: "columns",
+                    message: "That makes " + (tracks.columns.length * tracks.rows.length) + " boxes. Reduce columns or rows to stay at or under " + LIMITS.maxShapes + "."
+                });
+            }
+        }
+
+        if (s.type === "columns" && !asBoxes && errors.length === 0) {
+            // A column grid still marks the top and bottom of the text area.
+            segments.push(horizontal("margin", content.top, spanLeft, spanRight));
+            segments.push(horizontal("margin", content.bottom, spanLeft, spanRight));
+        }
+
+        if (s.type === "baseline") {
+            if (s.baselineOffset > content.height + EPSILON) {
+                errors.push({
+                    field: "baselineOffset",
+                    message: "Baseline offset of " + formatMeasure(s.baselineOffset, unit) +
+                        " is deeper than the space between margins (" + formatMeasure(content.height, unit) + ")."
+                });
+            } else {
+                var available = content.height - s.baselineOffset;
+                var count = Math.floor(available / s.baselineSpacing + EPSILON) + 1;
+                if (count > LIMITS.maxBaselines) {
+                    errors.push({
+                        field: "baselineSpacing",
+                        message: "That spacing creates " + count + " baselines. Use a larger spacing to stay at or under " + LIMITS.maxBaselines + "."
+                    });
+                } else {
+                    metrics.baselineCount = count;
+                    for (i = 0; i < count; i++) {
+                        var y = content.top - s.baselineOffset - i * s.baselineSpacing;
+                        segments.push(horizontal("baseline", y, spanLeft, spanRight));
+                    }
+                }
+            }
+        }
+
+        if (s.type === "composition") {
+            var l = content.left;
+            var r = content.right;
+            var t = content.top;
+            var b = content.bottom;
+            var cw = content.width;
+            var ch = content.height;
+
+            // The frame marks the area the guides divide.
+            frame(content, segments);
+
+            if (s.compThirds) {
+                for (i = 1; i <= 2; i++) {
+                    segments.push(vertical("thirds", l + cw * i / 3, t, b));
+                    segments.push(horizontal("thirds", t - ch * i / 3, l, r));
+                }
+            }
+            if (s.compGolden) {
+                var minor = 1 / (PHI * PHI); // 0.382
+                var major = 1 / PHI;         // 0.618
+                segments.push(vertical("golden", l + cw * minor, t, b));
+                segments.push(vertical("golden", l + cw * major, t, b));
+                segments.push(horizontal("golden", t - ch * minor, l, r));
+                segments.push(horizontal("golden", t - ch * major, l, r));
+            }
+            if (s.compDiagonals) {
+                segments.push(segment("diagonal", l, t, r, b));
+                segments.push(segment("diagonal", l, b, r, t));
+            }
+            if (s.compCenter) {
+                segments.push(vertical("center", l + cw / 2, t, b));
+                segments.push(horizontal("center", t - ch / 2, l, r));
+            }
+            if (s.compSpiral) {
+                var spiral = goldenSpiral(content, s.spiralFocus, LIMITS.spiralSquares);
+                shapes.curves.push(spiral.curve);
+                for (i = 0; i < spiral.squares.length; i++) {
+                    segments.push(spiral.squares[i]);
+                }
+            }
+        }
+
+        if (s.type === "pattern") {
+            var patternError = buildPattern(s, content, shapes, metrics, unit);
+            if (patternError) {
+                errors.push(patternError);
+            }
+        }
+
+        if (errors.length) {
+            return failure(errors);
+        }
+
+        shapes.segments = dedupeSegments(shapes.segments);
+        var shapeCount = shapes.segments.length + shapes.boxes.length + shapes.polygons.length + shapes.curves.length + shapes.dots.length;
+        if (shapeCount > LIMITS.maxShapes) {
+            return failure([{
+                field: "type",
+                message: "This grid needs " + shapeCount + " shapes. Reduce the count to stay at or under " + LIMITS.maxShapes + "."
+            }]);
+        }
+
+        return {
+            ok: true,
+            errors: [],
+            settings: s,
+            artboard: {
+                left: round(a.left), top: round(a.top), right: round(a.right), bottom: round(a.bottom),
+                width: round(a.width), height: round(a.height)
+            },
+            content: {
+                left: round(content.left), top: round(content.top), right: round(content.right), bottom: round(content.bottom),
+                width: round(content.width), height: round(content.height)
+            },
+            metrics: metrics,
+            tracks: tracks,
+            segments: shapes.segments,
+            boxes: shapes.boxes,
+            polygons: shapes.polygons,
+            curves: shapes.curves,
+            dots: shapes.dots,
+            shapeCount: shapeCount
+        };
+    }
+
+    /*
+     * Dash pattern for a line style, scaled to the stroke width.
+     * Returns { dashes: [dash, gap] or [], roundCaps }.
+     */
+    function dashPattern(style, strokeWidth) {
+        if (style === "dashed") {
+            return { dashes: [round(Math.max(2, strokeWidth * 4)), round(Math.max(1.5, strokeWidth * 3))], roundCaps: false };
+        }
+        if (style === "dotted") {
+            // Zero-length dashes with round caps draw round dots.
+            return { dashes: [0, round(Math.max(1.5, strokeWidth * 3))], roundCaps: true };
+        }
+        return { dashes: [], roundCaps: false };
+    }
+
+    function copyDefaults() {
+        var out = {};
+        for (var key in DEFAULTS) {
+            if (hasOwn(DEFAULTS, key)) {
+                out[key] = DEFAULTS[key];
+            }
+        }
+        return out;
+    }
+
+    return {
+        EPSILON: EPSILON,
+        PHI: PHI,
+        LIMITS: LIMITS,
+        FIELD_NAMES: FIELD_NAMES,
+        UNITS: ["pt", "px", "mm", "in"],
+        SPIRAL_FOCI: ["top-left", "top-right", "bottom-left", "bottom-right"],
+        PATTERNS: ["square", "dots", "isometric", "hexagon", "radial", "diagonal"],
+        LINE_STYLES: ["solid", "dashed", "dotted"],
+        COMPOSITION_FLAGS: COMPOSITION_FLAGS,
+        defaults: copyDefaults,
+        parseNumber: parseNumber,
+        toPoints: toPoints,
+        fromPoints: fromPoints,
+        formatMeasure: formatMeasure,
+        relevantFields: relevantFields,
+        normalizeSettings: normalizeSettings,
+        parseArtboardRange: parseArtboardRange,
+        readRect: readRect,
+        divideSpan: divideSpan,
+        dedupeSegments: dedupeSegments,
+        dashPattern: dashPattern,
+        buildGrid: buildGrid
+    };
+}));
