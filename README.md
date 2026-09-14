@@ -2,7 +2,9 @@
 
 A layout-grid panel for Adobe Illustrator. Mullion draws column, modular, and baseline grids, composition guides (rule of thirds, golden sections, diagonals, center lines, golden spiral), and patterns (square, dot, isometric, hexagon, diagonal, radial) as editable lines, boxes, or Illustrator guides. Lines can be solid, dashed, or dotted, with their own margin color and shaded gutters. A visual library of 105 layouts, drawn live on your artboard, covers columns, modular grids, asymmetric and classic page proportions, baselines, print, screen, social, composition, and patterns. It works on one artboard, all artboards, or a list such as `1-3, 5`, and keeps grids on their own layer so they can be previewed, hidden, locked, and cleared without touching your artwork.
 
-> **Mullion is a placeholder name.** Check trademarks before you publish, and see [Renaming](#renaming) for every place the name and ids appear.
+<!-- placeholder-name-note -->
+> **Mullion is a placeholder name.** Check trademarks before you publish, then run `npm run rename` (see [Renaming](#renaming)).
+<!-- /placeholder-name-note -->
 
 - Platform: CEP panel extension (not UXP; Illustrator has no UXP support)
 - Illustrator 2022 (26.0) or later, macOS and Windows

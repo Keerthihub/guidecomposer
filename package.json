@@ -11,7 +11,8 @@
     "check": "npm run lint:es3 && npm test",
     "icons": "node scripts/make-icons.js",
     "build": "npm run check && node scripts/build.js",
-    "sign:mac": "scripts/sign-zxp.sh"
+    "sign:mac": "scripts/sign-zxp.sh",
+    "rename": "node scripts/rename.js"
   },
   "engines": {
     "node": ">=20"

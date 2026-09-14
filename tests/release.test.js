@@ -26,7 +26,9 @@ test("manifest targets Illustrator 2022+ panels without Node.js", () => {
 
 test(".debug targets the same extension id as the manifest", () => {
     const debug = fs.readFileSync(path.join(checks.ROOT, ".debug"), "utf8");
-    assert.match(debug, /<Extension Id="com\.mullion\.panel\.main">/);
+    const manifest = fs.readFileSync(path.join(checks.ROOT, "CSXS/manifest.xml"), "utf8");
+    const extensionId = manifest.match(/<Extension Id="([^"]+)"/)[1];
+    assert.ok(debug.includes(`<Extension Id="${extensionId}">`), `.debug should target ${extensionId}`);
     assert.match(debug, /<Host Name="ILST" Port="\d+"\/>/);
 });
 

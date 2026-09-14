@@ -2,7 +2,7 @@
 /*
  * Builds the production extension folder that ZXPSignCmd signs.
  *
- *   node scripts/build.js            -> dist/mullion/
+ *   node scripts/build.js            -> dist/<package name>/
  *   node scripts/build.js --out DIR  -> DIR/
  *
  * Copies only the shipped folders, then re-runs the release checks against
@@ -35,7 +35,8 @@ function build(outDir) {
 
 if (require.main === module) {
     const outIndex = process.argv.indexOf("--out");
-    const outDir = outIndex !== -1 ? path.resolve(process.argv[outIndex + 1]) : path.join(checks.ROOT, "dist", "mullion");
+    const packageName = JSON.parse(fs.readFileSync(path.join(checks.ROOT, "package.json"), "utf8")).name;
+    const outDir = outIndex !== -1 ? path.resolve(process.argv[outIndex + 1]) : path.join(checks.ROOT, "dist", packageName);
     const result = build(outDir);
     if (!result.ok) {
         console.error("Build failed:");

@@ -27,6 +27,14 @@ if [[ -z "${MULLION_CERT_PASSWORD:-}" ]]; then
     echo
 fi
 
+# Adobe ships ZXPSignCmd for macOS as an Intel binary.
+if [[ "$(uname -s)" == "Darwin" && "$(uname -m)" == "arm64" ]] && ! /usr/bin/arch -x86_64 /usr/bin/true 2>/dev/null; then
+    echo "ZXPSignCmd needs Rosetta on Apple Silicon Macs. Install it once with:" >&2
+    echo "  softwareupdate --install-rosetta --agree-to-license" >&2
+    echo "or sign on GitHub instead: .github/workflows/release.yml" >&2
+    exit 1
+fi
+
 VERSION="$(node -p "require('./package.json').version")"
 OUT="dist/mullion-$VERSION.zxp"
 

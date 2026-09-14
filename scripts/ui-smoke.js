@@ -18,7 +18,7 @@ const os = require("node:os");
 const path = require("node:path");
 
 const ROOT = path.resolve(__dirname, "..");
-const PAGE = "file://" + path.join(ROOT, "client", "index.html");
+const PAGE = require("node:url").pathToFileURL(path.join(ROOT, "client", "index.html")).href;
 const CHROME = process.env.CHROME_PATH || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const PORT = 9300 + Math.floor(Math.random() * 500);
 
@@ -35,7 +35,10 @@ async function main() {
     const profile = fs.mkdtempSync(path.join(os.tmpdir(), "mullion-ui-"));
     const chrome = spawn(CHROME, [
         "--headless=new", `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`,
-        "--no-first-run", "--no-default-browser-check", "--allow-file-access-from-files", "about:blank"
+        "--no-first-run", "--no-default-browser-check", "--allow-file-access-from-files",
+        // Linux CI runners restrict the user namespaces Chrome's sandbox needs.
+        ...(process.platform === "linux" ? ["--no-sandbox"] : []),
+        "about:blank"
     ], { stdio: "ignore" });
 
     let ws;
