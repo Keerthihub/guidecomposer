@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Loads this working copy into Illustrator as an unsigned development extension (macOS).
+# Loads this working copy into Illustrator and InDesign as an unsigned development extension (macOS).
 #
 #   scripts/install-dev-mac.sh              install (symlink + enable debug mode)
 #   scripts/install-dev-mac.sh --uninstall  remove the symlink
@@ -37,4 +37,4 @@ fi
 ln -sfn "$ROOT" "$LINK"
 
 echo "Linked $LINK -> $ROOT"
-echo "Restart Illustrator, then open Window > Extensions > Mullion."
+echo "Restart Illustrator or InDesign, then open Window > Extensions > Mullion."

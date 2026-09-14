@@ -1,4 +1,4 @@
-# Loads this working copy into Illustrator as an unsigned development extension (Windows).
+# Loads this working copy into Illustrator and InDesign as an unsigned development extension (Windows).
 #
 #   powershell -ExecutionPolicy Bypass -File scripts\install-dev-windows.ps1
 #   powershell -ExecutionPolicy Bypass -File scripts\install-dev-windows.ps1 -Uninstall
@@ -45,4 +45,4 @@ if (Test-Path $Link) {
 New-Item -ItemType Junction -Path $Link -Target $Root | Out-Null
 
 Write-Host "Linked $Link -> $Root"
-Write-Host "Restart Illustrator, then open Window > Extensions > Mullion."
+Write-Host "Restart Illustrator or InDesign, then open Window > Extensions > Mullion."

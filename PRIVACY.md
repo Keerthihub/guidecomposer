@@ -2,7 +2,7 @@
 
 _Last updated: [DATE]. Replace the bracketed placeholders before publishing._
 
-Mullion is an Adobe Illustrator extension published by [PUBLISHER NAME] ("we").
+Mullion is an extension for Adobe Illustrator and Adobe InDesign published by [PUBLISHER NAME] ("we").
 
 ## What Mullion collects
 
@@ -14,7 +14,8 @@ Nothing. Mullion does not collect, transmit, sell, or share personal data or usa
 ## What Mullion stores on your computer
 
 - **Panel settings and presets** are saved in the panel's local storage inside Illustrator, on your computer only. Removing the extension or clearing Adobe's CEP cache deletes them.
-- **Your Illustrator documents** gain a layer named "Mullion grids" containing the grids you create. Grid groups carry small tags that identify them as Mullion grids, so Mullion can find and clear them. These stay in your documents like any other artwork.
+- **Your documents** gain a layer named "Mullion grids" containing the grids you create. Grids carry small tags that identify them as Mullion grids, so Mullion can find and clear them. These stay in your documents like any other artwork.
+- **Preset files** are written only when you choose Export presets, to the location you pick, and read only when you choose Import presets.
 
 ## Purchases
 

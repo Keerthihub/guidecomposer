@@ -4,7 +4,10 @@ CEP extensions ship as signed `.zxp` files. Don't package Mullion as `.ccx`; tha
 
 ## 1. One-time setup
 
-**Get ZXPSignCmd.** Download the latest ZXPSignCmd for your OS from Adobe's [CEP-Resources repository](https://github.com/Adobe-CEP/CEP-Resources) (`ZXPSignCMD` folder). On macOS, allow it to run with `chmod +x ZXPSignCmd` (and approve it in System Settings > Privacy & Security if macOS blocks it).
+**Choose where to sign.**
+
+- **On GitHub (no local tools).** Push the repository to GitHub, then add two repository secrets under Settings > Secrets and variables > Actions: `ZXP_CERT_BASE64` (on macOS: `base64 -i cert.p12 | pbcopy`) and `ZXP_CERT_PASSWORD`. Run **Signed release** from the Actions tab, or push a tag such as `v0.1.0`. The signed `.zxp` is attached to the run.
+- **On your computer.** Download ZXPSignCmd for your OS from Adobe's [CEP-Resources repository](https://github.com/Adobe-CEP/CEP-Resources) (`ZXPSignCMD` folder). On macOS, run `chmod +x ZXPSignCmd` and approve it in System Settings > Privacy & Security if blocked. Adobe's macOS build is Intel-only: on Apple Silicon Macs install Rosetta once with `softwareupdate --install-rosetta --agree-to-license`.
 
 **Create a certificate.** Adobe accepts self-signed certificates for ZXP packages. Store the certificate **outside this repository** and the password in a password manager.
 
@@ -78,7 +81,7 @@ Test on **clean user accounts** (or virtual machines) on macOS and Windows, with
 
    List installed extensions with `--list all` (macOS) or `/list all` (Windows). Remove one with `--remove` / `/remove` followed by the name exactly as the list shows it.
 
-4. Verify: install, launch, Draw test line, generate each grid type, Clear, restart Illustrator, **update** (install the next version over this one), and **uninstall**.
+4. Verify in Illustrator **and InDesign**: install, launch, Draw test line, generate each grid type, Clear, restart the app, **update** (install the next version over this one), and **uninstall**.
 
 Don't promise customers that a `.zxp` installs by double-clicking. Document the installer command above, or a ZXP installer app you have tested, for both operating systems.
 

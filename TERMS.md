@@ -4,7 +4,7 @@
 
 _Last updated: [DATE]_
 
-These terms govern your use of Mullion, an Adobe Illustrator extension published by [PUBLISHER NAME] ("we", "us").
+These terms govern your use of Mullion, an extension for Adobe Illustrator and Adobe InDesign published by [PUBLISHER NAME] ("we", "us").
 
 ## License
 
@@ -26,7 +26,7 @@ We may release updates that fix problems or add features. Support is provided by
 
 ## Adobe
 
-Mullion is an independent product. It is not made, endorsed, or supported by Adobe. Adobe and Illustrator are trademarks of Adobe Inc. Mullion requires a licensed copy of Adobe Illustrator.
+Mullion is an independent product. It is not made, endorsed, or supported by Adobe. Adobe, Illustrator, and InDesign are trademarks of Adobe Inc. Mullion requires a licensed copy of Adobe Illustrator or Adobe InDesign.
 
 ## Warranty disclaimer
 
