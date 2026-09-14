@@ -37,7 +37,8 @@
         modular: "Modular grid",
         baseline: "Baseline grid",
         composition: "Composition guides",
-        pattern: "Pattern grid"
+        pattern: "Pattern grid",
+        construction: "Construction lines"
     };
 
     A.HOST = "illustrator";
@@ -265,6 +266,9 @@
                 if (filter.regions !== undefined && !contains(filter.regions, region)) {
                     continue;
                 }
+                if (filter.regionPrefix !== undefined && region.substr(0, filter.regionPrefix.length) !== filter.regionPrefix) {
+                    continue;
+                }
                 found.push({ group: group, layer: layer, kind: kind, artboard: artboard, region: region, hiddenByPreview: tags[TAG_HIDDEN] === "1" });
             }
         }
@@ -462,6 +466,65 @@
         return true;
     };
 
+    /*
+     * Paths of the selected artwork, for construction lines: groups and compound
+     * paths are opened up; Mullion's own grids are skipped.
+     * Returns { paths: [{ closed, points: [{ anchor, left, right }] }], artboard, hasText }.
+     */
+    A.selectionPaths = function (doc) {
+        var selection = doc.selection;
+        var paths = [];
+        var hasText = false;
+        var points = 0;
+        var firstBounds = null;
+        var limit = 6000;
+        if (!selection || typeof selection.length !== "number" || selection.typename === "TextRange") {
+            return { paths: paths, artboard: A.activeArtboardIndex(doc), hasText: selection && selection.typename === "TextRange" };
+        }
+        function collect(item) {
+            if (points > limit) {
+                return;
+            }
+            var type = item.typename;
+            var i;
+            if (type === "PathItem") {
+                var pts = item.pathPoints;
+                var list = [];
+                for (i = 0; i < pts.length; i++) {
+                    var pp = pts[i];
+                    list.push({ anchor: [pp.anchor[0], pp.anchor[1]], left: [pp.leftDirection[0], pp.leftDirection[1]], right: [pp.rightDirection[0], pp.rightDirection[1]] });
+                }
+                points += list.length;
+                if (list.length) {
+                    paths.push({ closed: item.closed === true, points: list });
+                }
+            } else if (type === "CompoundPathItem") {
+                for (i = 0; i < item.pathItems.length; i++) {
+                    collect(item.pathItems[i]);
+                }
+            } else if (type === "GroupItem") {
+                for (i = 0; i < item.pageItems.length; i++) {
+                    collect(item.pageItems[i]);
+                }
+            } else if (type === "TextFrame") {
+                hasText = true;
+            }
+        }
+        for (var s = 0; s < selection.length; s++) {
+            if (isInsideOwnedGrid(selection[s])) {
+                continue;
+            }
+            if (!firstBounds && selection[s].geometricBounds) {
+                firstBounds = selection[s].geometricBounds;
+            }
+            collect(selection[s]);
+        }
+        var artboard = firstBounds
+            ? artboardIndexAt(doc, (firstBounds[0] + firstBounds[2]) / 2, (firstBounds[1] + firstBounds[3]) / 2)
+            : A.activeArtboardIndex(doc);
+        return { paths: paths, artboard: artboard, hasText: hasText, truncated: points > limit };
+    };
+
     A.selectItems = function (doc, entries) {
         doc.selection = null;
         for (var i = 0; i < entries.length; i++) {
@@ -643,11 +706,22 @@
         var main = makeColor(doc, s.strokeColor);
         var margin = s.marginColorOn ? makeColor(doc, s.marginColor) : main;
         var dash = M.core.dashPattern(s.lineStyle, s.strokeWidth);
+        var byKind = {};
         return {
             guides: false,
             width: s.strokeWidth,
             main: main,
             margin: margin,
+            // Construction lines color each kind separately; grids color margins separately.
+            colorFor: function (kind) {
+                if (s.kindColors && s.kindColors[kind]) {
+                    if (!byKind[kind]) {
+                        byKind[kind] = makeColor(doc, s.kindColors[kind]);
+                    }
+                    return byKind[kind];
+                }
+                return kind === "margin" ? margin : main;
+            },
             dashes: dash.dashes,
             roundCaps: dash.roundCaps,
             gutter: s.shadeGutters ? makeColor(doc, s.gutterColor) : null,
@@ -678,7 +752,7 @@
         } else {
             path.filled = false;
             path.stroked = true;
-            path.strokeColor = kind === "margin" ? style.margin : style.main;
+            path.strokeColor = style.colorFor(kind);
             path.strokeWidth = style.width;
             if (style.dashes.length) {
                 path.strokeDashes = style.dashes;

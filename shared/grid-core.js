@@ -1637,6 +1637,9 @@
                     s[colorFields[i][1]] = hex.toUpperCase();
                 }
             }
+            // Center lines and diagonals share the key line color.
+            s.kindColors.center = s.kindColors.keyline;
+            s.kindColors.diagonal = s.kindColors.keyline;
         }
 
         var board = readRect(rect);

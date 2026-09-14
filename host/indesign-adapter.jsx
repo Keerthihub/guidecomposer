@@ -41,7 +41,8 @@
         modular: "Modular grid",
         baseline: "Baseline grid",
         composition: "Composition guides",
-        pattern: "Pattern grid"
+        pattern: "Pattern grid",
+        construction: "Construction lines"
     };
 
     A.HOST = "indesign";
@@ -208,6 +209,9 @@
                 continue;
             }
             if (filter.regions !== undefined && !contains(filter.regions, region)) {
+                continue;
+            }
+            if (filter.regionPrefix !== undefined && region.substr(0, filter.regionPrefix.length) !== filter.regionPrefix) {
                 continue;
             }
             found.push({
@@ -521,6 +525,69 @@
         return true;
     };
 
+    // Paths of the selected artwork, converted to Y-up coordinates. See the Illustrator adapter.
+    A.selectionPaths = function (doc) {
+        return inPoints(function () {
+            var selection = doc.selection;
+            var paths = [];
+            var hasText = false;
+            var points = 0;
+            var firstBounds = null;
+            var limit = 6000;
+            function flip(p) {
+                return [p[0], -p[1]];
+            }
+            function collect(item) {
+                if (points > limit || !item) {
+                    return;
+                }
+                var type = item.constructor ? item.constructor.name : "";
+                var i;
+                if (type === "Group") {
+                    var children = item.pageItems.everyItem().getElements();
+                    for (i = 0; i < children.length; i++) {
+                        collect(children[i]);
+                    }
+                    return;
+                }
+                if (type === "TextFrame" || type === "Text" || type === "InsertionPoint") {
+                    hasText = true;
+                    return;
+                }
+                if (!item.paths) {
+                    return;
+                }
+                for (i = 0; i < item.paths.length; i++) {
+                    var path = item.paths[i];
+                    var list = [];
+                    for (var j = 0; j < path.pathPoints.length; j++) {
+                        var pp = path.pathPoints[j];
+                        list.push({ anchor: flip(pp.anchor), left: flip(pp.leftDirection), right: flip(pp.rightDirection) });
+                    }
+                    points += list.length;
+                    if (list.length) {
+                        paths.push({ closed: path.pathType === PathType.CLOSED_PATH, points: list });
+                    }
+                }
+            }
+            if (selection && selection.length) {
+                for (var s = 0; s < selection.length; s++) {
+                    if (isInsideOwnedGrid(selection[s])) {
+                        continue;
+                    }
+                    if (!firstBounds && selection[s].geometricBounds) {
+                        firstBounds = toCoreRect(selection[s].geometricBounds);
+                    }
+                    collect(selection[s]);
+                }
+            }
+            var artboard = firstBounds
+                ? pageIndexAt(doc, (firstBounds[0] + firstBounds[2]) / 2, (firstBounds[1] + firstBounds[3]) / 2)
+                : A.activeArtboardIndex(doc);
+            return { paths: paths, artboard: artboard, hasText: hasText, truncated: points > limit };
+        });
+    };
+
     A.selectItems = function (doc, entries) {
         app.select(NothingEnum.NOTHING);
         for (var i = 0; i < entries.length; i++) {
@@ -628,12 +695,19 @@
             return { guides: true };
         }
         var main = swatchFor(doc, s.strokeColor);
+        var margin = s.marginColorOn ? swatchFor(doc, s.marginColor) : main;
         var styles = { solid: "Solid", dashed: "Dashed", dotted: "Dotted" };
         return {
             guides: false,
             none: doc.swatches.itemByName("None"),
             main: main,
-            margin: s.marginColorOn ? swatchFor(doc, s.marginColor) : main,
+            margin: margin,
+            colorFor: function (kind) {
+                if (s.kindColors && s.kindColors[kind]) {
+                    return swatchFor(doc, s.kindColors[kind]);
+                }
+                return kind === "margin" ? margin : main;
+            },
             gutter: s.shadeGutters ? swatchFor(doc, s.gutterColor) : null,
             gutterOpacity: s.gutterOpacity,
             width: s.strokeWidth,
@@ -655,7 +729,7 @@
             return item;
         }
         item.fillColor = style.none;
-        item.strokeColor = kind === "margin" ? style.margin : style.main;
+        item.strokeColor = style.colorFor(kind);
         item.strokeWeight = style.width;
         if (style.strokeType && style.strokeType.isValid) {
             item.strokeType = style.strokeType;

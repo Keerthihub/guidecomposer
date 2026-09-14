@@ -268,3 +268,32 @@ test("Illustrator reports page margins as InDesign-only", () => {
     host.openDocument({});
     assert.equal(host.call("applyPageMargins", { settings: COLUMNS }).error.code, "UNSUPPORTED");
 });
+
+test("InDesign construction lines read page item paths in page coordinates", () => {
+    const { host, doc } = ready({});
+    const page = doc.pageList[0];
+    const { Rectangle } = require("./helpers/fake-indesign.js");
+    const mark = page.addItem(new Rectangle(page, doc.layerList[0]), {});
+    // A circle of radius 100 centered at (306, 396) in InDesign coordinates (Y down).
+    const k = 0.5522847498307936 * 100;
+    mark.paths[0].pathType = "PathType.CLOSED_PATH";
+    // Stored directly in points; the fake reports them in picas unless the adapter switches units.
+    mark.paths[0]._points = [
+        [[306 - k, 296], [306, 296], [306 + k, 296]],
+        [[406, 396 - k], [406, 396], [406, 396 + k]],
+        [[306 + k, 496], [306, 496], [306 - k, 496]],
+        [[206, 396 + k], [206, 396], [206, 396 - k]]
+    ];
+    mark._bounds = [296, 206, 496, 406];
+    doc.selection = [mark];
+    const r = host.call("generate", { settings: { ...COLUMNS, conBounds: true, conKeylines: true, conCircles: true, conCircleColor: "#FF0000", conKeylineColor: "#0000FF", conBoundsColor: "#888888" }, kind: "construction" });
+    assert.equal(r.ok, true, r.ok ? "" : r.error.message);
+    const group = grids(doc)[0];
+    assert.equal(group.name, "Construction lines, Artwork on Page 1");
+    const rings = group.children.filter((c) => c.constructor.name === "Polygon" && c.paths[0].pathType === "PathType.CLOSED_PATH");
+    assert.equal(rings.length, 1);
+    assert.equal(rings[0].strokeColor.name, "Mullion #FF0000");
+    const line = group.children.find((c) => c.constructor.name === "GraphicLine" && c.paths[0]._points[0][0] === 306 && c.paths[0]._points[1][0] === 306);
+    assert.deepEqual(plain(line.paths[0]._points), [[306, 0], [306, 792]], "vertical key line through the center, across the page");
+    assert.equal(line.strokeColor.name, "Mullion #0000FF");
+});

@@ -190,6 +190,37 @@ $.global.Mullion = $.global.Mullion || {};
         return { builds: builds, shapes: total };
     }
 
+    function roundKey(v) {
+        return Math.round(v * 100) / 100;
+    }
+
+    /*
+     * Construction lines for the selected artwork, as a single build.
+     * The region is keyed by the artwork's bounds, so regenerating replaces the
+     * construction for the same artwork.
+     */
+    function buildConstructionTarget(doc, payload) {
+        var geometry = M.adapter.selectionPaths(doc);
+        if (!geometry.paths.length) {
+            throw new HostError("NO_SELECTION", geometry.hasText
+                ? "Construction lines need paths. Convert the text to outlines (Type > Create Outlines) and try again."
+                : "Select a logo or artwork to draw its construction lines.");
+        }
+        var board = M.adapter.artboardAt(doc, geometry.artboard);
+        var result = M.core.buildConstruction(geometry.paths, board.rect, payload.settings || {});
+        if (!result.ok) {
+            throw new HostError("INVALID_SETTINGS", result.errors[0].message, result.errors);
+        }
+        var c = result.content;
+        board.name = "Artwork on " + board.name;
+        board.region = "construction:" + roundKey(c.left) + "," + roundKey(c.top) + "," + roundKey(c.right) + "," + roundKey(c.bottom);
+        return { builds: [{ artboard: board, grid: result }], shapes: result.shapeCount };
+    }
+
+    function buildFor(doc, payload) {
+        return payload.kind === "construction" ? buildConstructionTarget(doc, payload) : buildForTargets(doc, payload);
+    }
+
     function drawAll(doc, built, kind) {
         for (var i = 0; i < built.builds.length; i++) {
             M.adapter.drawGrid(doc, built.builds[i].artboard, built.builds[i].grid, kind);
@@ -261,7 +292,7 @@ $.global.Mullion = $.global.Mullion || {};
         // Payload: { settings, target, mode: "replace" (default) | "add" }
         preview: endpoint(function (payload) {
             var doc = requireDocument();
-            var built = buildForTargets(doc, payload);
+            var built = buildFor(doc, payload);
             var hidden = M.adapter.transaction("Preview grid", function () {
                 removeAllPreviews();
                 var count = replaces(payload) ? M.adapter.hideForPreview(doc, regionsOf(built)) : 0;
@@ -289,7 +320,7 @@ $.global.Mullion = $.global.Mullion || {};
         // Payload: { settings, target, mode: "replace" (default) | "add" }
         generate: endpoint(function (payload) {
             var doc = requireDocument();
-            var built = buildForTargets(doc, payload);
+            var built = buildFor(doc, payload);
             var replaced = M.adapter.transaction("Generate grid", function () {
                 removeAllPreviews();
                 var result = { removed: 0, rescued: 0 };
@@ -309,9 +340,18 @@ $.global.Mullion = $.global.Mullion || {};
         // Payload: { target }
         clear: endpoint(function (payload) {
             var doc = requireDocument();
-            var targets = resolveTargets(doc, payload.target);
             var filter = {};
             var i;
+            if (payload.kind === "construction") {
+                // Construction lines on the active artboard, wherever the artwork has moved.
+                var active = M.adapter.activeArtboardIndex(doc);
+                var cleared = M.adapter.transaction("Clear construction lines", function () {
+                    return M.adapter.removeOwned(doc, { artboards: [active], regionPrefix: "construction:" });
+                });
+                M.adapter.redraw();
+                return summary(doc, null, { removed: cleared.removed, rescued: cleared.rescued, clearedArtboards: cleared.artboards, targetArtboards: 1 });
+            }
+            var targets = resolveTargets(doc, payload.target);
             if (payload.target && payload.target.mode === "selection") {
                 filter.regions = [];
                 for (i = 0; i < targets.length; i++) {
@@ -427,6 +467,27 @@ $.global.Mullion = $.global.Mullion || {};
                 skipped: skipped,
                 status: M.adapter.describe(doc)
             };
+        }),
+
+        // Paths of the selected artwork for the panel's live construction drawing.
+        selectionGeometry: endpoint(function () {
+            var doc = M.adapter.activeDocument();
+            if (!doc) {
+                return { paths: [], hasText: false };
+            }
+            var geometry = M.adapter.selectionPaths(doc);
+            var board = M.adapter.artboardAt(doc, geometry.artboard);
+            for (var p = 0; p < geometry.paths.length; p++) {
+                var pts = geometry.paths[p].points;
+                for (var q = 0; q < pts.length; q++) {
+                    pts[q] = {
+                        anchor: [roundKey(pts[q].anchor[0]), roundKey(pts[q].anchor[1])],
+                        left: [roundKey(pts[q].left[0]), roundKey(pts[q].left[1])],
+                        right: [roundKey(pts[q].right[0]), roundKey(pts[q].right[1])]
+                    };
+                }
+            }
+            return { paths: geometry.paths, hasText: geometry.hasText, truncated: geometry.truncated, artboard: board };
         }),
 
         // Reads type size and leading from the selected text, for baseline grids.

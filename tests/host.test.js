@@ -9,7 +9,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("node:path");
-const { createHost, PathItem, GroupItem, TextFrame } = require("./helpers/fake-illustrator.js");
+const { createHost, PathItem, GroupItem, CompoundPathItem, TextFrame } = require("./helpers/fake-illustrator.js");
 
 const OWNER = "com.mullion.panel";
 
@@ -969,4 +969,81 @@ test("column grids with a baseline and unequal widths draw in one group", () => 
     assert.deepEqual(plain(r.data.metrics.columnWidths), [352, 176]);
     assert.equal(r.data.metrics.baselineCount, 31);
     assert.equal(ownedGroups(doc).length, 1);
+});
+
+// ------------------------------------------------------------ construction
+
+const KAPPA = 0.5522847498307936;
+function circleItem(cx, cy, r) {
+    const path = new PathItem();
+    const k = KAPPA * r;
+    path.setEntirePath([[cx, cy + r], [cx + r, cy], [cx, cy - r], [cx - r, cy]]);
+    const handles = [
+        [[cx - k, cy + r], [cx + k, cy + r]],
+        [[cx + r, cy + k], [cx + r, cy - k]],
+        [[cx + k, cy - r], [cx - k, cy - r]],
+        [[cx - r, cy - k], [cx - r, cy + k]]
+    ];
+    path.pathPointList.forEach((pt, i) => { pt.leftDirection = handles[i][0]; pt.rightDirection = handles[i][1]; });
+    path.closed = true;
+    return path;
+}
+
+const CONSTRUCT = {
+    ...COLUMNS, conBounds: true, conKeylines: true, conCircles: true, conExtend: "artboard",
+    conBoundsColor: "#888888", conKeylineColor: "#0000FF", conCircleColor: "#FF0000"
+};
+
+test("construction lines for a selected mark: bounds, key lines, fitted circle, colored by kind", () => {
+    const { host, doc } = ready({});
+    const mark = place(doc._layers[0], circleItem(306, 396, 100));
+    mark.selected = true;
+    const geometry = host.call("selectionGeometry");
+    assert.equal(geometry.data.paths.length, 1);
+    assert.equal(geometry.data.paths[0].points.length, 4);
+
+    const r = host.call("generate", { settings: CONSTRUCT, kind: "construction" });
+    assert.equal(r.ok, true, r.ok ? "" : r.error.message);
+    const [group] = ownedGroups(doc);
+    assert.equal(group.name, "Construction lines, Artwork on Artboard 1");
+    assert.equal(tagsOf(group).MullionRegion, "construction:206,496,406,296");
+    const ring = group.children.find((p) => p.closed && p.pathPointList.length === 4);
+    assert.ok(ring, "fitted circle drawn");
+    assert.deepEqual([ring.strokeColor.red, ring.strokeColor.blue], [255, 0]);
+    const keyline = group.children.find((p) => !p.closed && p.points[0][0] === 306 && p.points[1][0] === 306);
+    assert.deepEqual(plain(keyline.points), [[306, 792], [306, 0]], "vertical key line through the center, across the artboard");
+    assert.equal(keyline.strokeColor.blue, 255);
+    assert.ok(doc._layers.some((l) => l.children.includes(mark)), "the mark itself is untouched");
+});
+
+test("construction reads groups and compound paths, replaces itself, and clears without touching grids", () => {
+    const { host, doc } = ready({});
+    host.call("generate", { settings: COLUMNS });
+    const outer = circleItem(306, 396, 120);
+    const inner = circleItem(306, 396, 60);
+    const logo = place(doc._layers[doc._layers.length - 1], new GroupItem());
+    const donut = new CompoundPathItem([outer, inner]);
+    donut.parent = logo;
+    logo.children.push(donut);
+    logo._bounds = [186, 516, 426, 276];
+    logo.selected = true;
+
+    const first = host.call("generate", { settings: CONSTRUCT, kind: "construction" });
+    assert.equal(first.ok, true, first.ok ? "" : first.error.message);
+    const construction = ownedGroups(doc).find((g) => tagsOf(g).MullionRegion.startsWith("construction:"));
+    assert.equal(construction.children.filter((p) => p.closed).length, 2, "both circles found inside the group");
+    assert.equal(host.call("generate", { settings: CONSTRUCT, kind: "construction" }).data.replaced, 1);
+
+    const cleared = host.call("clear", { kind: "construction" });
+    assert.equal(cleared.data.removed, 1);
+    assert.deepEqual(ownedGroups(doc).map((g) => tagsOf(g).MullionRegion), ["artboard:0"], "the column grid stays");
+});
+
+test("construction explains text and empty selections", () => {
+    const { host, doc } = ready({});
+    assert.match(host.call("generate", { settings: CONSTRUCT, kind: "construction" }).error.message, /Select a logo or artwork/);
+    const text = place(doc._layers[0], new TextFrame({}));
+    text._bounds = [100, 700, 300, 650];
+    text.selected = true;
+    assert.match(host.call("generate", { settings: CONSTRUCT, kind: "construction" }).error.message, /Convert the text to outlines/);
 });

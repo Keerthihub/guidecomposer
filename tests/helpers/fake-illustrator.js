@@ -170,6 +170,19 @@ class PathItem extends PageItem {
     }
 }
 
+class CompoundPathItem extends PageItem {
+    constructor(paths) {
+        super("CompoundPathItem");
+        this.children = paths;
+        paths.forEach((p) => { p.parent = this; });
+    }
+    get pathItems() { return collection(this.children); }
+    get geometricBounds() {
+        const b = this.children.map((c) => c.geometricBounds);
+        return [Math.min(...b.map((x) => x[0])), Math.max(...b.map((x) => x[1])), Math.max(...b.map((x) => x[2])), Math.min(...b.map((x) => x[3]))];
+    }
+}
+
 class TextFrame extends PageItem {
     constructor({ size = 10, leading = 12, autoLeading = false, autoLeadingAmount = 120, font = "Helvetica" } = {}) {
         super("TextFrame");
@@ -398,4 +411,4 @@ function createHost() {
     return { context, sandbox, app, openDocument, boot, call, classes: { PathItem, GroupItem, Layer } };
 }
 
-module.exports = { createHost, PathItem, GroupItem, TextFrame, ROOT };
+module.exports = { createHost, PathItem, GroupItem, CompoundPathItem, TextFrame, ROOT };

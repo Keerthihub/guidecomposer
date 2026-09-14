@@ -114,6 +114,12 @@ class PathData {
     get entirePath() {
         return this._points.map((p) => (typeof p[0] === "number" ? p.map(toUnits) : p.map((q) => q.map(toUnits))));
     }
+    get pathPoints() {
+        return this._points.map((p) => {
+            const [left, anchor, right] = typeof p[0] === "number" ? [p, p, p] : p;
+            return { anchor: anchor.map(toUnits), leftDirection: left.map(toUnits), rightDirection: right.map(toUnits) };
+        });
+    }
     set entirePath(value) {
         this.owner.assertEditable();
         this._points = value.map((p) => (typeof p[0] === "number" ? p.map(fromUnits) : p.map((q) => q.map(fromUnits))));

@@ -981,7 +981,7 @@ test("construction finds the circle, its extremes, and the bounds of a circular 
     const vertical = ofKind(r, "keyline").find((s) => s.x1 === 300);
     assert.deepEqual([vertical.y1, vertical.y2], [792, 0], "key lines run across the artboard");
     assert.equal(ofKind(r, "bounds").length, 4);
-    assert.deepEqual(r.settings.kindColors, { bounds: "#8C93A1", keyline: "#2F7CF6", circle: "#E0457B" });
+    assert.deepEqual(r.settings.kindColors, { bounds: "#8C93A1", keyline: "#2F7CF6", circle: "#E0457B", center: "#2F7CF6", diagonal: "#2F7CF6" });
 });
 
 test("construction keylines follow curve extremes even without anchors there", () => {
