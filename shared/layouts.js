@@ -124,6 +124,28 @@
         });
     }
 
+    // Grids with a baseline built in.
+    function withBaseline(id, name, settings, spacing) {
+        add({
+            id: id,
+            category: "Baseline",
+            name: name,
+            settings: assign({ units: "pt", addBaseline: true, baselineSpacing: spacing, baselineOffset: 0 }, settings),
+            relative: even(0.06, 0.02)
+        });
+    }
+    withBaseline("columns-12-baseline-12", "12 columns + 12 pt baseline", { type: "columns", columns: 12 }, 12);
+    withBaseline("columns-3-baseline-14", "3 columns + 14 pt baseline", { type: "columns", columns: 3 }, 14);
+    withBaseline("modular-6x8-baseline-12", "6 \u00d7 8 modules + 12 pt baseline", { type: "modular", columns: 6, rows: 8 }, 12);
+    withBaseline("modular-4x6-baseline-16", "4 \u00d7 6 modules + 16 pt baseline", { type: "modular", columns: 4, rows: 6 }, 16);
+
+    // Unequal proportions.
+    asym("ratio-golden-2", "Golden columns 1.618 : 1", { type: "columns", columnRatios: "1.618 1" }, 0.06, 0.06, 0.06, 0.06, 0.03);
+    asym("ratio-fibonacci-5", "Fibonacci columns 1 1 2 3 5", { type: "columns", columnRatios: "1 1 2 3 5" }, 0.06, 0.06, 0.06, 0.06, 0.02);
+    asym("ratio-sidebar", "Sidebar and body 1 : 3", { type: "columns", columnRatios: "1 3" }, 0.06, 0.06, 0.06, 0.06, 0.04);
+    asym("ratio-feature-3", "Feature column 2 : 1 : 1", { type: "columns", columnRatios: "2 1 1" }, 0.06, 0.06, 0.06, 0.06, 0.02);
+    asym("ratio-rows-1-2-1", "Modular, rows 1 : 2 : 1", { type: "modular", columns: 4, rowRatios: "1 2 1" }, 0.06, 0.06, 0.06, 0.06, 0.02);
+
     // -------------------------------------------------------------- classic
     // Van de Graaf canon: inner and top margins are 1/9 of the page, outer and bottom 2/9.
     add({
