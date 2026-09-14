@@ -21,6 +21,7 @@ const FILES = [
     { file: "shared/grid-core.js", apiCheck: true, allowJSON: false },
     { file: "host/index.jsx", apiCheck: true, allowJSON: true },
     { file: "host/illustrator-adapter.jsx", apiCheck: true, allowJSON: true },
+    { file: "host/indesign-adapter.jsx", apiCheck: true, allowJSON: true },
     // Vendor code is syntax-checked only; json2 is designed for ES3 hosts.
     { file: "host/vendor/json2.js", apiCheck: false, allowJSON: true }
 ];

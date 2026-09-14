@@ -16,9 +16,10 @@ test("manifest is well formed and every referenced file exists", () => {
     assert.deepEqual(checks.checkManifest(), []);
 });
 
-test("manifest targets Illustrator 2022+ panels without Node.js", () => {
+test("manifest targets Illustrator 2022+ and InDesign 2022+ panels without Node.js", () => {
     const manifest = fs.readFileSync(path.join(checks.ROOT, "CSXS/manifest.xml"), "utf8");
     assert.match(manifest, /<Host Name="ILST" Version="\[26\.0,99\.9\]"\/>/);
+    assert.match(manifest, /<Host Name="IDSN" Version="\[17\.0,99\.9\]"\/>/);
     assert.match(manifest, /<RequiredRuntime Name="CSXS" Version="11\.0"\/>/);
     assert.match(manifest, /<Type>Panel<\/Type>/);
     assert.doesNotMatch(manifest, /enable-nodejs/);

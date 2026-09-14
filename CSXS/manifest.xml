@@ -5,8 +5,10 @@
     </ExtensionList>
     <ExecutionEnvironment>
         <HostList>
-            <!-- Illustrator 2022 (26.0, CEP 11 / Chromium 88) and later. Narrow this to the versions you have tested. -->
+            <!-- Illustrator 2022 (26.0) and InDesign 2022 (17.0) and later: CEP 11 / Chromium 88.
+                 Narrow these to the versions you have tested. -->
             <Host Name="ILST" Version="[26.0,99.9]"/>
+            <Host Name="IDSN" Version="[17.0,99.9]"/>
         </HostList>
         <LocaleList>
             <Locale Code="All"/>

@@ -53,6 +53,15 @@
         return app.documents.length ? app.activeDocument : null;
     };
 
+    // Illustrator already records each script run as one undo step.
+    A.transaction = function (label, fn) {
+        return fn();
+    };
+
+    A.applyPageMargins = function () {
+        throw new M.HostError("UNSUPPORTED", "Page margins and columns are an InDesign feature. In Illustrator, Generate draws the grid.");
+    };
+
     A.openDocuments = function () {
         var docs = [];
         for (var i = 0; i < app.documents.length; i++) {

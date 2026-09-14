@@ -262,16 +262,19 @@ $.global.Mullion = $.global.Mullion || {};
         preview: endpoint(function (payload) {
             var doc = requireDocument();
             var built = buildForTargets(doc, payload);
-            removeAllPreviews();
-            var hidden = replaces(payload) ? M.adapter.hideForPreview(doc, regionsOf(built)) : 0;
-            drawAll(doc, built, "preview");
+            var hidden = M.adapter.transaction("Preview grid", function () {
+                removeAllPreviews();
+                var count = replaces(payload) ? M.adapter.hideForPreview(doc, regionsOf(built)) : 0;
+                drawAll(doc, built, "preview");
+                return count;
+            });
             M.adapter.redraw();
             return summary(doc, built, { hidden: hidden });
         }),
 
         // Removes preview grids from every artboard of every open document.
         clearPreview: endpoint(function () {
-            var removed = removeAllPreviews();
+            var removed = M.adapter.activeDocument() ? M.adapter.transaction("Remove preview", removeAllPreviews) : 0;
             var doc = M.adapter.activeDocument();
             if (!doc) {
                 return { hasDocument: false, removed: removed };
@@ -287,12 +290,15 @@ $.global.Mullion = $.global.Mullion || {};
         generate: endpoint(function (payload) {
             var doc = requireDocument();
             var built = buildForTargets(doc, payload);
-            removeAllPreviews();
-            var replaced = { removed: 0, rescued: 0 };
-            if (replaces(payload)) {
-                replaced = M.adapter.removeOwned(doc, { kind: "final", regions: regionsOf(built) }, { keepLayer: true });
-            }
-            drawAll(doc, built, "final");
+            var replaced = M.adapter.transaction("Generate grid", function () {
+                removeAllPreviews();
+                var result = { removed: 0, rescued: 0 };
+                if (replaces(payload)) {
+                    result = M.adapter.removeOwned(doc, { kind: "final", regions: regionsOf(built) }, { keepLayer: true });
+                }
+                drawAll(doc, built, "final");
+                return result;
+            });
             M.adapter.redraw();
             return summary(doc, built, { replaced: replaced.removed, rescued: replaced.rescued });
         }),
@@ -317,7 +323,9 @@ $.global.Mullion = $.global.Mullion || {};
                     filter.artboards.push(targets[i].index);
                 }
             }
-            var result = M.adapter.removeOwned(doc, filter);
+            var result = M.adapter.transaction("Clear grids", function () {
+                return M.adapter.removeOwned(doc, filter);
+            });
             M.adapter.redraw();
             return summary(doc, null, {
                 removed: result.removed,
@@ -331,7 +339,9 @@ $.global.Mullion = $.global.Mullion || {};
         // Payload: { visible?: boolean, locked?: boolean }
         setGridLayer: endpoint(function (payload) {
             var doc = requireDocument();
-            var changed = M.adapter.setGridLayer(doc, payload);
+            var changed = M.adapter.transaction("Grid layer", function () {
+                return M.adapter.setGridLayer(doc, payload);
+            });
             M.adapter.redraw();
             return { changed: changed, status: M.adapter.describe(doc) };
         }),
@@ -350,9 +360,11 @@ $.global.Mullion = $.global.Mullion || {};
             var width = readPositiveLength(payload.width, units, "Width");
             var height = readPositiveLength(payload.height, units, "Height");
             var targets = resolveTargets(doc, payload.target);
-            for (var i = 0; i < targets.length; i++) {
-                M.adapter.resizeArtboard(doc, targets[i].index, width, height);
-            }
+            M.adapter.transaction("Resize", function () {
+                for (var i = 0; i < targets.length; i++) {
+                    M.adapter.resizeArtboard(doc, targets[i].index, width, height);
+                }
+            });
             M.adapter.redraw();
             return { resized: targets.length, width: width, height: height, status: M.adapter.describe(doc) };
         }),
@@ -372,6 +384,7 @@ $.global.Mullion = $.global.Mullion || {};
             var maxOffset = 0;
             var moved = 0;
             var skipped = 0;
+            var snaps = [];
             for (var i = 0; i < items.length; i++) {
                 var item = items[i];
                 var key = String(item.artboard);
@@ -388,14 +401,19 @@ $.global.Mullion = $.global.Mullion || {};
                     continue;
                 }
                 offGrid.push(item);
+                snaps.push(snap);
                 maxOffset = Math.max(maxOffset, Math.abs(snap.dx), Math.abs(snap.dy));
-                if (action === "snap") {
-                    if (M.adapter.moveItem(item, snap.dx, snap.dy)) {
-                        moved++;
-                    } else {
-                        skipped++;
+            }
+            if (action === "snap" && offGrid.length) {
+                M.adapter.transaction("Snap to grid", function () {
+                    for (var s = 0; s < offGrid.length; s++) {
+                        if (M.adapter.moveItem(offGrid[s], snaps[s].dx, snaps[s].dy)) {
+                            moved++;
+                        } else {
+                            skipped++;
+                        }
                     }
-                }
+                });
             }
             if (action === "select") {
                 M.adapter.selectItems(doc, offGrid);
@@ -421,10 +439,38 @@ $.global.Mullion = $.global.Mullion || {};
             return metrics;
         }),
 
+        // InDesign only: sets the target pages' own margins and columns, and the
+        // document baseline grid, from grid settings. Payload: { settings, target }
+        applyPageMargins: endpoint(function (payload) {
+            var doc = requireDocument();
+            if (payload.target && payload.target.mode === "selection") {
+                throw new HostError("INVALID_TARGET", "Page margins apply to pages, not selected objects.");
+            }
+            var normalized = M.core.normalizeSettings(payload.settings || {});
+            if (!normalized.ok) {
+                throw new HostError("INVALID_SETTINGS", normalized.errors[0].message, normalized.errors);
+            }
+            var s = normalized.settings;
+            if (s.columnRatios) {
+                throw new HostError("INVALID_SETTINGS", "InDesign page columns are equal widths. Clear Column widths to use them.");
+            }
+            var targets = resolveTargets(doc, payload.target);
+            var indices = [];
+            for (var i = 0; i < targets.length; i++) {
+                indices.push(targets[i].index);
+            }
+            var result = M.adapter.transaction("Page margins", function () {
+                return M.adapter.applyPageMargins(doc, indices, s);
+            });
+            return { pages: result.pages, baseline: result.baseline, status: M.adapter.describe(doc) };
+        }),
+
         // Milestone 1 spike, kept as an install diagnostic: one line across the artboard.
         drawTestLine: endpoint(function () {
             var doc = requireDocument();
-            var result = M.adapter.drawTestLine(doc);
+            var result = M.adapter.transaction("Test line", function () {
+                return M.adapter.drawTestLine(doc);
+            });
             M.adapter.redraw();
             return result;
         })
