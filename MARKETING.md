@@ -20,19 +20,24 @@ Sales page copy, pricing, screenshots, and a demo video script. Replace "Mullion
 
 ### Subheading
 
-Column, modular, baseline, and composition grids for Illustrator and InDesign, with over a hundred layouts that fit any page, and tools to put your artwork exactly on the grid.
+Column, modular, baseline, and classic grid systems for Illustrator and InDesign, construction lines for logos, over a hundred layouts that fit any page, and tools to put your artwork exactly on the grid.
 
 ### Section: Start from a layout
 
-Browse 114 layouts, each drawn live on your own artboard, so you see how it fits before you apply it. Pick from classic book proportions, editorial modular grids, print formats, web and app columns, and social posts and stories. Layouts that suit any page size their margins to your artboard automatically.
+Browse 128 layouts, each drawn live on your own artboard, so you see how it fits before you apply it. Start with the grid systems designers study: golden spiral, harmonic armature, dynamic rectangle, Villard's figure, the Van de Graaf canon, and compound and hierarchical grids. Or pick from classic book proportions, editorial modular grids, print formats, web and app columns, and social posts and stories. Layouts that suit any page size their margins to your artboard automatically.
 
 ### Section: Any grid you need
 
 - Columns and modular grids, with equal or proportional widths such as 2 : 1 : 1 or Fibonacci
 - Baseline grids, on their own or inside your columns, set from your text's leading in one click
-- Composition guides: rule of thirds, golden sections, diagonals, and a true golden spiral
+- Composition guides: thirds, fifths, golden sections, diagonals, armature, dynamic rectangle, and a true golden spiral
+- Compound grids such as 3 + 4, and square modules
 - Patterns: dots, squares, isometric, hexagons, diagonal, and radial
 - Lines, guides, or boxes, with dashed and dotted styles, margin colors, and shaded gutters
+
+### Section: See how a logo is built
+
+Select a logo and Construct draws its bounding box, key lines, and the circles behind its curves, each in its own color. Use it to present a mark to a client, or to tighten your own.
 
 ### Section: Put grids where the work is
 
@@ -88,28 +93,29 @@ Get Mullion — [price], one-time purchase.
 
 Take these at 2× resolution, in Illustrator's dark and light themes. Use real-looking design content behind the grids.
 
-1. Library open on **Suggested**, with an editorial spread behind it
-2. Modular grid with a baseline, a poster layout on the artboard
-3. Golden spiral and sections over a photograph
-4. Grids inside three product cards (**Selected objects**)
-5. **Align objects**: the status line reporting off-grid objects, then the snapped result
-6. Patterns: isometric and hexagons, side by side
-7. Social: story safe area on a 1080 × 1920 artboard
-8. Content blocks marked on a modular grid, with the generated result
-9. Line styles: dotted margins in a second color, shaded gutters
-10. InDesign: page margins and columns applied (only once verified)
+1. Layouts open on **Systems**, with an editorial spread behind it
+2. **Construct**: a logo with its bounding box, key lines, and circles in three colors
+3. Modular grid with a baseline, a poster layout on the artboard
+4. Golden spiral and sections over a photograph
+5. Grids inside three product cards (**Selected objects**)
+6. **Align objects**: the status line reporting off-grid objects, then the snapped result
+7. Patterns: isometric and hexagons, side by side
+8. Social: story safe area on a 1080 × 1920 artboard
+9. Content blocks marked on a modular grid, with the generated result
+10. Line styles: dotted margins in a second color, shaded gutters
+11. InDesign: page margins and columns applied (only once verified)
 
 ## 60-second demo video
 
 | Time | On screen | Voice-over or caption |
 | --- | --- | --- |
 | 0–5 s | Blank artboard, cursor opens the panel | "Stop drawing grids by hand." |
-| 5–15 s | Open Layouts, scroll Suggested, thumbnails update | "Start from over a hundred layouts, drawn on your own artboard." |
+| 5–15 s | Open Layouts, scroll Systems, thumbnails update | "Start from over a hundred layouts, drawn on your own artboard." |
 | 15–22 s | Click a modular layout, turn on Preview, press + twice | "Adjust it live." |
 | 22–27 s | Generate; grid appears on its own layer | "One click. One undo." |
 | 27–35 s | Select three cards, Apply to Selected objects, Generate | "Put a grid inside anything." |
 | 35–45 s | Scattered objects, Check, then Snap to grid | "Then put your design on the grid." |
-| 45–52 s | Composition tab, golden spiral across a photo, rotate focus | "Composition guides, including a true golden spiral." |
+| 45–52 s | Select a logo, Construct, Generate | "See how a logo is built." |
 | 52–57 s | Quick cuts: patterns, dotted lines, InDesign page | "Patterns, styles, and InDesign too." |
 | 57–60 s | Product name and price | "[Name]. Grids for Illustrator and InDesign." |
 

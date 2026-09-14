@@ -132,6 +132,8 @@ async function main() {
         const text = (id) => `document.getElementById(${JSON.stringify(id)}).textContent`;
         const value = (name) => `document.getElementById("settings").elements.namedItem(${JSON.stringify(name)}).value`;
         const click = (id) => `document.getElementById(${JSON.stringify(id)}).click()`;
+        const mode = (name) => `document.querySelector('input[name="panel-mode"][value=${JSON.stringify(name)}]').click()`;
+        const shown = (selector) => `(() => { const el = document.querySelector(${JSON.stringify(selector)}); return Boolean(el) && el.getClientRects().length > 0; })()`;
 
         // ---------------------------------------------------------------- default state
         await load("?theme=dark");
@@ -145,6 +147,9 @@ async function main() {
         check(await evaluate(`document.getElementById("generate").disabled`) === false, "Generate enabled");
         check(await evaluate(text("appearance-summary")) === "Lines, 0.5 pt, 100%", "appearance summary");
         check(await evaluate(`document.getElementById("toggle-visible").disabled`) === true, "show/hide disabled before any grid exists");
+        check(await evaluate(`document.getElementById("panel").dataset.panelMode`) === "grid", "panel opens in Grid mode");
+        check(await evaluate(shown("#controls")) && !(await evaluate(shown("#library"))) && !(await evaluate(shown("#construct-card"))), "Grid mode shows only grid settings");
+        check(await evaluate(`Array.from(document.querySelectorAll('input[name="type"]')).map(i => i.closest("label").textContent.trim()).join("|")`) === "Columns|Modular|Baseline|Compose|Pattern", "grid types as icon buttons");
         await shoot("dark-columns");
 
         // ---------------------------------------------------------------- validation
@@ -419,21 +424,27 @@ async function main() {
         check(await evaluate(`document.getElementById("preset-select").options.length`) === 1, "preset deleted");
 
         // ---------------------------------------------------------------- layout library
+        const chip = (name) => `(() => { const i = Array.from(document.querySelectorAll("#library-chips input")).find(x => x.value === ${JSON.stringify(name)}); i.checked = true; i.dispatchEvent(new Event("change", { bubbles: true })); })()`;
         await evaluate(setField("strokeColor", "#123456"));
-        await evaluate(click("library-open"));
+        await evaluate(mode("layouts"));
         await sleep(150);
-        check(await evaluate(`document.getElementById("library").hidden === false && document.getElementById("settings").hidden === true && document.getElementById("controls").hidden === true`) === true, "library replaces the settings area");
-        check(await evaluate(`document.activeElement.id`) === "library-search", "search is focused");
+        check(await evaluate(shown("#library")) && !(await evaluate(shown("#settings"))) && !(await evaluate(shown("#controls"))), "Layouts mode replaces the settings area");
+        check(await evaluate(`document.getElementById("generate").disabled`) === true, "Generate waits until a layout is picked and you return to Grid");
         const chips = await evaluate(`Array.from(document.querySelectorAll("#library-chips input")).map(i => i.value).join("|")`);
-        check(chips === "Suggested|All|Columns|Modular|Asymmetric|Baseline|Classic|Print|Screen|Social|Composition|Patterns", "category chips: " + chips);
-        check(await evaluate(`document.querySelector("#library-chips input:checked").value`) === "Suggested", "Suggested chosen for a Letter artboard");
+        check(chips === "Systems|Suggested|All|Columns|Modular|Asymmetric|Baseline|Print|Screen|Social|Composition|Patterns", "category chips: " + chips);
+        check(await evaluate(`document.querySelector("#library-chips input:checked").value`) === "Systems", "library opens on Systems");
+        await sleep(300);
+        const systems = await evaluate(`Array.from(document.querySelectorAll("#library-grid .tile .tile__name")).map(t => t.textContent)`);
+        check(["Golden spiral", "Harmonic armature", "Dynamic rectangle", "Villard's figure", "Rule of fifths", "Compound grid 3 + 4", "Hierarchical grid", "Manuscript grid"].every((n) => systems.includes(n)), "Systems lists the grid systems (" + systems.join(", ") + ")");
+        check(await evaluate(`getComputedStyle(document.querySelector("#library-grid .tile svg line, #library-grid .tile svg path")).stroke`) === await evaluate(`getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() && (() => { const d = document.createElement("div"); d.style.color = getComputedStyle(document.documentElement).getPropertyValue("--accent"); document.body.appendChild(d); const c = getComputedStyle(d).color; d.remove(); return c; })()`), "tiles draw in the panel accent");
+        await shoot("dark-library-systems");
+        await evaluate(chip("Suggested"));
         const suggested = await evaluate(`Array.from(document.querySelectorAll("#library-grid .tile")).map(t => t.dataset.layout)`);
         check(suggested.includes("letter-3"), "Letter suggestions include US Letter, 3 columns (" + suggested.join(", ") + ")");
         await sleep(300);
         check(await evaluate(`document.querySelectorAll("#library-grid .tile svg rect.schematic__paper").length`) >= 3, "visible tiles draw live thumbnails");
         await shoot("dark-library-suggested");
 
-        const chip = (name) => `(() => { const i = Array.from(document.querySelectorAll("#library-chips input")).find(x => x.value === ${JSON.stringify(name)}); i.checked = true; i.dispatchEvent(new Event("change", { bubbles: true })); })()`;
         await evaluate(chip("All"));
         check(await evaluate(`document.querySelectorAll("#library-grid .tile").length`) >= 100, "All shows about a hundred layouts");
         await evaluate(chip("Modular"));
@@ -444,6 +455,7 @@ async function main() {
         check(await evaluate(value("type")) === "modular" && await evaluate(value("columns")) === "4" && await evaluate(value("rows")) === "6", "clicking a tile applies 4 × 6 modules");
         check(await evaluate(value("marginTop")) === "36.7", "relative margins sized for the 612 pt artboard (" + await evaluate(value("marginTop")) + ")");
         check(/Applied “4 × 6 modules”. Margins are sized for this artboard./.test(await evaluate(text("status"))), "apply message");
+        check(await evaluate(`document.querySelector("#status .link-button").textContent`) === "Edit settings", "apply offers Edit settings");
         check(await evaluate(`document.querySelector('#library-grid .tile[data-layout="modular-4x6"]').getAttribute("aria-pressed")`) === "true", "applied tile is marked");
         check(await evaluate(value("strokeColor")) === "#123456", "layouts keep the user's appearance");
         check((await evaluate(text("grid-metrics"))).startsWith("Modules"), "main drawing updates behind the library");
@@ -468,11 +480,15 @@ async function main() {
         await shoot("dark-library-patterns");
 
         await evaluate(`document.getElementById("library-search").dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
-        check(await evaluate(`document.getElementById("library").hidden`) === true, "Escape closes the library");
-        check(await evaluate(`document.activeElement.id`) === "library-open", "focus returns to the Layouts button");
-        await evaluate(click("library-open"));
+        check(await evaluate(`document.getElementById("panel").dataset.panelMode`) === "grid" && !(await evaluate(shown("#library"))), "Escape returns to Grid");
+        check(await evaluate(`document.activeElement.value`) === "layouts", "focus returns to the Layouts tab");
+        check(await evaluate(value("pattern")) === "dots" && await evaluate(shown('[name="patternSize"]')), "Grid mode shows the applied layout's settings");
+        await evaluate(mode("layouts"));
         check(await evaluate(`document.querySelector("#library-chips input:checked").value`) === "Patterns", "library reopens on the last category");
-        await evaluate(click("library-close"));
+        await evaluate(chip("Modular"));
+        await evaluate(`document.querySelector('#library-grid .tile[data-layout="modular-4x6"]').click()`);
+        await evaluate(`document.querySelector("#status .link-button").click()`);
+        check(await evaluate(`document.getElementById("panel").dataset.panelMode`) === "grid", "Edit settings switches to Grid");
         await evaluate(click("reset"));
         await evaluate(setField("strokeColor", "#E0457B"));
 
@@ -539,14 +555,14 @@ async function main() {
         check(await evaluate(text("artboard-size")) === "595.276 × 841.89 pt", "readout shows the new size: " + await evaluate(text("artboard-size")));
 
         // layout made for another size offers a resize
-        await evaluate(click("library-open"));
+        await evaluate(mode("layouts"));
         await evaluate(`(() => { const s = document.getElementById("library-search"); s.value = "portrait post"; s.dispatchEvent(new Event("input", { bubbles: true })); })()`);
         await evaluate(`document.querySelector('#library-grid .tile[data-layout="portrait-post"]').click()`);
         check(await evaluate(`document.querySelector("#status .link-button") && document.querySelector("#status .link-button").textContent`) === "Resize artboard to 1080 × 1350 px", "resize offered for a fixed-size layout");
         await evaluate(`document.querySelector("#status .link-button").click()`);
         await sleep(300);
         check(await evaluate(text("artboard-size")) === "1080 × 1350 px", "one click resizes to the layout's size: " + await evaluate(text("artboard-size")));
-        await evaluate(click("library-close"));
+        await evaluate(mode("grid"));
 
         // export / import
         await evaluate(click("reset"));
@@ -593,6 +609,77 @@ async function main() {
         await evaluate(`(() => { const s = document.getElementById("target-mode"); s.value = "selection"; s.dispatchEvent(new Event("change", { bubbles: true })); })()`);
         check(await evaluate(`document.getElementById("format-apply").disabled`) === true, "resize is off while targeting objects");
 
+        // ---------------------------------------------------------------- construct
+        await evaluate(mode("construct"));
+        await sleep(300);
+        check(await evaluate(shown("#construct-card")) && !(await evaluate(shown("#controls"))) && !(await evaluate(shown('[name="columns"]'))), "Construct mode shows construction settings only");
+        check(await evaluate(`document.getElementById("construct-card").dataset.state`) === "ready", "construct card sees the selected artwork");
+        check(await evaluate(text("construct-title")) === "Artwork selected", "construct title: " + await evaluate(text("construct-title")));
+        check(await evaluate(`document.querySelectorAll("#schematic path.schematic__artwork").length`) === 3, "drawing shows the selected artwork");
+        check(await evaluate(`document.querySelectorAll("#schematic path.schematic__curve").length`) === 1, "the round part gets a circle");
+        const conStrokes = await evaluate(`Array.from(new Set(Array.from(document.querySelectorAll("#schematic line, #schematic path.schematic__curve")).map(l => l.getAttribute("stroke")))).sort().join("|")`);
+        check(conStrokes === "#2F7CF6|#8C93A1|#E0457B", "bounds, key lines, and circles use their own colors: " + conStrokes);
+        check(/key lines, 1 circle/.test(await evaluate(text("grid-metrics"))), "construct readout: " + await evaluate(text("grid-metrics")));
+        await shoot("dark-construct");
+        await evaluate(setField("conCircleColor", "#00AA00"));
+        check(await evaluate(`document.querySelector("#schematic path.schematic__curve").getAttribute("stroke")`) === "#00AA00", "circle color applies");
+        await evaluate(setField("conCircleColor", "zz"));
+        check(await evaluate(text("err-construction")) !== "" && await evaluate(`document.getElementById("generate").disabled`) === true, "bad construction color explained: " + await evaluate(text("err-construction")));
+        await evaluate(setField("conCircleColor", "#E0457B"));
+        check(!(await evaluate(shown('[name="conPadding"]'))), "padding hidden while lines cross the artboard");
+        await evaluate(setField("conExtend", "bounds"));
+        check(await evaluate(shown('[name="conPadding"]')), "padding shown for lines around the artwork");
+        await evaluate(setField("conCenter", true));
+        await evaluate(setField("conDiagonals", true));
+        await evaluate(click("generate"));
+        await sleep(300);
+        check(/Drew construction lines for the selected artwork/.test(await evaluate(text("status"))), "generate construction: " + await evaluate(text("status")));
+        check(await evaluate(`document.getElementById("status").dataset.tone`) === "ok", "success message styled as success");
+        await evaluate(click("generate"));
+        await sleep(300);
+        check(/Redrew the construction lines/.test(await evaluate(text("status"))), "generating again replaces construction lines");
+        await evaluate(click("clear"));
+        await sleep(300);
+        check(/Cleared construction lines from Artboard 1/.test(await evaluate(text("status"))), "clear construction: " + await evaluate(text("status")));
+        await evaluate(setField("conExtend", "artboard"));
+        await evaluate(setField("conCenter", false));
+        await evaluate(setField("conDiagonals", false));
+        await sleep(400);
+        await load("?theme=dark&selection");
+        check(await evaluate(`document.getElementById("panel").dataset.panelMode`) === "construct", "mode persists across reloads");
+        await evaluate(mode("grid"));
+        await load("?theme=dark");
+        await evaluate(mode("construct"));
+        await sleep(300);
+        check(await evaluate(`document.getElementById("construct-card").dataset.state`) === "empty" && await evaluate(text("construct-title")) === "No artwork selected", "construct explains an empty selection");
+        check(await evaluate(`document.getElementById("generate").disabled`) === true, "Generate disabled without artwork");
+        await shoot("dark-construct-empty");
+        await evaluate(mode("grid"));
+
+        // ---------------------------------------------------------------- systems, quick colors, slider
+        await evaluate(click("reset"));
+        await evaluate(setField("type", "composition"));
+        await evaluate(setField("compThirds", false));
+        await evaluate(setField("compArmature", true));
+        check(await evaluate(text("grid-metrics")) === "Armature", "armature readout");
+        await evaluate(setField("compVillard", true));
+        check(await evaluate(text("grid-metrics")) === "Armature, Villard", "Villard readout");
+        await evaluate(setField("compArmature", false));
+        await evaluate(setField("compVillard", false));
+        await evaluate(setField("compThirds", true));
+        await evaluate(setField("type", "modular"));
+        await evaluate(setField("squareModules", true));
+        { const m = await evaluate(text("grid-metrics")); const parts = m.replace("Modules ", "").replace(" pt", "").split(" × "); check(parts.length === 2 && parts[0] === parts[1], "square modules readout: " + m); }
+        await evaluate(setField("squareModules", false));
+        await evaluate(setField("type", "columns"));
+        await evaluate(`document.querySelector('.quick-color[data-color="#2F7CF6"]').click()`);
+        check(await evaluate(value("strokeColor")) === "#2F7CF6" && await evaluate(`document.querySelector('.quick-color[data-color="#2F7CF6"]').getAttribute("aria-pressed")`) === "true", "quick color sets the stroke color");
+        await evaluate(`(() => { const s = document.getElementById("opacity-slider"); s.value = "40"; s.dispatchEvent(new Event("input", { bubbles: true })); })()`);
+        check(await evaluate(value("opacity")) === "40" && await evaluate(text("appearance-summary")) === "Lines, 0.5 pt, 40%", "opacity slider updates the field");
+        await evaluate(setField("opacity", "70"));
+        check(await evaluate(`document.getElementById("opacity-slider").value`) === "70", "slider follows the field");
+        await evaluate(click("reset"));
+
         // ---------------------------------------------------------------- InDesign vocabulary and page settings
         await load("?theme=dark&host=indesign");
         await evaluate(`(() => { const s = document.getElementById("target-mode"); s.value = "active"; s.dispatchEvent(new Event("change", { bubbles: true })); })()`);
@@ -626,9 +713,10 @@ async function main() {
         await evaluate(setField("compSpiral", true));
         await shoot("mediumdark-composition");
         await load("?theme=light");
-        await evaluate(click("library-open"));
+        await evaluate(mode("layouts"));
         await sleep(400);
         await shoot("light-library");
+        await evaluate(mode("grid"));
         await send("Emulation.setDeviceMetricsOverride", { width: 240, height: 700, deviceScaleFactor: 2, mobile: false });
         await load("?theme=dark");
         await evaluate(setField("type", "columns"));

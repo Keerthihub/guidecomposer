@@ -35,24 +35,29 @@
 
     const formats = window.MullionFormats || { GROUPS: [], FORMATS: [], find: () => null, toPoints: () => ({}), label: () => "" };
 
-    const HOST_METHODS = ["status", "preview", "clearPreview", "generate", "clear", "setGridLayer", "resizeArtboards", "alignSelection", "textMetrics", "applyPageMargins", "drawTestLine"];
-    const LENGTH_FIELDS = ["columnGutter", "rowGutter", "marginTop", "marginRight", "marginBottom", "marginLeft", "baselineSpacing", "baselineOffset", "patternSize"];
+    const HOST_METHODS = ["status", "preview", "clearPreview", "generate", "clear", "setGridLayer", "resizeArtboards", "alignSelection", "textMetrics", "applyPageMargins", "selectionGeometry", "drawTestLine"];
+    const LENGTH_FIELDS = ["columnGutter", "rowGutter", "marginTop", "marginRight", "marginBottom", "marginLeft", "baselineSpacing", "baselineOffset", "patternSize", "conPadding"];
     const MARGIN_FIELDS = ["marginTop", "marginRight", "marginBottom", "marginLeft"];
-    const NUMBER_FIELDS = LENGTH_FIELDS.concat(["columns", "rows", "strokeWidth", "opacity", "dotSize", "rings", "spokes", "gutterOpacity"]);
-    const BOOLEAN_FIELDS = ["extendToEdges", "lockLayer", "marginColorOn", "shadeGutters", "addBaseline"].concat(core ? core.COMPOSITION_FLAGS : []);
+    const NUMBER_FIELDS = LENGTH_FIELDS.concat(["columns", "rows", "strokeWidth", "opacity", "dotSize", "rings", "spokes", "gutterOpacity", "overlayColumns", "patternAngle"]);
+    const BOOLEAN_FIELDS = ["extendToEdges", "lockLayer", "marginColorOn", "shadeGutters", "addBaseline", "squareModules"]
+        .concat(core ? core.COMPOSITION_FLAGS : [], core ? core.CONSTRUCTION_FLAGS : []);
     const TEXT_FIELDS = ["columnRatios", "rowRatios"];
     // Host vocabulary: Illustrator has artboards, InDesign has pages.
     const NOUNS = {
         illustrator: { one: "artboard", many: "artboards", title: "Artboard" },
         indesign: { one: "page", many: "pages", title: "Page" }
     };
-    const COLOR_FIELDS = ["strokeColor", "marginColor", "gutterColor"];
-    const CHOICE_FIELDS = ["type", "output", "lineStyle"];
+    const COLOR_FIELDS = ["strokeColor", "marginColor", "gutterColor", "conBoundsColor", "conKeylineColor", "conCircleColor"];
+    const CHOICE_FIELDS = ["type", "output", "lineStyle", "conExtend"];
     const SELECT_FIELDS = { units: "pt", spiralFocus: "bottom-right", pattern: "square" };
     const GRID_NAMES = { columns: "column grid", modular: "modular grid", baseline: "baseline grid", composition: "set of composition guides", pattern: "pattern" };
     const PATTERN_NAMES = { square: "Square grid", dots: "Dot grid", isometric: "Isometric grid", hexagon: "Hexagons", diagonal: "Diagonal grid", radial: "Radial grid" };
     const PATTERN_SIZE_LABELS = { square: "Cell size", dots: "Spacing", isometric: "Triangle side", hexagon: "Hexagon side", diagonal: "Diamond size" };
-    const GUIDE_NAMES = { compThirds: "Thirds", compGolden: "Golden sections", compDiagonals: "Diagonals", compCenter: "Center", compSpiral: "Spiral" };
+    const GUIDE_NAMES = {
+        compThirds: "Thirds", compFifths: "Fifths", compGolden: "Golden sections", compDiagonals: "Diagonals",
+        compCenter: "Center", compArmature: "Armature", compDynamic: "Dynamic rectangle", compVillard: "Villard", compSpiral: "Spiral"
+    };
+    const PANEL_MODES = ["grid", "layouts", "construct"];
     const BOX_TYPES = { columns: true, modular: true };
 
     // Some errors cover a pair of fields: the message names both sides.
@@ -254,9 +259,51 @@
             return { ok: true, boards: parsed.indices.map((i) => boards[i]) };
         }
 
+        // A simple mark (a circle between two bars) inside the first selected object.
+        function mockArtwork() {
+            if (!state.selection.length) {
+                return [];
+            }
+            const [l, t, r, b] = state.selection[0];
+            const cx = (l + r) / 2;
+            const cy = (t + b) / 2;
+            const radius = Math.min(r - l, t - b) * 0.3;
+            const k = 0.5522847498307936 * radius;
+            const corner = (x, y) => ({ anchor: [x, y], left: [x, y], right: [x, y] });
+            return [
+                {
+                    closed: true,
+                    points: [
+                        { anchor: [cx, cy + radius], left: [cx - k, cy + radius], right: [cx + k, cy + radius] },
+                        { anchor: [cx + radius, cy], left: [cx + radius, cy + k], right: [cx + radius, cy - k] },
+                        { anchor: [cx, cy - radius], left: [cx + k, cy - radius], right: [cx - k, cy - radius] },
+                        { anchor: [cx - radius, cy], left: [cx - radius, cy - k], right: [cx - radius, cy + k] }
+                    ]
+                },
+                { closed: true, points: [corner(l, cy + radius * 0.35), corner(cx - radius * 1.2, cy + radius * 0.35), corner(cx - radius * 1.2, cy - radius * 0.35), corner(l, cy - radius * 0.35)] },
+                { closed: true, points: [corner(cx + radius * 1.2, cy + radius * 0.35), corner(r, cy + radius * 0.35), corner(r, cy - radius * 0.35), corner(cx + radius * 1.2, cy - radius * 0.35)] }
+            ];
+        }
+
         function draw(payload, kind) {
             if (!state.hasDocument) {
                 return noDocument;
+            }
+            if (payload.kind === "construction") {
+                const paths = mockArtwork();
+                if (!paths.length) {
+                    return fail("NO_SELECTION", "Select a logo or artwork to draw its construction lines.");
+                }
+                const built = core.buildConstruction(paths, boards[0].rect, payload.settings || {});
+                if (!built.ok) {
+                    return fail("INVALID_SETTINGS", built.errors[0].message, built.errors);
+                }
+                const before = state.groups.length;
+                state.groups = state.groups.filter((g) => g.kind !== "preview" && !(kind === "final" && g.construction));
+                const replaced = kind === "final" ? before - state.groups.length : 0;
+                state.groups.push({ kind, artboard: 0, construction: true });
+                state.layer = state.layer || { visible: true, locked: false };
+                return ok({ shapes: built.shapeCount, artboards: 1, metrics: built.metrics, replaced, rescued: 0, hidden: 0, status: status() });
             }
             const resolved = targets(payload.target);
             if (!resolved.ok) {
@@ -302,6 +349,11 @@
             clear: (p) => {
                 if (!state.hasDocument) {
                     return noDocument;
+                }
+                if (p.kind === "construction") {
+                    const before = state.groups.length;
+                    state.groups = state.groups.filter((g) => !g.construction);
+                    return ok({ removed: before - state.groups.length, rescued: 0, clearedArtboards: 1, targetArtboards: 1, status: status() });
                 }
                 const resolved = targets(p.target);
                 if (!resolved.ok) {
@@ -379,6 +431,9 @@
                 const s = p.settings || {};
                 return ok({ pages: resolved.boards.length, baseline: s.type === "baseline" || s.addBaseline === true, status: status() });
             },
+            selectionGeometry: () => (state.hasDocument
+                ? ok({ paths: mockArtwork(), hasText: false, truncated: false, artboard: describeBoard(boards[0]) })
+                : noDocument),
             textMetrics: () => {
                 if (!state.hasDocument) {
                     return noDocument;
@@ -425,7 +480,7 @@
     function createQueue(bridge, onBusyChange) {
         const jobs = [];
         let active = null;
-        const background = { preview: true, status: true, clearPreview: true, setGridLayer: true, textMetrics: true };
+        const background = { preview: true, status: true, clearPreview: true, setGridLayer: true, textMetrics: true, selectionGeometry: true };
 
         function isBusy() {
             return Boolean((active && !background[active.method]) || jobs.some((j) => !background[j.method]));
@@ -584,8 +639,10 @@
         appearanceSummary: $("appearance-summary"),
         controls: $("controls"),
         library: $("library"),
-        libraryOpen: $("library-open"),
-        libraryClose: $("library-close"),
+        constructCard: $("construct-card"),
+        constructTitle: $("construct-title"),
+        constructDetail: $("construct-detail"),
+        opacitySlider: $("opacity-slider"),
         librarySearch: $("library-search"),
         libraryChips: $("library-chips"),
         libraryHint: $("library-hint"),
@@ -776,6 +833,8 @@
     let statusIsValidation = false;
     let currentBlocks = [];
     let formatSwapped = false;
+    let panelMode = "grid";
+    let geometry = null; // Selected artwork paths, for construction lines.
 
     const bridge = window.__adobe_cep__ && typeof window.CSInterface === "function" ? createCepBridge() : createMockBridge();
     const queue = createQueue(bridge, (isBusy) => {
@@ -935,7 +994,9 @@
             const names = ERROR_FIELD_GROUPS[error.field] || [error.field];
             let shown = false;
             document.querySelectorAll("[data-error-for]").forEach((node) => {
-                if (node.id === "err-range" || node.hidden || node.closest("[hidden]")) {
+                const scope = node.closest("[data-mode]");
+                if (node.id === "err-range" || node.hidden || node.closest("[hidden]") ||
+                    (scope && scope.dataset.mode.split(" ").indexOf(panelMode) === -1)) {
                     return;
                 }
                 const targets = node.dataset.errorFor.split(" ");
@@ -957,7 +1018,7 @@
         return general;
     }
 
-    const VISIBILITY_SELECTOR = "[data-for], [data-for-output], [data-hide-for-output], [data-for-spiral], [data-for-pattern], [data-hide-for-pattern], [data-when], [data-baseline-fields]";
+    const VISIBILITY_SELECTOR = "[data-for], [data-for-output], [data-hide-for-output], [data-for-spiral], [data-for-pattern], [data-hide-for-pattern], [data-when], [data-when-equals], [data-baseline-fields]";
 
     // Shows each conditional element only when every condition on it holds.
     function syncVisibility(settings) {
@@ -986,6 +1047,10 @@
             }
             if (d.when !== undefined) {
                 visible = visible && settings[d.when] === true;
+            }
+            if (d.whenEquals !== undefined) {
+                const [key, expected] = d.whenEquals.split("=");
+                visible = visible && String(settings[key]) === expected;
             }
             if (d.baselineFields !== undefined) {
                 visible = visible && (settings.type === "baseline" || ((settings.type === "columns" || settings.type === "modular") && settings.addBaseline === true));
@@ -1020,7 +1085,8 @@
 
     /*
      * Draws a built grid into an SVG. Used by the main drawing and by library tiles.
-     * options: { empty: draw the page as an outline, thumb: thin out dense marks }
+     * options: { empty: draw the page as an outline, thumb: thin out dense marks,
+     *            icon: draw in the panel accent, artwork: selected paths to draw beneath }
      */
     function paintGrid(svg, result, rect, options) {
         const opts = options || {};
@@ -1047,13 +1113,36 @@
             x: 0, y: 0, width, height
         }));
 
+        (opts.artwork || []).forEach((path) => {
+            const p = path.points;
+            if (!p.length) {
+                return;
+            }
+            let d = "M" + x(p[0].anchor[0]) + " " + y(p[0].anchor[1]);
+            const count = path.closed ? p.length : p.length - 1;
+            for (let i = 1; i <= count; i++) {
+                const from = p[i - 1];
+                const to = p[i % p.length];
+                d += " C" + x(from.right[0]) + " " + y(from.right[1]) + " " + x(to.left[0]) + " " + y(to.left[1]) + " " + x(to.anchor[0]) + " " + y(to.anchor[1]);
+            }
+            frag.appendChild(svgNode("path", { class: "schematic__artwork" + (path.closed ? "" : " schematic__artwork--open"), d: d + (path.closed ? " Z" : "") }));
+        });
+
         if (result.ok) {
             const s = result.settings;
             const guides = s.output === "guides";
-            const color = guides ? getComputedStyle(document.documentElement).getPropertyValue("--guide").trim() : s.strokeColor;
-            const marginColor = !guides && s.marginColorOn ? s.marginColor : color;
-            const strokeOpacity = guides ? 1 : Math.max(0.35, s.opacity / 100);
-            const colorFor = (kind) => (kind === "margin" ? marginColor : color);
+            const rootStyle = getComputedStyle(document.documentElement);
+            // Library tiles share the panel accent, so the gallery reads as one family of icons.
+            const color = opts.icon ? rootStyle.getPropertyValue("--accent").trim()
+                : guides ? rootStyle.getPropertyValue("--guide").trim() : s.strokeColor;
+            const marginColor = !opts.icon && !guides && s.marginColorOn ? s.marginColor : color;
+            const strokeOpacity = opts.icon ? 0.95 : guides ? 1 : Math.max(0.35, s.opacity / 100);
+            const colorFor = (kind) => {
+                if (!opts.icon && !guides && s.kindColors && s.kindColors[kind]) {
+                    return s.kindColors[kind];
+                }
+                return kind === "margin" ? marginColor : color;
+            };
             const tracks = result.tracks;
 
             if (s.output !== "boxes" && !s.shadeGutters) {
@@ -1084,7 +1173,7 @@
                 if (b.kind === "block") {
                     frag.appendChild(svgNode("rect", Object.assign({ class: "schematic__block", fill: color }, rectAttrs)));
                 } else if (b.kind === "gutter") {
-                    frag.appendChild(svgNode("rect", Object.assign({ class: "schematic__gutter", fill: s.gutterColor, "fill-opacity": s.gutterOpacity / 100 }, rectAttrs)));
+                    frag.appendChild(svgNode("rect", Object.assign({ class: "schematic__gutter", fill: opts.icon ? color : s.gutterColor, "fill-opacity": opts.icon ? 0.25 : s.gutterOpacity / 100 }, rectAttrs)));
                 } else {
                     frag.appendChild(svgNode("rect", Object.assign({ class: "schematic__box", stroke: color, fill: color, "stroke-opacity": strokeOpacity }, rectAttrs)));
                 }
@@ -1139,7 +1228,7 @@
                 if (curve.closed) {
                     d += toward(p[p.length - 1], p[0]) + " Z";
                 }
-                frag.appendChild(svgNode("path", { class: "schematic__curve", stroke: color, "stroke-opacity": strokeOpacity, d }));
+                frag.appendChild(svgNode("path", { class: "schematic__curve", stroke: colorFor(curve.kind), "stroke-opacity": strokeOpacity, d }));
             });
 
             // Keep dots at least ~1.2 screen pixels across so the drawing shows them.
@@ -1156,9 +1245,9 @@
         svg.appendChild(frag);
     }
 
-    function renderSchematic(result, rect) {
-        paintGrid(els.svg, result, rect, { empty: !hostStatus.hasDocument });
-        els.svg.classList.toggle("schematic--editable", blocksEditable(result));
+    function renderSchematic(result, rect, extra) {
+        paintGrid(els.svg, result, rect, Object.assign({ empty: !hostStatus.hasDocument }, extra || {}));
+        els.svg.classList.toggle("schematic--editable", panelMode === "grid" && blocksEditable(result));
     }
 
     // ------------------------------------------------------------------ blocks
@@ -1427,8 +1516,13 @@
 
     function update() {
         const settings = readSettings();
-        const rect = currentRect();
         syncVisibility(settings);
+        syncQuickControls(settings);
+        if (panelMode === "construct") {
+            updateConstruct(settings);
+            return;
+        }
+        const rect = currentRect();
 
         targetState = resolveTarget();
         showRangeError(targetState.ok ? "" : targetState.error);
@@ -1472,19 +1566,145 @@
         }
     }
 
+    // Construct mode: draws the selected artwork and its construction lines.
+    function updateConstruct(settings) {
+        const paths = geometry && geometry.paths ? geometry.paths : [];
+        const rect = geometry && geometry.artboard ? geometry.artboard.rect : currentRect();
+        const units = core.UNITS.indexOf(settings.units) !== -1 ? settings.units : "pt";
+        const size = (box) => formatNumber(core.fromPoints(box.width, units)) + " \u00d7 " + formatNumber(core.fromPoints(box.height, units)) + " " + units;
+        targetState = { ok: true, boards: [] };
+        const result = paths.length
+            ? core.buildConstruction(paths, rect, settings)
+            : { ok: false, errors: [], segments: [], boxes: [], polygons: [], curves: [], dots: [] };
+        lastResult = result;
+        const general = showErrors(result.errors);
+        if (general.length) {
+            say(general[0], "error");
+            statusIsValidation = true;
+        } else if (statusIsValidation) {
+            say("");
+        }
+
+        const card = els.constructCard;
+        if (!hostStatus.hasDocument) {
+            card.dataset.state = "empty";
+            els.constructTitle.textContent = "No document open";
+            els.constructDetail.textContent = "Open a document with a logo or artwork to construct.";
+        } else if (paths.length) {
+            card.dataset.state = "ready";
+            els.constructTitle.textContent = "Artwork selected";
+            els.constructDetail.textContent = plural(paths.length, "path", "paths") + (result.ok ? ", " + size(result.content) : "") +
+                (geometry.truncated ? ". Only the first paths are used." : "");
+        } else if (geometry && geometry.hasText) {
+            card.dataset.state = "warning";
+            els.constructTitle.textContent = "Text is selected";
+            els.constructDetail.textContent = "Convert it to outlines (Type > Create Outlines), then select it again.";
+        } else {
+            card.dataset.state = "empty";
+            els.constructTitle.textContent = "No artwork selected";
+            els.constructDetail.textContent = "Select a logo or artwork to see its construction lines.";
+        }
+
+        renderSchematic(result, rect, { artwork: paths });
+        els.artboardName.textContent = paths.length ? "Selected artwork" : hostStatus.hasDocument ? "No artwork selected" : "No document open";
+        els.artboardName.title = "";
+        els.artboardSize.textContent = result.ok ? size(result.content) : "";
+        els.count.title = "";
+        if (result.ok) {
+            els.metrics.textContent = [
+                result.metrics.keylines ? plural(result.metrics.keylines, "key line", "key lines") : "",
+                settings.conCircles ? plural(result.metrics.circles, "circle", "circles") : ""
+            ].filter(Boolean).join(", ") || "Construction lines";
+            els.count.textContent = plural(result.shapeCount, "shape", "shapes");
+        } else {
+            els.metrics.textContent = paths.length ? "Adjust the highlighted settings" : "";
+            els.count.textContent = "";
+        }
+        renderAppearanceSummary(settings);
+        updateButtons();
+        schedulePersist();
+        if (els.previewToggle.checked) {
+            schedulePreview(settings);
+        }
+    }
+
+    // Keeps the opacity slider and quick color chips in step with their fields.
+    function syncQuickControls(settings) {
+        const opacity = Number(settings.opacity);
+        if (Number.isFinite(opacity) && document.activeElement !== els.opacitySlider) {
+            els.opacitySlider.value = String(opacity);
+        }
+        document.querySelectorAll(".quick-color").forEach((chip) => {
+            chip.setAttribute("aria-pressed", String(chip.dataset.color.toUpperCase() === normalizeHex(settings.strokeColor)));
+        });
+    }
+
+    async function refreshGeometry() {
+        if (panelMode !== "construct") {
+            return;
+        }
+        if (!hostStatus.hasDocument) {
+            geometry = null;
+            update();
+            return;
+        }
+        const response = await queue.enqueue("selectionGeometry", undefined, { coalesce: true });
+        if (response.superseded || panelMode !== "construct") {
+            return;
+        }
+        geometry = response.ok ? response.data : null;
+        if (!response.ok) {
+            sayError(response);
+        }
+        update();
+    }
+
+    // Switches between Grid, Layouts, and Construct.
+    function setMode(mode, options) {
+        const silent = options && options.silent;
+        const changed = mode !== panelMode;
+        panelMode = PANEL_MODES.indexOf(mode) !== -1 ? mode : "grid";
+        els.panel.dataset.panelMode = panelMode;
+        els.panel.querySelectorAll('input[name="panel-mode"]').forEach((input) => {
+            input.checked = input.value === panelMode;
+        });
+        if (changed && els.previewToggle.checked) {
+            setPreview(false);
+        }
+        lastPreviewKey = "";
+        // Messages about the previous mode's work would be misleading here.
+        if (changed && !statusIsValidation) {
+            say("");
+        }
+        library.open = panelMode === "layouts";
+        if (library.open) {
+            renderLibraryChips();
+            renderLibraryGrid();
+            if (!silent) {
+                els.librarySearch.focus();
+            }
+        } else if (library.observer) {
+            library.observer.disconnect();
+        }
+        storage.updateUi({ panelMode, libraryCategory: library.category });
+        if (panelMode === "construct") {
+            refreshGeometry();
+        }
+        update();
+    }
+
     function updateButtons() {
         const hasDoc = hostStatus.hasDocument;
         const valid = Boolean(lastResult && lastResult.ok);
         const targetOk = targetState.ok;
         const layer = hasDoc && hostStatus.gridLayer ? hostStatus.gridLayer : { exists: false };
-        els.generate.disabled = busy || !hasDoc || !valid || !targetOk;
+        els.generate.disabled = busy || !hasDoc || !valid || !targetOk || panelMode === "layouts";
         els.clear.disabled = busy || !hasDoc || !targetOk;
         els.testLine.disabled = busy || !hasDoc;
         els.previewToggle.disabled = !hasDoc;
         els.toggleVisible.disabled = !layer.exists;
         els.toggleLock.disabled = !hasDoc;
         els.presetDelete.disabled = els.presetSelect.value.indexOf("user:") !== 0;
-        els.presetNew.disabled = library.open;
         const selectionMode = els.targetMode.value === "selection";
         els.formatApply.disabled = busy || !hasDoc || selectionMode || !els.formatSelect.value;
         els.formatRotate.disabled = !els.formatSelect.value;
@@ -1546,6 +1766,7 @@
         applyNouns();
         update();
         refreshLibraryIfStale();
+        refreshGeometry();
     }
 
     async function refreshStatus(force) {
@@ -1573,13 +1794,15 @@
             hostStatus.artboard && hostStatus.artboard.index,
             targetState.boards.map((b) => [b.index].concat(b.rect)),
             readMode(),
+            panelMode,
+            panelMode === "construct" && geometry ? geometry.paths : null,
             cleanSettings(settings)
         ]);
     }
 
     function schedulePreview(settings) {
         window.clearTimeout(previewTimer);
-        if (!hostStatus.hasDocument || !lastResult || !lastResult.ok || !targetState.ok) {
+        if (!hostStatus.hasDocument || !lastResult || !lastResult.ok || !targetState.ok || panelMode === "layouts") {
             return;
         }
         const key = previewKey(settings);
@@ -1590,14 +1813,16 @@
         const mode = readMode();
         previewTimer = window.setTimeout(async () => {
             lastPreviewKey = key;
-            const response = await queue.enqueue("preview", { settings, target, mode }, { coalesce: true });
+            const payload = panelMode === "construct" ? { settings, kind: "construction" } : { settings, target, mode };
+            const response = await queue.enqueue("preview", payload, { coalesce: true });
             if (response.superseded || !els.previewToggle.checked) {
                 return;
             }
             if (response.ok) {
                 hostStatus = response.data.status;
                 syncLayerButtons();
-                const where = readTarget().mode === "selection"
+                const where = panelMode === "construct" ? "the selected artwork"
+                    : readTarget().mode === "selection"
                     ? plural(response.data.artboards, "object", "objects")
                     : response.data.artboards > 1 ? areaWords(response.data.artboards) : hostStatus.artboard.name;
                 say("Previewing on " + where + ".");
@@ -1646,11 +1871,18 @@
             setPreview(false, { skipHost: true });
         }
         queue.drop("preview");
-        const response = await queue.enqueue("generate", { settings, target, mode });
+        const construct = panelMode === "construct";
+        const response = await queue.enqueue("generate", construct ? { settings, kind: "construction" } : { settings, target, mode });
         if (response.superseded) {
             return;
         }
-        if (response.ok) {
+        if (response.ok && construct) {
+            hostStatus = response.data.status;
+            syncLayerButtons();
+            say((response.data.replaced ? "Redrew the construction lines" : "Drew construction lines") + " for the selected artwork (" +
+                plural(response.data.shapes, "shape", "shapes") + ").", "ok");
+            update();
+        } else if (response.ok) {
             const data = response.data;
             hostStatus = data.status;
             syncLayerButtons();
@@ -1685,7 +1917,8 @@
         }
         queue.drop("preview");
         const target = readTarget();
-        const response = await queue.enqueue("clear", { target });
+        const construct = panelMode === "construct";
+        const response = await queue.enqueue("clear", construct ? { kind: "construction" } : { target });
         if (response.superseded) {
             return;
         }
@@ -1696,6 +1929,13 @@
         const data = response.data;
         hostStatus = data.status;
         syncLayerButtons();
+        if (construct) {
+            say(data.removed
+                ? "Cleared construction lines from " + data.status.artboard.name + "."
+                : "No construction lines to clear on " + data.status.artboard.name + ".", data.removed ? "ok" : undefined);
+            update();
+            return;
+        }
         const where = target.mode === "active" ? data.status.artboard.name
             : target.mode === "selection" ? plural(data.targetArtboards, "selected object", "selected objects")
                 : areaWords(data.targetArtboards);
@@ -2059,6 +2299,9 @@
         const resolved = layouts.resolveLayout(layout, currentRect(), currentUnits);
         const note = layout.relative ? "Margins are sized for this " + currentAreaLabel() + "." : layouts.describeArtboard(layout);
         applySettings(Object.assign(cleanSettings(readSettings()), resolved), "Applied \u201c" + layout.name + "\u201d." + (note ? " " + note : ""));
+        if (panelMode === "layouts") {
+            say(els.status.textContent, "ok", { label: "Edit settings", run: () => setMode("grid") });
+        }
         // Offer to resize when a layout made for a size lands on a different artboard.
         const a = layout.artboard;
         if (a && hostStatus.hasDocument && els.targetMode.value !== "selection") {
@@ -2105,9 +2348,9 @@
 
     function renderLibraryChips() {
         const suggestions = layouts.suggestLayouts(currentRect(), 12);
-        const names = (suggestions.length ? ["Suggested"] : []).concat(["All"], layouts.CATEGORIES);
+        const names = layouts.CATEGORIES.slice(0, 1).concat(suggestions.length ? ["Suggested"] : [], ["All"], layouts.CATEGORIES.slice(1));
         if (names.indexOf(library.category) === -1) {
-            library.category = suggestions.length ? "Suggested" : "All";
+            library.category = layouts.CATEGORIES[0];
         }
         els.libraryChips.textContent = "";
         names.forEach((name) => {
@@ -2140,7 +2383,7 @@
             settings.output = "lines";
         }
         const result = core.buildGrid(rect, settings);
-        paintGrid(svg, result, rect, { thumb: true });
+        paintGrid(svg, result, rect, { thumb: true, icon: true });
         tile.classList.toggle("tile--unfit", !result.ok);
         if (!result.ok) {
             tile.querySelector(".tile__meta").textContent = "Doesn't fit this artboard";
@@ -2211,30 +2454,6 @@
                 paintTile(tile);
             }
         });
-    }
-
-    function openLibrary() {
-        library.open = true;
-        els.controls.hidden = true;
-        els.form.hidden = true;
-        els.library.hidden = false;
-        els.libraryOpen.setAttribute("aria-expanded", "true");
-        renderLibraryChips();
-        renderLibraryGrid();
-        els.librarySearch.focus();
-    }
-
-    function closeLibrary() {
-        library.open = false;
-        els.library.hidden = true;
-        els.controls.hidden = false;
-        els.form.hidden = false;
-        els.libraryOpen.setAttribute("aria-expanded", "false");
-        if (library.observer) {
-            library.observer.disconnect();
-        }
-        storage.updateUi({ libraryCategory: library.category });
-        els.libraryOpen.focus();
     }
 
     // Thumbnails depend on the artboard; redraw them if it changed while the library is open.
@@ -2455,8 +2674,20 @@
         els.clear.addEventListener("click", clear);
         els.testLine.addEventListener("click", drawTestLine);
 
-        els.libraryOpen.addEventListener("click", () => (library.open ? closeLibrary() : openLibrary()));
-        els.libraryClose.addEventListener("click", closeLibrary);
+        els.panel.querySelectorAll('input[name="panel-mode"]').forEach((input) => {
+            input.addEventListener("change", () => setMode(input.value));
+        });
+        document.querySelectorAll(".quick-color").forEach((chip) => {
+            chip.addEventListener("click", () => {
+                field("strokeColor").value = chip.dataset.color;
+                syncSwatches();
+                update();
+            });
+        });
+        els.opacitySlider.addEventListener("input", () => {
+            field("opacity").value = els.opacitySlider.value;
+            update();
+        });
         els.librarySearch.addEventListener("input", renderLibraryGrid);
         els.libraryChips.addEventListener("change", (event) => {
             library.category = event.target.value;
@@ -2476,7 +2707,8 @@
                     els.librarySearch.value = "";
                     renderLibraryGrid();
                 } else {
-                    closeLibrary();
+                    setMode("grid");
+                    els.panel.querySelector('input[name="panel-mode"][value="layouts"]').focus();
                 }
             }
         });
@@ -2570,7 +2802,7 @@
         applyNouns();
         syncLayerButtons();
         bindEvents();
-        update();
+        setMode(PANEL_MODES.indexOf(ui.panelMode) !== -1 ? ui.panelMode : "grid", { silent: true });
         refreshStatus(true);
         if (bridge.kind === "mock") {
             document.documentElement.dataset.host = "mock";

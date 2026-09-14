@@ -65,7 +65,7 @@ Ask testers to do these on a copy of real work, and to note anything that surpri
 3. Change the number of columns with the − and + buttons while **Preview** is on. Click **Generate** again. Is there exactly one grid?
 4. Select a rectangle or photo frame, set **Apply to** to **Selected objects**, and generate a grid inside it.
 5. Place a few objects roughly, open **Align objects**, click **Check**, then **Snap to grid**.
-6. Try **Composition**, turn on **Golden spiral**, and try each focus corner.
+6. Try **Compose**, turn on **Golden spiral**, and try each focus corner. Then select a logo, open **Construct**, and click **Generate**.
 7. Turn on **Add a baseline grid**, select some text, and click **From text**.
 8. Save your settings as a preset, then use **More > Export presets**.
 9. Press Undo once after Generate. Did the whole grid disappear?

@@ -9,8 +9,15 @@ First release candidate.
 ### Grids
 
 - Column, modular, and baseline grids with margins per side (linked or separate), gutters, and baseline spacing and offset.
-- Composition guides: rule of thirds, golden sections, diagonals, center lines, and a golden spiral with a choice of focus corner.
-- Patterns: square grid, dot grid, isometric grid, hexagons, diagonal grid, and radial grid.
+- Composition guides: rule of thirds, rule of fifths, golden sections, diagonals, center lines, harmonic armature, dynamic rectangle, Villard's figure, and a golden spiral with a choice of focus corner.
+- Compound grids (overlay columns) and square modules.
+- Patterns: square grid, dot grid, isometric grid, hexagons, diagonal grid at any angle, and radial grid.
+
+### Construction lines
+
+- Select a logo or artwork to draw its bounding box, key lines through anchors and curve extremes, and fitted circles, with optional center lines and diagonals.
+- A color per kind of line; lines across the artboard or around the artwork with padding.
+- Reads groups and compound paths; asks for outlined text; replaces and clears only construction lines.
 - Unequal column widths and row heights, such as 2 1 1 or 1 1 2 3 5.
 - A baseline grid inside column and modular grids, with From text to copy leading from selected text.
 - Content blocks: drag across the panel drawing to mark regions spanning several modules.
@@ -39,11 +46,12 @@ First release candidate.
 
 ### Library and presets
 
-- Layout library: 114 layouts in ten categories with live thumbnails drawn on the active artboard, search, and suggestions for the artboard's shape. Proportional layouts size margins and gutters to the page.
+- Layout library: 128 layouts in ten categories, led by Systems, with icon thumbnails drawn on the active artboard, search, and suggestions for the artboard's shape. Proportional layouts size margins and gutters to the page.
 - Saved presets, with export and import as files.
 
 ### Panel
 
+- Three modes: Grid, Layouts, and Construct. Grid types as icon buttons, quick color swatches, an opacity slider, and success, warning, and error messages with icons.
 - Live drawing of the grid with column width, module size, and shape count; collapsible.
 - Matches all four host UI brightness settings; keyboard accessible; works docked down to 240 px wide.
 - Draw test line diagnostic.
@@ -55,4 +63,4 @@ First release candidate.
 
 ### Development
 
-- ES3 checker for host scripts, 176 automated tests, a headless Chrome panel test, CI on macOS, Windows, and Linux, a signed-release workflow, and a rename tool.
+- ES3 checker for host scripts, 192 automated tests, a headless Chrome panel test, CI on macOS, Windows, and Linux, a signed-release workflow, and a rename tool.

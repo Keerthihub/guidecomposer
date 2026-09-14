@@ -18,6 +18,13 @@
   <symbol id="i-trash" viewBox="0 0 16 16"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 8.5h5.6l.7-8.5"/></symbol>
   <symbol id="i-chevron" viewBox="0 0 16 16"><path d="M4.5 9.5L8 6l3.5 3.5"/></symbol>
   <symbol id="i-rotate" viewBox="0 0 16 16"><rect x="2.5" y="5.5" width="7" height="8" rx=".5"/><path d="M8 2.5h2.5a3 3 0 0 1 3 3V8"/><path d="M12 6.5l1.5 1.5L15 6.5"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 16 16"><rect x="2.5" y="2.5" width="11" height="11" rx="1"/><path d="M6.2 2.5v11M9.8 2.5v11"/></symbol>
+  <symbol id="i-construct" viewBox="0 0 16 16"><circle cx="8" cy="8" r="4.5"/><path d="M1.5 3.5h13M1.5 12.5h13M3.5 1.5v13M12.5 1.5v13"/></symbol>
+  <symbol id="t-columns" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="1.5"/><path class="fill" d="M6.5 6.5h3v11h-3zM10.5 6.5h3v11h-3zM14.5 6.5h3v11h-3z"/></symbol>
+  <symbol id="t-modular" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="1.5"/><path class="fill" d="M6.5 6.5h5v5h-5zM12.5 6.5h5v5h-5zM6.5 12.5h5v5h-5zM12.5 12.5h5v5h-5z"/></symbol>
+  <symbol id="t-baseline" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="1.5"/><path d="M7 8h10M7 11h10M7 14h10M7 17h7"/></symbol>
+  <symbol id="t-composition" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="1.5"/><path d="M3.5 3.5l17 17M20.5 3.5l-17 17M9.2 3.5v17M14.8 3.5v17"/></symbol>
+  <symbol id="t-pattern" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="1.5"/><path d="M12 6.5l3 1.75v3.5L12 13.5l-3-1.75v-3.5zM12 13.5v4M9 11.75l-3 1.75M15 11.75l3 1.75"/></symbol>
   <symbol id="i-library" viewBox="0 0 16 16"><rect x="2.5" y="2.5" width="4.5" height="4.5" rx=".5"/><rect x="9" y="2.5" width="4.5" height="4.5" rx=".5"/><rect x="2.5" y="9" width="4.5" height="4.5" rx=".5"/><rect x="9" y="9" width="4.5" height="4.5" rx=".5"/></symbol>
 </svg>
 
@@ -45,13 +52,19 @@
     </button>
   </section>
 
-  <div class="controls" id="controls">
-    <div class="segmented segmented--tabs" role="radiogroup" aria-label="Grid type">
-      <label class="segmented__option"><input type="radio" name="type" value="columns" form="settings" checked><span>Columns</span></label>
-      <label class="segmented__option"><input type="radio" name="type" value="modular" form="settings"><span>Modular</span></label>
-      <label class="segmented__option"><input type="radio" name="type" value="baseline" form="settings"><span>Baseline</span></label>
-      <label class="segmented__option"><input type="radio" name="type" value="composition" form="settings"><span>Composition</span></label>
-      <label class="segmented__option"><input type="radio" name="type" value="pattern" form="settings"><span>Patterns</span></label>
+  <nav class="modes" aria-label="Mode">
+    <label class="mode"><input type="radio" name="panel-mode" value="grid" checked><span class="mode__face"><svg class="icon"><use href="#i-grid"/></svg>Grid</span></label>
+    <label class="mode"><input type="radio" name="panel-mode" value="layouts"><span class="mode__face"><svg class="icon"><use href="#i-library"/></svg>Layouts</span></label>
+    <label class="mode"><input type="radio" name="panel-mode" value="construct"><span class="mode__face"><svg class="icon"><use href="#i-construct"/></svg>Construct</span></label>
+  </nav>
+
+  <div class="controls" id="controls" data-mode="grid">
+    <div class="types" role="radiogroup" aria-label="Grid type">
+      <label class="type"><input type="radio" name="type" value="columns" form="settings" checked><span class="type__face"><svg class="type__icon"><use href="#t-columns"/></svg><span class="type__label">Columns</span></span></label>
+      <label class="type"><input type="radio" name="type" value="modular" form="settings"><span class="type__face"><svg class="type__icon"><use href="#t-modular"/></svg><span class="type__label">Modular</span></span></label>
+      <label class="type"><input type="radio" name="type" value="baseline" form="settings"><span class="type__face"><svg class="type__icon"><use href="#t-baseline"/></svg><span class="type__label">Baseline</span></span></label>
+      <label class="type"><input type="radio" name="type" value="composition" form="settings"><span class="type__face"><svg class="type__icon"><use href="#t-composition"/></svg><span class="type__label">Compose</span></span></label>
+      <label class="type"><input type="radio" name="type" value="pattern" form="settings"><span class="type__face"><svg class="type__icon"><use href="#t-pattern"/></svg><span class="type__label">Pattern</span></span></label>
     </div>
 
     <div class="target">
@@ -90,7 +103,63 @@
 
   <form id="settings" class="settings" novalidate autocomplete="off">
 
-    <fieldset class="group">
+    <fieldset class="group construct" data-mode="construct">
+      <legend class="group__title">Construction lines</legend>
+      <div class="construct__card" id="construct-card" data-state="empty">
+        <svg class="construct__glyph" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="9"/><path d="M4 11h32M4 29h32M11 4v32M29 4v32"/></svg>
+        <span class="construct__text">
+          <strong id="construct-title">No artwork selected</strong>
+          <span id="construct-detail">Select a logo or artwork, then generate its construction lines.</span>
+        </span>
+      </div>
+
+      <div class="con-list" role="group" aria-label="Lines to draw">
+        <div class="con-row">
+          <label class="check"><input type="checkbox" name="conBounds"><span>Bounding box</span></label>
+          <span class="field__control con-color" data-hide-for-output="guides">
+            <input class="swatch" type="color" data-swatch-for="conBoundsColor" aria-label="Pick bounding box color">
+            <input class="field__input con-hex" type="text" name="conBoundsColor" maxlength="7" spellcheck="false" aria-label="Bounding box color">
+          </span>
+        </div>
+        <div class="con-row">
+          <label class="check"><input type="checkbox" name="conKeylines"><span>Key lines</span></label>
+          <span class="field__control con-color" data-hide-for-output="guides">
+            <input class="swatch" type="color" data-swatch-for="conKeylineColor" aria-label="Pick key line color">
+            <input class="field__input con-hex" type="text" name="conKeylineColor" maxlength="7" spellcheck="false" aria-label="Key line color">
+          </span>
+        </div>
+        <div class="con-row">
+          <label class="check"><input type="checkbox" name="conCircles"><span>Circles</span></label>
+          <span class="field__control con-color" data-hide-for-output="guides">
+            <input class="swatch" type="color" data-swatch-for="conCircleColor" aria-label="Pick circle color">
+            <input class="field__input con-hex" type="text" name="conCircleColor" maxlength="7" spellcheck="false" aria-label="Circle color">
+          </span>
+        </div>
+        <div class="con-row con-row--pair">
+          <label class="check"><input type="checkbox" name="conCenter"><span>Center lines</span></label>
+          <label class="check"><input type="checkbox" name="conDiagonals"><span>Diagonals</span></label>
+        </div>
+      </div>
+      <p class="field__error" id="err-construction" data-error-for="construction conBoundsColor conKeylineColor conCircleColor conPadding selection"></p>
+
+      <span class="field__label" id="con-extend-label">Extend lines</span>
+      <div class="segmented segmented--two" role="radiogroup" aria-labelledby="con-extend-label">
+        <label class="segmented__option"><input type="radio" name="conExtend" value="artboard" checked><span>Full <span data-noun>artboard</span></span></label>
+        <label class="segmented__option"><input type="radio" name="conExtend" value="bounds"><span>Near artwork</span></label>
+      </div>
+      <div class="pair con-padding" data-when-equals="conExtend=bounds">
+        <label class="field">
+          <span class="field__label">Extend by</span>
+          <span class="field__control">
+            <input class="field__input" type="number" name="conPadding" min="0" step="1" inputmode="decimal">
+            <span class="field__unit" data-unit></span>
+          </span>
+        </label>
+      </div>
+      <p class="note">Center lines and diagonals use the key line color. Convert text to outlines before drawing its construction.</p>
+    </fieldset>
+
+    <fieldset class="group" data-mode="grid">
       <legend class="group__title">Layout</legend>
 
       <div class="pair" data-for="columns modular">
@@ -146,6 +215,18 @@
       </div>
       <p class="field__error" id="err-columnRatios" data-error-for="columnRatios rowRatios"></p>
 
+      <div class="pair" data-for="columns modular">
+        <label class="field">
+          <span class="field__label">Overlay columns</span>
+          <input class="field__input" type="number" name="overlayColumns" min="0" max="48" step="1" inputmode="numeric" placeholder="Off" title="Adds a second, gutterless division, such as 4 over 3 columns for a compound grid. 0 turns it off." aria-describedby="err-overlay">
+        </label>
+        <label class="check check--inline" data-for="modular">
+          <input type="checkbox" name="squareModules">
+          <span>Square modules</span>
+        </label>
+      </div>
+      <p class="field__error" id="err-overlay" data-error-for="overlayColumns squareModules"></p>
+
       <label class="check baseline-toggle" data-for="columns modular">
         <input type="checkbox" name="addBaseline">
         <span>Add a baseline grid</span>
@@ -181,9 +262,13 @@
 
       <div class="guides" data-for="composition" role="group" aria-label="Composition guides">
         <label class="check"><input type="checkbox" name="compThirds"><span>Rule of thirds</span></label>
+        <label class="check"><input type="checkbox" name="compFifths"><span>Rule of fifths</span></label>
         <label class="check"><input type="checkbox" name="compGolden"><span>Golden sections</span></label>
         <label class="check"><input type="checkbox" name="compDiagonals"><span>Diagonals</span></label>
         <label class="check"><input type="checkbox" name="compCenter"><span>Center lines</span></label>
+        <label class="check"><input type="checkbox" name="compArmature"><span>Harmonic armature</span></label>
+        <label class="check"><input type="checkbox" name="compDynamic"><span>Dynamic rectangle</span></label>
+        <label class="check"><input type="checkbox" name="compVillard"><span>Villard's figure</span></label>
         <label class="check"><input type="checkbox" name="compSpiral"><span>Golden spiral</span></label>
         <label class="field guides__focus" data-for-spiral>
           <span class="visually-hidden">Spiral focus</span>
@@ -225,7 +310,14 @@
           </div>
         </div>
       </div>
-      <div class="pair" data-for="pattern" data-for-pattern="dots radial">
+      <div class="pair" data-for="pattern" data-for-pattern="dots radial diagonal">
+        <div class="field" data-for-pattern="diagonal">
+          <label class="field__label" for="f-patternAngle">Angle</label>
+          <span class="field__control">
+            <input class="field__input" id="f-patternAngle" type="number" name="patternAngle" min="5" max="85" step="5" inputmode="decimal" aria-describedby="err-pattern">
+            <span class="field__unit">°</span>
+          </span>
+        </div>
         <div class="field" data-for-pattern="dots">
           <label class="field__label" for="f-dotSize">Dot size</label>
           <span class="field__control">
@@ -242,7 +334,7 @@
           </div>
         </div>
       </div>
-      <p class="field__error" id="err-pattern" data-error-for="pattern patternSize dotSize rings spokes" data-for="pattern"></p>
+      <p class="field__error" id="err-pattern" data-error-for="pattern patternSize dotSize rings spokes patternAngle" data-for="pattern"></p>
 
       <div class="pair">
         <label class="field">
@@ -261,7 +353,7 @@
       </div>
     </fieldset>
 
-    <fieldset class="group">
+    <fieldset class="group" data-mode="grid">
       <legend class="group__title">Margins <span class="group__unit" data-unit></span></legend>
       <div class="margins">
         <label class="margins__cell margins__cell--top">
@@ -301,11 +393,11 @@
         <div class="segmented segmented--three" role="radiogroup" aria-label="Output">
           <label class="segmented__option"><input type="radio" name="output" value="lines" checked><span>Lines</span></label>
           <label class="segmented__option" data-hide-for-pattern="dots"><input type="radio" name="output" value="guides"><span>Guides</span></label>
-          <label class="segmented__option" data-for="columns modular"><input type="radio" name="output" value="boxes"><span>Boxes</span></label>
+          <label class="segmented__option" data-for="columns modular" data-grid-only><input type="radio" name="output" value="boxes"><span>Boxes</span></label>
         </div>
 
         <div class="stroke" data-hide-for-output="guides">
-          <label class="field field--color">
+          <label class="field field--color" data-grid-only>
             <span class="field__label">Color</span>
             <span class="field__control">
               <input class="swatch" type="color" id="stroke-swatch" data-swatch-for="strokeColor" aria-label="Pick stroke color">
@@ -327,6 +419,16 @@
             </span>
           </label>
         </div>
+        <input class="slider" type="range" id="opacity-slider" min="0" max="100" step="1" aria-label="Opacity" data-hide-for-output="guides">
+        <div class="quick-colors" data-hide-for-output="guides" data-grid-only role="group" aria-label="Quick colors">
+          <button type="button" class="quick-color" data-color="#E0457B" style="--chip:#E0457B" title="Magenta"><span class="visually-hidden">Magenta</span></button>
+          <button type="button" class="quick-color" data-color="#2F7CF6" style="--chip:#2F7CF6" title="Blue"><span class="visually-hidden">Blue</span></button>
+          <button type="button" class="quick-color" data-color="#18B7D9" style="--chip:#18B7D9" title="Cyan"><span class="visually-hidden">Cyan</span></button>
+          <button type="button" class="quick-color" data-color="#1C9B6E" style="--chip:#1C9B6E" title="Green"><span class="visually-hidden">Green</span></button>
+          <button type="button" class="quick-color" data-color="#F28C28" style="--chip:#F28C28" title="Orange"><span class="visually-hidden">Orange</span></button>
+          <button type="button" class="quick-color" data-color="#8C93A1" style="--chip:#8C93A1" title="Gray"><span class="visually-hidden">Gray</span></button>
+          <button type="button" class="quick-color" data-color="#111111" style="--chip:#111111" title="Black"><span class="visually-hidden">Black</span></button>
+        </div>
         <div class="line-style" data-hide-for-output="guides" data-hide-for-pattern="dots">
           <span class="field__label" id="line-style-label">Line style</span>
           <div class="segmented segmented--three" role="radiogroup" aria-labelledby="line-style-label">
@@ -336,14 +438,14 @@
           </div>
         </div>
 
-        <div class="accent" data-hide-for-output="guides" data-hide-for-pattern="dots">
+        <div class="accent" data-hide-for-output="guides" data-hide-for-pattern="dots" data-grid-only>
           <label class="check"><input type="checkbox" name="marginColorOn"><span>Margin color</span></label>
           <span class="field__control accent__controls" data-when="marginColorOn">
             <input class="swatch" type="color" data-swatch-for="marginColor" aria-label="Pick margin color">
             <input class="field__input accent__hex" type="text" name="marginColor" maxlength="7" spellcheck="false" aria-label="Margin color" aria-describedby="err-marginColor">
           </span>
         </div>
-        <div class="accent" data-for="columns modular" data-hide-for-output="guides">
+        <div class="accent" data-for="columns modular" data-hide-for-output="guides" data-grid-only>
           <label class="check"><input type="checkbox" name="shadeGutters"><span>Shade gutters</span></label>
           <span class="field__control accent__controls" data-when="shadeGutters">
             <input class="swatch" type="color" data-swatch-for="gutterColor" aria-label="Pick gutter color">
@@ -365,7 +467,7 @@
       </div>
     </details>
 
-    <details class="group section" id="align-section">
+    <details class="group section" id="align-section" data-mode="grid">
       <summary class="section__summary"><span class="group__title section__title">Align objects</span></summary>
       <div class="section__body more">
         <p class="note">Compares the selected objects with these grid settings on their <span data-noun>artboard</span>s.</p>
@@ -377,7 +479,7 @@
       </div>
     </details>
 
-    <details class="group section">
+    <details class="group section" data-mode="grid">
       <summary class="section__summary"><span class="group__title section__title">More</span></summary>
       <div class="section__body more">
         <div class="resize">
@@ -406,12 +508,10 @@
     </details>
   </form>
 
-  <section class="library" id="library" aria-labelledby="library-title" hidden>
+  <section class="library" id="library" aria-label="Layouts" data-mode="layouts">
     <div class="library__head">
-      <h2 class="library__title" id="library-title">Layouts</h2>
       <label class="visually-hidden" for="library-search">Search layouts</label>
-      <input class="field__input library__search" id="library-search" type="search" placeholder="Search" spellcheck="false" autocomplete="off">
-      <button type="button" class="button button--quiet" id="library-close">Done</button>
+      <input class="field__input library__search" id="library-search" type="search" placeholder="Search 128 layouts" spellcheck="false" autocomplete="off">
     </div>
     <div class="library__chips" id="library-chips" role="radiogroup" aria-label="Layout categories"></div>
     <p class="library__hint" id="library-hint" aria-live="polite"></p>
@@ -431,11 +531,7 @@
       </div>
     </div>
 
-    <div class="presets" id="presets">
-      <button type="button" class="button button--quiet presets__library" id="library-open" aria-controls="library" aria-expanded="false">
-        <svg class="icon"><use href="#i-library"/></svg>
-        <span>Layouts</span>
-      </button>
+    <div class="presets" id="presets" data-mode="grid">
       <label class="visually-hidden" for="preset-select">Your presets</label>
       <select class="field__input presets__select" id="preset-select" title="Your saved presets"></select>
       <button type="button" class="icon-button" id="preset-new" title="Save settings as a preset">

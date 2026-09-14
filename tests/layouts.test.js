@@ -30,8 +30,9 @@ function messages(result) {
     return result.errors.map((e) => e.message).join(" ");
 }
 
-test("the library has about a hundred layouts with unique ids in known categories", () => {
-    assert.ok(LAYOUTS.length >= 100, `${LAYOUTS.length} layouts`);
+test("the library has over a hundred layouts with unique ids in known categories", () => {
+    assert.ok(LAYOUTS.length >= 120, `${LAYOUTS.length} layouts`);
+    assert.equal(CATEGORIES[0], "Systems", "Systems opens first");
     const ids = LAYOUTS.map((l) => l.id);
     assert.equal(new Set(ids).size, ids.length, "ids are unique");
     for (const layout of LAYOUTS) {

@@ -2,7 +2,7 @@
 
 A layout-grid panel for Adobe Illustrator and Adobe InDesign.
 
-Mullion draws column, modular, and baseline grids, composition guides, and patterns, on artboards, pages, or inside selected objects. It checks and snaps artwork to the grid, and ships with a visual library of 114 layouts. Grids live on their own layer and carry ownership tags, so previews, regenerating, and clearing never touch your artwork.
+Mullion draws column, modular, and baseline grids, classic grid systems, composition guides, and patterns, on artboards, pages, or inside selected objects. It draws construction lines around logos, checks and snaps artwork to the grid, and ships with a visual library of 128 layouts. Grids live on their own layer and carry ownership tags, so previews, regenerating, and clearing never touch your artwork.
 
 <!-- placeholder-name-note -->
 > **Mullion is a placeholder name.** Check trademarks before you publish, then run `npm run rename` (see [Renaming](#renaming)).
@@ -28,8 +28,12 @@ Mullion draws column, modular, and baseline grids, composition guides, and patte
 
 ## Features
 
+The panel has three modes: **Grid** (grid types as icon buttons and every setting), **Layouts** (the visual gallery), and **Construct** (construction lines for selected artwork).
+
 **Grids**
-- Columns, modular grids, baseline grids, composition guides (thirds, golden sections, diagonals, center lines, golden spiral with a chosen focus), and patterns (square, dots, isometric, hexagons, diagonal, radial)
+- Columns, modular grids (optionally square modules), baseline grids, and patterns (square, dots, isometric, hexagons, diagonal at any angle, radial)
+- Composition guides: thirds, fifths, golden sections, diagonals, center lines, harmonic armature, dynamic rectangle (diagonals, reciprocals, and eye lines), Villard's figure, and a golden spiral with a chosen focus
+- Compound grids: overlay a second column count on the first, such as 3 + 4
 - Unequal column widths and row heights (`2 1 1`, `1 1 2 3 5`)
 - A baseline grid inside column and modular grids, with **From text** to copy leading from selected text
 - Content blocks: drag across the drawing to mark regions spanning several modules
@@ -40,8 +44,13 @@ Mullion draws column, modular, and baseline grids, composition guides, and patte
 - Generate replaces the grid in the same area; **Add to existing grids** stacks grid types
 - Every target is validated before anything is drawn
 
+**Construction lines**
+- Select a logo or icon and draw its bounding box, key lines through every anchor and curve extreme, and the circles its round parts are made from, with center lines and diagonals as options
+- A separate color for each kind of line; lines run across the artboard or just around the artwork
+- Works through groups and compound paths; text must be outlined first
+
 **Appearance**
-- Lines, guides, or boxes; color, width, opacity; solid, dashed, or dotted lines; a separate margin color; shaded gutters
+- Lines, guides, or boxes; color with quick swatches, width, opacity slider; solid, dashed, or dotted lines; a separate margin color; shaded gutters
 
 **Working with the grid**
 - Live preview that hides the grid it would replace
@@ -51,7 +60,7 @@ Mullion draws column, modular, and baseline grids, composition guides, and patte
 - InDesign only: **Set page margins and columns** writes the settings into InDesign's own page setup and baseline grid
 
 **Library and presets**
-- 114 layouts in ten categories with live thumbnails drawn on your artboard, search, and suggestions for the artboard's shape
+- 128 layouts in ten categories, starting with **Systems** (golden spiral, harmonic armature, dynamic rectangle, Villard's figure, Van de Graaf canon, rules of thirds and fifths, column, modular, compound, hierarchical, manuscript, and baseline grids), with icon thumbnails drawn on your artboard, search, and suggestions for the artboard's shape
 - Proportional layouts size margins and gutters to the page, so one layout suits A6 and A0
 - Saved presets, with export and import as files for sharing across a studio
 
@@ -59,11 +68,11 @@ Mullion draws column, modular, and baseline grids, composition guides, and patte
 
 | Area | How it was verified |
 | --- | --- |
-| Grid engine | 176 automated tests (exact coordinates, all grid types, validation, snapping) |
+| Grid engine | 192 automated tests (exact coordinates, all grid types, validation, snapping) |
 | Illustrator host | Tests against a fake Illustrator DOM, **and** repeated runs in Illustrator 30.8.1 on macOS covering every feature |
 | Undo in Illustrator | Measured in Illustrator 30.8.1: one Undo removes a whole generated grid |
 | InDesign host | Tests against a strict fake InDesign DOM only. **Not yet run in InDesign.** Verify with the QA checklist before selling InDesign support |
-| Panel | Headless Chrome smoke test of every control, in all four brightness themes and at 240 px wide |
+| Panel | Headless Chrome smoke test of every control and all three modes, in all four brightness themes and at 240 px wide |
 | Windows | Not yet tested. CI runs the automated tests on Windows; the panel itself still needs a Windows machine |
 | Signing | Workflow written; signing not yet run (ZXPSignCmd needs Rosetta on Apple Silicon, or use the GitHub workflow) |
 
@@ -80,7 +89,7 @@ host/illustrator-adapter.jsx  All Illustrator DOM access
 host/indesign-adapter.jsx     All InDesign DOM access (same interface)
 host/vendor/json2.js          JSON for ExtendScript (public domain)
 shared/grid-core.js           Grid geometry, validation, snapping (ES3; runs everywhere)
-shared/layouts.js             Layout library: 114 layouts, proportional sizing, suggestions
+shared/layouts.js             Layout library: 128 layouts, proportional sizing, suggestions
 shared/formats.js             Standard artboard and page sizes
 tests/                        Node tests: engine, both hosts on fake DOMs, library, release
 scripts/                      ES3 checker, UI smoke test, build, signing, rename, dev install
@@ -247,6 +256,13 @@ Run on the oldest and newest versions you support, on macOS and Windows. For InD
 - [ ] All, Chosen (`1, 3`), and bad lists (`0`, `9`, `a`) behave as labeled; a grid too big for one target draws nothing and names it
 - [ ] Guides, boxes, line styles, margin color, and shaded gutters look as set; CMYK documents get CMYK colors
 - [ ] Golden spiral is smooth and converges on each chosen corner, in landscape and portrait, and as a guide
+- [ ] Fifths, harmonic armature, dynamic rectangle, and Villard's figure meet at the expected points; overlay columns and square modules match the drawing
+
+**Construction lines**
+- [ ] A logo made of a circle and bars: bounding box, key lines on every edge, and one circle of the right radius, each in its own color
+- [ ] Groups and compound paths are read; selected text asks for outlines; nothing selected explains what to do
+- [ ] Generating again replaces the construction lines; Clear in Construct removes only construction lines, not the page grid
+- [ ] Full artboard and Near artwork (with Extend by) extend lines as labeled
 - [ ] InDesign guides: axis-aligned grids become page guides; diagonals, curves, hexagons, and dots are refused with an explanation
 
 **Objects, alignment, and resizing**
@@ -257,7 +273,8 @@ Run on the oldest and newest versions you support, on macOS and Windows. For InD
 - [ ] InDesign: Set page margins and columns updates Layout > Margins and Columns and the baseline grid
 
 **Library and presets**
-- [ ] Layouts opens in place of the settings; Done and Escape close it; the last category is remembered
+- [ ] The Grid, Layouts, and Construct tabs switch modes; Escape in Layouts returns to Grid; the mode and last category are remembered
+- [ ] Applying a layout offers Edit settings, which opens Grid mode
 - [ ] Suggested fits the artboard shape (Letter, A4, 1080 × 1080 px, 1920 × 1080 px); thumbnails match Generate
 - [ ] Proportional layouts scale with the page; fixed layouts keep their units; appearance is unchanged
 - [ ] Export presets writes a file; Import adds them, numbering duplicate names

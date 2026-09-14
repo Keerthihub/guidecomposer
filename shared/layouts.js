@@ -30,10 +30,13 @@
     var POINTS_PER_UNIT = { pt: 1, px: 1, mm: 72 / 25.4, "in": 72 };
     var VERTICAL_KEYS = { marginTop: true, marginBottom: true, rowGutter: true, baselineSpacing: true, baselineOffset: true };
 
-    var CATEGORIES = ["Columns", "Modular", "Asymmetric", "Baseline", "Classic", "Print", "Screen", "Social", "Composition", "Patterns"];
+    var CATEGORIES = ["Systems", "Columns", "Modular", "Asymmetric", "Baseline", "Print", "Screen", "Social", "Composition", "Patterns"];
 
     var NO_MARGINS = { marginTop: 0, marginRight: 0, marginBottom: 0, marginLeft: 0 };
-    var COMP_OFF = { compThirds: false, compGolden: false, compDiagonals: false, compCenter: false, compSpiral: false };
+    var COMP_OFF = {
+        compThirds: false, compFifths: false, compGolden: false, compDiagonals: false, compCenter: false,
+        compArmature: false, compDynamic: false, compVillard: false, compSpiral: false
+    };
 
     function assign(target) {
         for (var i = 1; i < arguments.length; i++) {
@@ -61,6 +64,32 @@
     function add(layout) {
         LAYOUTS.push(layout);
     }
+
+    // -------------------------------------------------------------- systems
+    // A curated set of classic grid structures, shown first in the library.
+    function system(id, name, settings, relative) {
+        add({ id: id, category: "Systems", name: name, settings: settings, relative: relative || null });
+    }
+    system("system-golden-spiral", "Golden spiral", assign({ type: "composition" }, NO_MARGINS, COMP_OFF, { compSpiral: true, spiralFocus: "bottom-right" }));
+    system("system-armature", "Harmonic armature", assign({ type: "composition" }, NO_MARGINS, COMP_OFF, { compArmature: true }));
+    system("system-dynamic", "Dynamic rectangle", assign({ type: "composition" }, NO_MARGINS, COMP_OFF, { compDynamic: true }));
+    system("system-villard", "Villard's figure", assign({ type: "composition" }, NO_MARGINS, COMP_OFF, { compVillard: true }));
+    system("system-thirds", "Rule of thirds", assign({ type: "composition" }, NO_MARGINS, COMP_OFF, { compThirds: true }));
+    system("system-fifths", "Rule of fifths", assign({ type: "composition" }, NO_MARGINS, COMP_OFF, { compFifths: true }));
+    system("system-column", "Column grid", { type: "columns", columns: 4, overlayColumns: 0 }, even(0.06, 0.025));
+    system("system-modular", "Modular grid", { type: "modular", columns: 3, rows: 3, overlayColumns: 0 }, even(0.06, 0.025));
+    system("system-compound", "Compound grid 3 + 4", { type: "columns", columns: 3, columnGutter: 0, overlayColumns: 4 },
+        { basis: "short", marginTop: 0.06, marginRight: 0.06, marginBottom: 0.06, marginLeft: 0.06 });
+    system("system-hierarchical", "Hierarchical grid", {
+        type: "modular", columns: 4, rowRatios: "1 2 2", overlayColumns: 0,
+        blocks: [{ column: 1, row: 1, columns: 4, rows: 1 }, { column: 1, row: 2, columns: 3, rows: 2 }, { column: 4, row: 2, columns: 1, rows: 2 }]
+    }, even(0.06, 0.025));
+    system("system-manuscript", "Manuscript grid", { type: "columns", columns: 1, overlayColumns: 0 },
+        { basis: "sides", marginTop: 1 / 9, marginBottom: 2 / 9, marginLeft: 1 / 6, marginRight: 1 / 6, columnGutter: 0 });
+    system("system-baseline", "Baseline grid", { type: "baseline", units: "pt", baselineSpacing: 12, baselineOffset: 0 },
+        { basis: "short", marginTop: 0.08, marginRight: 0.06, marginBottom: 0.1, marginLeft: 0.06 });
+    system("system-square-modules", "Square modules", { type: "modular", columns: 6, squareModules: true, overlayColumns: 0 }, even(0.06, 0.02));
+    system("system-angled", "Angled grid", { type: "pattern", units: "pt", pattern: "diagonal", patternSize: 48, patternAngle: 20 }, null);
 
     // ------------------------------------------------------------- columns
     for (var c = 1; c <= 12; c++) {
@@ -150,21 +179,21 @@
     // Van de Graaf canon: inner and top margins are 1/9 of the page, outer and bottom 2/9.
     add({
         id: "classic-van-de-graaf-right",
-        category: "Classic",
+        category: "Systems",
         name: "Van de Graaf canon, right page",
         settings: { type: "columns", columns: 1 },
         relative: { basis: "sides", marginTop: 1 / 9, marginBottom: 2 / 9, marginLeft: 1 / 9, marginRight: 2 / 9, columnGutter: 0 }
     });
     add({
         id: "classic-van-de-graaf-left",
-        category: "Classic",
+        category: "Systems",
         name: "Van de Graaf canon, left page",
         settings: { type: "columns", columns: 1 },
         relative: { basis: "sides", marginTop: 1 / 9, marginBottom: 2 / 9, marginLeft: 2 / 9, marginRight: 1 / 9, columnGutter: 0 }
     });
     add({
         id: "classic-van-de-graaf-2",
-        category: "Classic",
+        category: "Systems",
         name: "Van de Graaf canon, 2 columns",
         settings: { type: "columns", columns: 2 },
         relative: { basis: "sides", marginTop: 1 / 9, marginBottom: 2 / 9, marginLeft: 1 / 9, marginRight: 2 / 9, columnGutter: 0.03 }
@@ -172,7 +201,7 @@
     // Margins in the ratio 2 : 3 : 4 : 6 (inner : top : outer : bottom).
     add({
         id: "classic-2-3-4-6",
-        category: "Classic",
+        category: "Systems",
         name: "Margins 2 : 3 : 4 : 6",
         settings: { type: "columns", columns: 1 },
         relative: { basis: "short", marginLeft: 2 / 36, marginTop: 3 / 36, marginRight: 4 / 36, marginBottom: 6 / 36, columnGutter: 0 }
