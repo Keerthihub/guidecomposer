@@ -78,6 +78,14 @@ function checkFile(entry) {
 
     if (!entry.apiCheck) return problems;
 
+    // Banned methods only matter when called; reading a property named "values" is fine.
+    const calledMembers = new Set();
+    walk(ast, (node) => {
+        if (node.type === "CallExpression" && node.callee.type === "MemberExpression") {
+            calledMembers.add(node.callee);
+        }
+    });
+
     walk(ast, (node) => {
         if (node.type === "MemberExpression" && !node.computed && node.property.type === "Identifier") {
             const name = node.property.name;
@@ -90,7 +98,7 @@ function checkFile(entry) {
                     problems.push(`${entry.file}:${lineOf(source, node.start)}: JSON is not guaranteed here; shared code must not depend on it`);
                 }
             }
-            if (BANNED_METHODS.has(name)) {
+            if (BANNED_METHODS.has(name) && calledMembers.has(node)) {
                 problems.push(`${entry.file}:${lineOf(source, node.start)}: .${name}() is not available on ExtendScript arrays/strings`);
             }
         }

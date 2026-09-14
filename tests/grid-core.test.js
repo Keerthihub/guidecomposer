@@ -755,3 +755,119 @@ test("shaded gutters combine with boxes output", () => {
     assert.deepEqual(r.boxes.map((b) => b.kind), ["gutter", "column", "column"]);
     assert.equal(r.shapeCount, 3);
 });
+
+// ------------------------------------------------------ baseline inside grids
+
+test("column grids can include a baseline grid", () => {
+    const r = build(LETTER, { addBaseline: true, baselineSpacing: 12, baselineOffset: 0 });
+    assert.equal(r.ok, true);
+    assert.equal(ofKind(r, "column").length, 24);
+    assert.equal(r.metrics.baselineCount, 61);
+    // The top and bottom baselines coincide with the margin lines, which are kept once, as margins.
+    assert.equal(ofKind(r, "margin").length, 2);
+    assert.equal(ofKind(r, "baseline").length, 59);
+    assert.equal(r.segments.length, 24 + 2 + 59);
+});
+
+test("modular grids can include a baseline grid, validated like a baseline grid", () => {
+    const r = build(LETTER, { type: "modular", columns: 6, rows: 8, addBaseline: true, baselineSpacing: 18, baselineOffset: 6 });
+    assert.equal(r.ok, true);
+    assert.equal(ofKind(r, "baseline")[0].y1, 750);
+    assert.deepEqual(fieldsOf(build(LETTER, { addBaseline: true, baselineSpacing: 0 })), ["baselineSpacing"]);
+    assert.equal(build(LETTER, { addBaseline: false, baselineSpacing: 0 }).ok, true, "baseline fields ignored when off");
+});
+
+// ---------------------------------------------------------- unequal columns
+
+test("column ratios divide the space by proportion and set the column count", () => {
+    const r = build(LETTER, { columns: 12, columnRatios: "2 1 1", columnGutter: 12, marginLeft: 36, marginRight: 36 });
+    assert.equal(r.ok, true);
+    // 540 - 2 gutters = 516 pt shared 2:1:1 -> 258, 129, 129
+    assert.deepEqual(r.metrics.columnWidths, [258, 129, 129]);
+    assert.equal(r.metrics.columnWidth, null);
+    assert.deepEqual(xs(ofKind(r, "column")), [36, 294, 306, 435, 447, 576]);
+    assert.equal(r.settings.columns, 3);
+});
+
+test("ratios accept colons, commas, and arrays; empty means equal", () => {
+    assert.deepEqual(core.parseRatios("2:1:1", "Widths"), { ok: true, values: [2, 1, 1] });
+    assert.deepEqual(core.parseRatios("1, 1, 2, 3, 5", "Widths"), { ok: true, values: [1, 1, 2, 3, 5] });
+    assert.deepEqual(core.parseRatios([1.5, 1], "Widths"), { ok: true, values: [1.5, 1] });
+    assert.deepEqual(core.parseRatios("  ", "Widths"), { ok: true, values: null });
+    assert.equal(core.parseRatios("2 x 1", "Widths").ok, false);
+    assert.equal(core.parseRatios("2 0 1", "Widths").ok, false);
+    assert.deepEqual(fieldsOf(build(LETTER, { columnRatios: "a b" })), ["columnRatios"]);
+    assert.equal(build(LETTER, { columns: 0, columnRatios: "1 1" }).ok, true, "column count comes from the ratios");
+});
+
+test("row ratios shape modular rows", () => {
+    const r = build([0, 300, 400, 0], {
+        type: "modular", columns: 2, columnGutter: 0, rows: 5, rowRatios: "1 2", rowGutter: 0,
+        marginTop: 0, marginRight: 0, marginBottom: 0, marginLeft: 0
+    });
+    assert.equal(r.ok, true);
+    assert.deepEqual(r.metrics.rowHeights, [100, 200]);
+    assert.deepEqual(r.tracks.rows, [{ top: 300, bottom: 200 }, { top: 200, bottom: 0 }]);
+});
+
+// ------------------------------------------------------------------ blocks
+
+test("blocks span modules and are drawn as block boxes", () => {
+    const r = build([0, 0, 400, -300], {
+        type: "modular", columns: 4, columnGutter: 0, rows: 3, rowGutter: 0,
+        marginTop: 0, marginRight: 0, marginBottom: 0, marginLeft: 0,
+        blocks: [{ column: 1, row: 1, columns: 4, rows: 1 }, { column: 2, row: 2, columns: 2, rows: 2 }]
+    });
+    assert.equal(r.ok, true);
+    assert.deepEqual(ofKind({ segments: r.boxes }, "block"), [
+        { kind: "block", left: 0, top: 0, right: 400, bottom: -100 },
+        { kind: "block", left: 100, top: -100, right: 300, bottom: -300 }
+    ]);
+    assert.equal(r.metrics.blockCount, 2);
+});
+
+test("blocks are clipped to the grid, and column-grid blocks span the full height", () => {
+    const modular = build([0, 0, 400, -300], {
+        type: "modular", columns: 4, columnGutter: 0, rows: 3, rowGutter: 0,
+        marginTop: 0, marginRight: 0, marginBottom: 0, marginLeft: 0,
+        blocks: [{ column: 3, row: 3, columns: 5, rows: 5 }, { column: 9, row: 1, columns: 1, rows: 1 }]
+    });
+    assert.deepEqual(modular.boxes, [{ kind: "block", left: 200, top: -200, right: 400, bottom: -300 }]);
+    assert.equal(modular.metrics.blockCount, 1);
+
+    const columns = build(LETTER, { columns: 3, columnGutter: 12, blocks: [{ column: 2, row: 7, columns: 2, rows: 1 }] });
+    assert.deepEqual(columns.boxes, [{ kind: "block", left: 220, top: 756, right: 576, bottom: 36 }]);
+});
+
+test("invalid blocks are reported", () => {
+    assert.deepEqual(fieldsOf(build(LETTER, { type: "modular", blocks: [{ column: 0, row: 1, columns: 1, rows: 1 }] })), ["blocks"]);
+    assert.deepEqual(fieldsOf(build(LETTER, { type: "modular", blocks: "1 1 2 2" })), ["blocks"]);
+    assert.equal(core.parseBlocks([]).ok, true);
+});
+
+// ------------------------------------------------------------------ snapping
+
+test("snap lines collect grid positions and the content edges", () => {
+    const r = build(LETTER, { columns: 3, columnGutter: 12 });
+    const lines = core.snapLines(r);
+    assert.deepEqual(lines.xs, [36, 208, 220, 392, 404, 576]);
+    assert.deepEqual(lines.ys, [36, 756]);
+    const baseline = core.snapLines(build(LETTER, { type: "baseline", baselineSpacing: 360 }));
+    assert.deepEqual(baseline.xs, [36, 576], "baseline grids still snap to the margins");
+    assert.deepEqual(baseline.ys, [36, 396, 756]);
+    assert.deepEqual(core.snapLines({ ok: false }), { xs: [], ys: [] });
+});
+
+test("snapRect moves an object by its nearer edges", () => {
+    const lines = { xs: [36, 208, 220], ys: [36, 396, 756] };
+    // Left edge 40 is 4 from 36; right edge 205 is 3 from 208 -> align the right edge.
+    assert.deepEqual(core.snapRect([40, 700, 205, 500], lines), { dx: 3, dy: 56, onGrid: false });
+    assert.deepEqual(core.snapRect([36, 756, 100, 400], lines), { dx: 0, dy: 0, onGrid: true });
+    assert.deepEqual(core.snapRect([36.005, 756, 100, 400], lines).onGrid, true, "within tolerance");
+    assert.deepEqual(core.snapRect([10, 10, 20, 5], { xs: [], ys: [] }), { dx: 0, dy: 0, onGrid: true });
+});
+
+test("messages can name the area being divided", () => {
+    const r = core.buildGrid([0, 100, 50, 0], settings({ marginLeft: 30, marginRight: 30 }), { areaLabel: "object" });
+    assert.match(r.errors[0].message, /less than the object width of 50 pt/);
+});

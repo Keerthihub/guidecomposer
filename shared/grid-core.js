@@ -18,7 +18,7 @@
  *   dots:     filled circles    { kind, x, y, d }
  *
  * Kinds decide styling: "margin" shapes can take the margin color, "gutter"
- * boxes are filled, everything else uses the stroke color.
+ * and "block" boxes are filled, everything else uses the stroke color.
  */
 (function (root, factory) {
     var core = factory();
@@ -66,6 +66,7 @@
         maxTotalShapes: 10000, // per request, across artboards (enforced by the host)
         maxStrokeWidth: 100,
         maxDotSize: 50,
+        maxBlocks: 200,
         spiralSquares: 10
     };
 
@@ -76,6 +77,10 @@
         rows: 8,
         columnGutter: 12,
         rowGutter: 12,
+        columnRatios: "",
+        rowRatios: "",
+        addBaseline: false,
+        blocks: [],
         marginTop: 36,
         marginRight: 36,
         marginBottom: 36,
@@ -112,6 +117,9 @@
         rows: "Rows",
         columnGutter: "Column gutter",
         rowGutter: "Row gutter",
+        columnRatios: "Column widths",
+        rowRatios: "Row heights",
+        blocks: "Blocks",
         marginTop: "Top margin",
         marginRight: "Right margin",
         marginBottom: "Bottom margin",
@@ -212,12 +220,28 @@
 
     // -------------------------------------------------------------- validation
 
-    function relevantFields(type, pattern) {
+    /*
+     * Numeric fields validated for a grid. options: { pattern, addBaseline,
+     * columnRatios, rowRatios } where ratios replace the column/row counts.
+     */
+    function relevantFields(type, options) {
+        var o = typeof options === "string" ? { pattern: options } : (options || {});
+        var pattern = o.pattern;
         var fields = ["marginTop", "marginRight", "marginBottom", "marginLeft"];
-        if (type === "columns") {
-            fields.push("columns", "columnGutter");
-        } else if (type === "modular") {
-            fields.push("columns", "rows", "columnGutter", "rowGutter");
+        if (type === "columns" || type === "modular") {
+            if (!o.columnRatios) {
+                fields.push("columns");
+            }
+            fields.push("columnGutter");
+            if (type === "modular") {
+                if (!o.rowRatios) {
+                    fields.push("rows");
+                }
+                fields.push("rowGutter");
+            }
+            if (o.addBaseline) {
+                fields.push("baselineSpacing", "baselineOffset");
+            }
         } else if (type === "baseline") {
             fields.push("baselineSpacing", "baselineOffset");
         } else if (type === "pattern") {
@@ -236,6 +260,78 @@
 
     function pick(raw, key) {
         return isProvided(raw, key) ? raw[key] : DEFAULTS[key];
+    }
+
+    /*
+     * Parses proportions such as "2 1 1", "2:1:1", or [1, 1, 2, 3, 5].
+     * Returns { ok, values } (values is null when empty, meaning equal sizes)
+     * or { ok: false, error }.
+     */
+    function parseRatios(value, label) {
+        var parts;
+        if (value === undefined || value === null || value === "") {
+            return { ok: true, values: null };
+        }
+        if (typeof value === "string") {
+            var text = stripSpace(value);
+            if (text === "") {
+                return { ok: true, values: null };
+            }
+            parts = text.split(/[\s,:;]+/);
+        } else if (value && typeof value.length === "number") {
+            parts = value;
+        } else {
+            return { ok: false, error: label + " must be numbers separated by spaces, such as 2 1 1." };
+        }
+        var values = [];
+        for (var i = 0; i < parts.length; i++) {
+            if (parts[i] === "") {
+                continue;
+            }
+            var n = parseNumber(typeof parts[i] === "number" ? parts[i] : String(parts[i]));
+            if (!isFiniteNumber(n) || n <= 0) {
+                return { ok: false, error: label + " must be positive numbers separated by spaces, such as 2 1 1." };
+            }
+            values.push(n);
+        }
+        if (values.length === 0) {
+            return { ok: true, values: null };
+        }
+        if (values.length > LIMITS.maxColumns) {
+            return { ok: false, error: label + " can have at most " + LIMITS.maxColumns + " values." };
+        }
+        return { ok: true, values: values };
+    }
+
+    /*
+     * Parses content blocks: [{ column, row, columns, rows }] with 1-based
+     * positions and sizes in modules. Returns { ok, blocks } or { ok: false, error }.
+     */
+    function parseBlocks(value) {
+        if (value === undefined || value === null || value === "") {
+            return { ok: true, blocks: [] };
+        }
+        if (typeof value === "string" || typeof value.length !== "number") {
+            return { ok: false, error: "Blocks must be a list." };
+        }
+        if (value.length > LIMITS.maxBlocks) {
+            return { ok: false, error: "Use at most " + LIMITS.maxBlocks + " blocks." };
+        }
+        var blocks = [];
+        var keys = ["column", "row", "columns", "rows"];
+        for (var i = 0; i < value.length; i++) {
+            var b = value[i];
+            var clean = {};
+            for (var k = 0; k < keys.length; k++) {
+                var n = b ? parseNumber(b[keys[k]]) : NaN;
+                if (!isFiniteNumber(n) || Math.floor(n) !== n || n < 1 || n > 1000) {
+                    return { ok: false, error: "Block " + (i + 1) + " needs whole numbers for its column, row, width, and height." };
+                }
+                clean[keys[k]] = n;
+            }
+            blocks.push(clean);
+        }
+        return { ok: true, blocks: blocks };
     }
 
     /*
@@ -281,7 +377,38 @@
             }
         }
 
-        var fields = relevantFields(s.type, s.pattern);
+        if (s.type === "columns" || s.type === "modular") {
+            s.addBaseline = pick(raw, "addBaseline") === true;
+            var columnRatios = parseRatios(pick(raw, "columnRatios"), FIELD_NAMES.columnRatios);
+            if (!columnRatios.ok) {
+                addError("columnRatios", columnRatios.error);
+            } else if (columnRatios.values) {
+                s.columnRatios = columnRatios.values;
+                s.columns = columnRatios.values.length;
+            }
+            if (s.type === "modular") {
+                var rowRatios = parseRatios(pick(raw, "rowRatios"), FIELD_NAMES.rowRatios);
+                if (!rowRatios.ok) {
+                    addError("rowRatios", rowRatios.error);
+                } else if (rowRatios.values) {
+                    s.rowRatios = rowRatios.values;
+                    s.rows = rowRatios.values.length;
+                }
+            }
+            var parsedBlocks = parseBlocks(pick(raw, "blocks"));
+            if (!parsedBlocks.ok) {
+                addError("blocks", parsedBlocks.error);
+            } else {
+                s.blocks = parsedBlocks.blocks;
+            }
+        }
+
+        var fields = relevantFields(s.type, {
+            pattern: s.pattern,
+            addBaseline: s.addBaseline,
+            columnRatios: s.columnRatios,
+            rowRatios: s.rowRatios
+        });
         for (i = 0; i < fields.length; i++) {
             var key = fields[i];
             var label = FIELD_NAMES[key];
@@ -483,17 +610,28 @@
      * from the start of the span (always increasing). Callers map distances
      * onto X (left to right) or Y (top to bottom).
      */
-    function divideSpan(length, count, gutter) {
-        var size = (length - gutter * (count - 1)) / count;
-        if (size <= EPSILON) {
-            return { ok: false, size: size };
+    function divideSpan(length, count, gutter, weights) {
+        var available = length - gutter * (count - 1);
+        var total = 0;
+        var i;
+        if (weights) {
+            for (i = 0; i < count; i++) {
+                total += weights[i];
+            }
         }
         var tracks = [];
-        for (var i = 0; i < count; i++) {
-            var start = i * (size + gutter);
+        var smallest = Infinity;
+        var start = 0;
+        for (i = 0; i < count; i++) {
+            var size = weights ? available * weights[i] / total : available / count;
+            smallest = Math.min(smallest, size);
             tracks.push({ start: start, end: start + size });
+            start += size + gutter;
         }
-        return { ok: true, size: size, tracks: tracks };
+        if (smallest <= EPSILON) {
+            return { ok: false, size: smallest };
+        }
+        return { ok: true, size: smallest, equal: !weights, tracks: tracks };
     }
 
     // Collects track edges as sorted distances with coincident edges merged.
@@ -733,6 +871,31 @@
         return { ok: false, errors: errors, segments: [], boxes: [], polygons: [], curves: [], dots: [] };
     }
 
+    // Baseline lines between margins, shared by baseline grids and grids with a baseline.
+    function addBaselines(s, content, spanLeft, spanRight, unit, segments, errors, metrics) {
+        if (s.baselineOffset > content.height + EPSILON) {
+            errors.push({
+                field: "baselineOffset",
+                message: "Baseline offset of " + formatMeasure(s.baselineOffset, unit) +
+                    " is deeper than the space between margins (" + formatMeasure(content.height, unit) + ")."
+            });
+            return;
+        }
+        var available = content.height - s.baselineOffset;
+        var count = Math.floor(available / s.baselineSpacing + EPSILON) + 1;
+        if (count > LIMITS.maxBaselines) {
+            errors.push({
+                field: "baselineSpacing",
+                message: "That spacing creates " + count + " baselines. Use a larger spacing to stay at or under " + LIMITS.maxBaselines + "."
+            });
+            return;
+        }
+        metrics.baselineCount = count;
+        for (var i = 0; i < count; i++) {
+            segments.push(horizontal("baseline", content.top - s.baselineOffset - i * s.baselineSpacing, spanLeft, spanRight));
+        }
+    }
+
     function tooMany(field, count, noun) {
         return {
             field: field,
@@ -852,19 +1015,22 @@
 
     /*
      * Builds the full grid for one artboard.
-     *   rect: Illustrator artboardRect [left, top, right, bottom]
-     *   raw:  panel settings (lengths in raw.units)
+     *   rect:    Illustrator artboardRect [left, top, right, bottom]
+     *   raw:     panel settings (lengths in raw.units)
+     *   options: { areaLabel: word used in messages, "artboard" by default }
      * Returns {
      *   ok, errors, settings,
      *   artboard: { left, top, right, bottom, width, height },
      *   content:  { left, top, right, bottom, width, height },
-     *   metrics:  { columnWidth, rowHeight, baselineCount, cellSize, dotCount, hexagonCount, ringSpacing },
+     *   metrics:  { columnWidth, columnWidths, rowHeight, rowHeights, baselineCount, blockCount,
+     *               cellSize, dotCount, hexagonCount, ringSpacing } (lengths in points),
      *   tracks:   { columns: [{ left, right }], rows: [{ top, bottom }] },
      *   segments, boxes, polygons, curves, dots (see the file header),
      *   shapeCount
      * }
      */
-    function buildGrid(rect, raw) {
+    function buildGrid(rect, raw, options) {
+        var areaLabel = (options && options.areaLabel) || "artboard";
         var normalized = normalizeSettings(raw);
         if (!normalized.ok) {
             return failure(normalized.errors);
@@ -891,13 +1057,13 @@
         if (content.width <= EPSILON) {
             errors.push({
                 field: "marginLeft",
-                message: "Left and right margins leave no room. Together they must be less than the artboard width of " + formatMeasure(a.width, unit) + "."
+                message: "Left and right margins leave no room. Together they must be less than the " + areaLabel + " width of " + formatMeasure(a.width, unit) + "."
             });
         }
         if (content.height <= EPSILON) {
             errors.push({
                 field: "marginTop",
-                message: "Top and bottom margins leave no room. Together they must be less than the artboard height of " + formatMeasure(a.height, unit) + "."
+                message: "Top and bottom margins leave no room. Together they must be less than the " + areaLabel + " height of " + formatMeasure(a.height, unit) + "."
             });
         }
         if (errors.length) {
@@ -919,7 +1085,7 @@
         var i, j, edges;
 
         if (s.type === "columns" || s.type === "modular") {
-            var cols = divideSpan(content.width, s.columns, s.columnGutter);
+            var cols = divideSpan(content.width, s.columns, s.columnGutter, s.columnRatios);
             if (!cols.ok) {
                 errors.push({
                     field: "columnGutter",
@@ -928,9 +1094,11 @@
                         " of width; the space between margins is " + formatMeasure(content.width, unit) + "."
                 });
             } else {
-                metrics.columnWidth = round(cols.size);
+                metrics.columnWidth = cols.equal ? round(cols.size) : null;
+                metrics.columnWidths = [];
                 for (i = 0; i < cols.tracks.length; i++) {
                     tracks.columns.push({ left: round(content.left + cols.tracks[i].start), right: round(content.left + cols.tracks[i].end) });
+                    metrics.columnWidths.push(round(cols.tracks[i].end - cols.tracks[i].start));
                 }
                 if (!asBoxes) {
                     edges = trackEdges(cols.tracks);
@@ -942,7 +1110,7 @@
         }
 
         if (s.type === "modular") {
-            var rows = divideSpan(content.height, s.rows, s.rowGutter);
+            var rows = divideSpan(content.height, s.rows, s.rowGutter, s.rowRatios);
             if (!rows.ok) {
                 errors.push({
                     field: "rowGutter",
@@ -951,9 +1119,11 @@
                         " of height; the space between margins is " + formatMeasure(content.height, unit) + "."
                 });
             } else {
-                metrics.rowHeight = round(rows.size);
+                metrics.rowHeight = rows.equal ? round(rows.size) : null;
+                metrics.rowHeights = [];
                 for (i = 0; i < rows.tracks.length; i++) {
                     tracks.rows.push({ top: round(content.top - rows.tracks[i].start), bottom: round(content.top - rows.tracks[i].end) });
+                    metrics.rowHeights.push(round(rows.tracks[i].end - rows.tracks[i].start));
                 }
                 if (!asBoxes) {
                     edges = trackEdges(rows.tracks);
@@ -962,6 +1132,32 @@
                         segments.push(horizontal("row", content.top - edges[i], spanLeft, spanRight));
                     }
                 }
+            }
+        }
+
+        if ((s.type === "columns" || s.type === "modular") && s.blocks && s.blocks.length && errors.length === 0) {
+            // Blocks outside the grid are clipped to it; blocks entirely outside are skipped.
+            metrics.blockCount = 0;
+            for (i = 0; i < s.blocks.length; i++) {
+                var blk = s.blocks[i];
+                var c0 = blk.column - 1;
+                if (c0 >= tracks.columns.length) {
+                    continue;
+                }
+                var c1 = Math.min(c0 + blk.columns, tracks.columns.length) - 1;
+                var blockTop = content.top;
+                var blockBottom = content.bottom;
+                if (s.type === "modular") {
+                    var r0 = blk.row - 1;
+                    if (r0 >= tracks.rows.length) {
+                        continue;
+                    }
+                    var r1 = Math.min(r0 + blk.rows, tracks.rows.length) - 1;
+                    blockTop = tracks.rows[r0].top;
+                    blockBottom = tracks.rows[r1].bottom;
+                }
+                boxes.push(box("block", tracks.columns[c0].left, blockTop, tracks.columns[c1].right, blockBottom));
+                metrics.blockCount++;
             }
         }
 
@@ -1018,29 +1214,8 @@
             segments.push(horizontal("margin", content.bottom, spanLeft, spanRight));
         }
 
-        if (s.type === "baseline") {
-            if (s.baselineOffset > content.height + EPSILON) {
-                errors.push({
-                    field: "baselineOffset",
-                    message: "Baseline offset of " + formatMeasure(s.baselineOffset, unit) +
-                        " is deeper than the space between margins (" + formatMeasure(content.height, unit) + ")."
-                });
-            } else {
-                var available = content.height - s.baselineOffset;
-                var count = Math.floor(available / s.baselineSpacing + EPSILON) + 1;
-                if (count > LIMITS.maxBaselines) {
-                    errors.push({
-                        field: "baselineSpacing",
-                        message: "That spacing creates " + count + " baselines. Use a larger spacing to stay at or under " + LIMITS.maxBaselines + "."
-                    });
-                } else {
-                    metrics.baselineCount = count;
-                    for (i = 0; i < count; i++) {
-                        var y = content.top - s.baselineOffset - i * s.baselineSpacing;
-                        segments.push(horizontal("baseline", y, spanLeft, spanRight));
-                    }
-                }
-            }
+        if (s.type === "baseline" || ((s.type === "columns" || s.type === "modular") && s.addBaseline && errors.length === 0)) {
+            addBaselines(s, content, spanLeft, spanRight, unit, segments, errors, metrics);
         }
 
         if (s.type === "composition") {
@@ -1128,6 +1303,88 @@
         };
     }
 
+    function pushUnique3(list, value) {
+        for (var i = 0; i < list.length; i++) {
+            if (Math.abs(list[i] - value) <= 1e-3) {
+                return;
+            }
+        }
+        list.push(value);
+    }
+
+    /*
+     * Positions an object can align to, from a built grid: every vertical line's
+     * X, every horizontal line's Y, box edges, and the content area's edges.
+     * Returns { xs, ys } sorted ascending.
+     */
+    function snapLines(result) {
+        var xs = [];
+        var ys = [];
+        var i;
+        if (!result || !result.ok) {
+            return { xs: xs, ys: ys };
+        }
+        pushUnique3(xs, result.content.left);
+        pushUnique3(xs, result.content.right);
+        pushUnique3(ys, result.content.top);
+        pushUnique3(ys, result.content.bottom);
+        for (i = 0; i < result.segments.length; i++) {
+            var seg = result.segments[i];
+            if (Math.abs(seg.x1 - seg.x2) <= 1e-6) {
+                pushUnique3(xs, seg.x1);
+            } else if (Math.abs(seg.y1 - seg.y2) <= 1e-6) {
+                pushUnique3(ys, seg.y1);
+            }
+        }
+        for (i = 0; i < result.boxes.length; i++) {
+            var b = result.boxes[i];
+            pushUnique3(xs, b.left);
+            pushUnique3(xs, b.right);
+            pushUnique3(ys, b.top);
+            pushUnique3(ys, b.bottom);
+        }
+        xs.sort(function (p, q) { return p - q; });
+        ys.sort(function (p, q) { return p - q; });
+        return { xs: xs, ys: ys };
+    }
+
+    function nearestOffset(lines, value) {
+        var best = null;
+        for (var i = 0; i < lines.length; i++) {
+            var d = lines[i] - value;
+            if (best === null || Math.abs(d) < Math.abs(best)) {
+                best = d;
+            }
+        }
+        return best;
+    }
+
+    /*
+     * How far an object must move to sit on the grid.
+     *   rect: [left, top, right, bottom] (Illustrator coordinates)
+     * Aligns whichever horizontal edge is closer to a vertical line, and whichever
+     * vertical edge is closer to a horizontal line.
+     * Returns { dx, dy, onGrid } with dy positive meaning up.
+     */
+    function snapRect(rect, lines, tolerance) {
+        var tol = tolerance === undefined ? 0.01 : tolerance;
+        var dx = 0;
+        var dy = 0;
+        if (lines.xs.length) {
+            var dl = nearestOffset(lines.xs, rect[0]);
+            var dr = nearestOffset(lines.xs, rect[2]);
+            dx = Math.abs(dl) <= Math.abs(dr) ? dl : dr;
+        }
+        if (lines.ys.length) {
+            var dt = nearestOffset(lines.ys, rect[1]);
+            var db = nearestOffset(lines.ys, rect[3]);
+            dy = Math.abs(dt) <= Math.abs(db) ? dt : db;
+        }
+        dx = round(dx);
+        dy = round(dy);
+        return { dx: dx, dy: dy, onGrid: Math.abs(dx) <= tol && Math.abs(dy) <= tol };
+    }
+
     /*
      * Dash pattern for a line style, scaled to the stroke width.
      * Returns { dashes: [dash, gap] or [], roundCaps }.
@@ -1171,6 +1428,10 @@
         relevantFields: relevantFields,
         normalizeSettings: normalizeSettings,
         parseArtboardRange: parseArtboardRange,
+        parseRatios: parseRatios,
+        parseBlocks: parseBlocks,
+        snapLines: snapLines,
+        snapRect: snapRect,
         readRect: readRect,
         divideSpan: divideSpan,
         dedupeSegments: dedupeSegments,
