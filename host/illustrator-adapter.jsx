@@ -28,6 +28,9 @@
     var TAG_KIND = "MullionKind";
     var TAG_ARTBOARD = "MullionArtboard";
     var TAG_HIDDEN = "MullionHiddenByPreview";
+    var TAG_REGION = "MullionRegion";
+    var BLOCK_OPACITY = 20;
+    var MAX_SELECTION = 200;
 
     var GRID_LABELS = {
         columns: "Column grid",
@@ -37,6 +40,8 @@
         pattern: "Pattern grid"
     };
 
+    A.HOST = "illustrator";
+    A.AREA_NOUN = "artboard";
     A.LAYER_NAME = LAYER_NAME;
     A.TAG_OWNER = TAG_OWNER;
     A.TAG_KIND = TAG_KIND;
@@ -68,9 +73,28 @@
         };
     };
 
+    A.artboardCount = function (doc) {
+        return doc.artboards.length;
+    };
+
+    A.activeArtboardIndex = function (doc) {
+        return doc.artboards.getActiveArtboardIndex();
+    };
+
     A.activeArtboard = function (doc) {
         return A.artboardAt(doc, doc.artboards.getActiveArtboardIndex());
     };
+
+    // The artboard containing a point, or the active artboard when none does.
+    function artboardIndexAt(doc, x, y) {
+        for (var i = 0; i < doc.artboards.length; i++) {
+            var r = doc.artboards[i].artboardRect;
+            if (x >= r[0] && x <= r[2] && y <= r[1] && y >= r[3]) {
+                return i;
+            }
+        }
+        return doc.artboards.getActiveArtboardIndex();
+    }
 
     A.describe = function (doc) {
         var board = A.activeArtboard(doc);
@@ -91,8 +115,20 @@
             artboards.push({ index: a, name: ab.name, rect: [ar[0], ar[1], ar[2], ar[3]] });
         }
         var layer = findManagedLayer(doc);
+        var selected = [];
+        try {
+            selected = A.selectionTargets(doc);
+        } catch (e) {
+            selected = [];
+        }
+        var selection = [];
+        for (var s = 0; s < selected.length && s < 20; s++) {
+            selection.push({ rect: selected[s].rect, artboard: selected[s].index });
+        }
         return {
+            host: A.HOST,
             hasDocument: true,
+            selection: { count: selected.length, objects: selection },
             documentName: doc.name,
             colorSpace: doc.documentColorSpace === DocumentColorSpace.CMYK ? "CMYK" : "RGB",
             artboardCount: doc.artboards.length,
@@ -191,7 +227,7 @@
     /*
      * Returns owned grid groups placed directly in top-level layers:
      * [{ group, layer, kind, artboard }].
-     * Optional filter: { kind: "preview" | "final", artboards: [indices] }.
+     * Optional filter: { kind: "preview" | "final", artboards: [indices], regions: [keys] }.
      */
     A.findOwnedGroups = function (doc, filter) {
         var found = [];
@@ -216,7 +252,11 @@
                 if (filter.artboards !== undefined && !contains(filter.artboards, artboard)) {
                     continue;
                 }
-                found.push({ group: group, layer: layer, kind: kind, artboard: artboard, hiddenByPreview: tags[TAG_HIDDEN] === "1" });
+                var region = tags[TAG_REGION] || ("artboard:" + artboard);
+                if (filter.regions !== undefined && !contains(filter.regions, region)) {
+                    continue;
+                }
+                found.push({ group: group, layer: layer, kind: kind, artboard: artboard, region: region, hiddenByPreview: tags[TAG_HIDDEN] === "1" });
             }
         }
         return found;
@@ -304,9 +344,9 @@
         });
     }
 
-    // Hides generated grids on the given artboards while a replacing preview is shown.
-    A.hideForPreview = function (doc, artboards) {
-        var entries = A.findOwnedGroups(doc, { kind: "final", artboards: artboards });
+    // Hides generated grids in the given regions while a replacing preview is shown.
+    A.hideForPreview = function (doc, regions) {
+        var entries = A.findOwnedGroups(doc, { kind: "final", regions: regions });
         var hidden = 0;
         for (var i = 0; i < entries.length; i++) {
             if (!entries[i].group.hidden) {
@@ -328,6 +368,151 @@
             }
         }
         return restored;
+    };
+
+    // ------------------------------------------------------------- selection
+
+    // True when an item is, or sits inside, a Mullion grid group.
+    function isInsideOwnedGrid(item) {
+        var node = item;
+        while (node && node.typename !== "Layer" && node.typename !== "Document") {
+            if (node.typename === "GroupItem" && readTags(node)[TAG_OWNER] === M.OWNER_ID) {
+                return true;
+            }
+            node = node.parent;
+        }
+        return false;
+    }
+
+    function roundKey(v) {
+        return Math.round(v * 100) / 100;
+    }
+
+    /*
+     * Selected objects that aren't part of a Mullion grid:
+     * [{ item, rect: [left, top, right, bottom], artboard }].
+     * Text being edited (a TextRange selection) doesn't count as an object.
+     */
+    A.selectionItems = function (doc) {
+        var selection = doc.selection;
+        var out = [];
+        if (!selection || typeof selection.length !== "number" || selection.typename === "TextRange") {
+            return out;
+        }
+        for (var i = 0; i < selection.length && out.length < MAX_SELECTION; i++) {
+            var item = selection[i];
+            if (!item || !item.geometricBounds || isInsideOwnedGrid(item)) {
+                continue;
+            }
+            var b = item.geometricBounds;
+            var rect = [b[0], b[1], b[2], b[3]];
+            if (rect[2] - rect[0] <= 0 || rect[1] - rect[3] <= 0) {
+                continue; // Zero-width lines and points have no area for a grid.
+            }
+            out.push({ item: item, rect: rect, artboard: artboardIndexAt(doc, (rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2) });
+        }
+        return out;
+    };
+
+    // Selected objects as grid targets, one per distinct bounding box.
+    A.selectionTargets = function (doc) {
+        var items = A.selectionItems(doc);
+        var seen = {};
+        var targets = [];
+        for (var i = 0; i < items.length; i++) {
+            var r = items[i].rect;
+            var region = "object:" + roundKey(r[0]) + "," + roundKey(r[1]) + "," + roundKey(r[2]) + "," + roundKey(r[3]);
+            if (seen[region]) {
+                continue;
+            }
+            seen[region] = true;
+            targets.push({
+                index: items[i].artboard,
+                name: "Object on " + doc.artboards[items[i].artboard].name,
+                rect: r,
+                width: r[2] - r[0],
+                height: r[1] - r[3],
+                region: region,
+                areaLabel: "object"
+            });
+        }
+        return targets;
+    };
+
+    // Moves an item by dx, dy points (dy up). Returns false for locked or hidden items.
+    A.moveItem = function (entry, dx, dy) {
+        var item = entry.item;
+        var node = item;
+        while (node && node.typename !== "Document") {
+            if (node.locked || node.hidden || (node.typename === "Layer" && !node.visible)) {
+                return false;
+            }
+            node = node.parent;
+        }
+        item.translate(dx, dy);
+        return true;
+    };
+
+    A.selectItems = function (doc, entries) {
+        doc.selection = null;
+        for (var i = 0; i < entries.length; i++) {
+            try {
+                entries[i].item.selected = true;
+            } catch (e) {
+                // Locked or hidden items can't be selected; skip them.
+            }
+        }
+    };
+
+    /*
+     * Type size and leading of the selected text: the text being edited, or the
+     * first selected text frame. Returns { size, leading, autoLeading, font } or null.
+     */
+    A.readTextMetrics = function (doc) {
+        var selection = doc.selection;
+        var range = null;
+        if (selection && selection.typename === "TextRange") {
+            range = selection;
+        } else if (selection && typeof selection.length === "number") {
+            for (var i = 0; i < selection.length && !range; i++) {
+                if (selection[i].typename === "TextFrame") {
+                    range = selection[i].textRange;
+                }
+            }
+        }
+        if (!range) {
+            return null;
+        }
+        var chars = range.characterAttributes;
+        var size = chars.size;
+        var auto = chars.autoLeading === true;
+        var amount = 120;
+        try {
+            amount = range.paragraphAttributes.autoLeadingAmount || 120;
+        } catch (e) {
+            amount = 120;
+        }
+        return {
+            size: Math.round(size * 1000) / 1000,
+            leading: Math.round((auto ? size * amount / 100 : chars.leading) * 1000) / 1000,
+            autoLeading: auto,
+            font: chars.textFont ? chars.textFont.name : ""
+        };
+    };
+
+    // ------------------------------------------------------------- artboards
+
+    // Resizes an artboard, keeping its top-left corner in place.
+    A.resizeArtboard = function (doc, index, width, height) {
+        var board = doc.artboards[index];
+        var r = board.artboardRect;
+        try {
+            board.artboardRect = [r[0], r[1], r[0] + width, r[1] - height];
+        } catch (e) {
+            throw new M.HostError("RESIZE_FAILED",
+                "Illustrator couldn't resize " + board.name + " to " + Math.round(width) + " \u00d7 " + Math.round(height) +
+                " pt. Artboards must fit on the canvas (at most 16,383 pt on each side in a standard document).");
+        }
     };
 
     // ---------------------------------------------------------------- layers
@@ -476,6 +661,11 @@
             path.filled = true;
             path.fillColor = style.gutter;
             path.opacity = style.gutterOpacity;
+        } else if (kind === "block") {
+            path.stroked = false;
+            path.filled = true;
+            path.fillColor = style.main;
+            path.opacity = BLOCK_OPACITY;
         } else {
             path.filled = false;
             path.stroked = true;
@@ -535,21 +725,21 @@
                 addTag(group, TAG_OWNER, M.OWNER_ID);
                 addTag(group, TAG_KIND, kind);
                 addTag(group, TAG_ARTBOARD, artboard.index);
+                addTag(group, TAG_REGION, artboard.region || ("artboard:" + artboard.index));
 
                 var style = makeStyle(doc, s);
                 var list = function (name) { return grid[name] || []; };
                 var i, b;
-                // Gutter fills go first so lines sit on top of them.
+                // Fills go first (gutters, then blocks) so lines sit on top of them.
                 var boxes = list("boxes");
-                for (i = 0; i < boxes.length; i++) {
-                    b = boxes[i];
-                    if (b.kind === "gutter") {
-                        addPath(group, [[b.left, b.top], [b.right, b.top], [b.right, b.bottom], [b.left, b.bottom]], true, "gutter", style);
-                    }
-                }
-                for (i = 0; i < boxes.length; i++) {
-                    b = boxes[i];
-                    if (b.kind !== "gutter") {
+                var passes = ["gutter", "block", "other"];
+                for (var pass = 0; pass < passes.length; pass++) {
+                    for (i = 0; i < boxes.length; i++) {
+                        b = boxes[i];
+                        var group_ = b.kind === "gutter" || b.kind === "block" ? b.kind : "other";
+                        if (group_ !== passes[pass] || (style.guides && b.kind === "block")) {
+                            continue;
+                        }
                         addPath(group, [[b.left, b.top], [b.right, b.top], [b.right, b.bottom], [b.left, b.bottom]], true, b.kind, style);
                     }
                 }

@@ -89,9 +89,15 @@ function checkManifest(root = ROOT) {
     }
     // Every file the host boot loader evaluates must exist too.
     const deps = read(root, "host/index.jsx").match(/DEPENDENCIES = \[([\s\S]*?)\]/);
+    const hosts = [...manifest.matchAll(/<Host Name="([A-Z]+)"/g)].map((m) => m[1]);
+    const adapters = { ILST: "host/illustrator-adapter.jsx", IDSN: "host/indesign-adapter.jsx" };
     for (const rel of deps ? [...deps[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]) : []) {
-        if (!fs.existsSync(path.join(root, rel))) {
-            problems.push(`host boot dependency ${rel} is missing`);
+        // "@adapter" is chosen at boot from the host application; each declared host needs its adapter.
+        const files = rel === "@adapter" ? hosts.map((h) => adapters[h]).filter(Boolean) : [rel];
+        for (const file of files) {
+            if (!fs.existsSync(path.join(root, file))) {
+                problems.push(`host boot dependency ${file} is missing`);
+            }
         }
     }
     // Every script the panel loads must exist.

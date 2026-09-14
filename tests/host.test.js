@@ -9,7 +9,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("node:path");
-const { createHost, PathItem, GroupItem } = require("./helpers/fake-illustrator.js");
+const { createHost, PathItem, GroupItem, TextFrame } = require("./helpers/fake-illustrator.js");
 
 const OWNER = "com.mullion.panel";
 
@@ -82,7 +82,7 @@ test("boot reports a missing dependency instead of throwing", () => {
 
 test("status without a document", () => {
     const { host } = ready(null);
-    assert.deepEqual(host.call("status"), { ok: true, data: { hasDocument: false } });
+    assert.deepEqual(host.call("status"), { ok: true, data: { hasDocument: false, host: "illustrator" } });
 });
 
 test("status describes the active artboard", () => {
@@ -172,7 +172,7 @@ test("generate draws tagged lines into a non-printing Mullion layer", () => {
     assert.equal(doc.activeLayer, userLayer, "the user's active layer is restored");
 
     const [group] = ownedGroups(doc);
-    assert.deepEqual(tagsOf(group), { MullionOwner: OWNER, MullionKind: "final", MullionArtboard: "0" });
+    assert.deepEqual(tagsOf(group), { MullionOwner: OWNER, MullionKind: "final", MullionArtboard: "0", MullionRegion: "artboard:0" });
     assert.equal(group.name, "Column grid, Artboard 1");
     assert.equal(group.opacity, 80);
     assert.equal(group.children.length, 26);
@@ -515,7 +515,7 @@ test("requests that would draw too many shapes are refused", () => {
     const r = host.call("generate", { settings, target: { mode: "all" } });
     assert.equal(r.ok, false);
     assert.equal(r.error.code, "TOO_MANY_SHAPES");
-    assert.match(r.error.message, /10309 shapes across 13 artboards/);
+    assert.match(r.error.message, /10309 shapes across 13 areas/);
     assert.equal(ownedGroups(doc).length, 0);
 });
 
@@ -788,4 +788,185 @@ test("switching documents while previewing restores the first document's hidden 
     host.call("preview", { settings: COLUMNS });
     assert.equal(first.hidden, false, "first document's grid is visible again");
     assert.equal(ownedGroups(second).length, 1);
+});
+
+// ------------------------------------------------------- grids inside objects
+
+function selectedBox(doc, bounds, name) {
+    const item = place(doc._layers[doc._layers.length - 1], userPath(name || "Card"));
+    item._bounds = bounds;
+    item.selected = true;
+    return item;
+}
+
+const CARD = { ...COLUMNS, columns: 2, columnGutter: 10, marginTop: 10, marginRight: 10, marginBottom: 10, marginLeft: 10 };
+
+test("status reports selected objects that can hold a grid", () => {
+    const { host, doc } = ready({});
+    selectedBox(doc, [100, 700, 300, 500]);
+    const r = host.call("status");
+    assert.equal(r.data.selection.count, 1);
+    assert.deepEqual(plain(r.data.selection.objects), [{ rect: [100, 700, 300, 500], artboard: 0 }]);
+});
+
+test("the selection target draws one grid inside each selected object", () => {
+    const { host, doc } = ready({});
+    selectedBox(doc, [100, 700, 300, 500], "Card A");
+    selectedBox(doc, [320, 700, 520, 500], "Card B");
+    const r = host.call("generate", { settings: CARD, target: { mode: "selection" } });
+    assert.equal(r.ok, true, r.ok ? "" : r.error.message);
+    assert.equal(r.data.artboards, 2);
+    const groups = ownedGroups(doc);
+    assert.deepEqual(groups.map((g) => tagsOf(g).MullionRegion).sort(), ["object:100,700,300,500", "object:320,700,520,500"]);
+    assert.ok(groups.every((g) => g.name === "Column grid, Object on Artboard 1"));
+    const cardA = groups.find((g) => tagsOf(g).MullionRegion === "object:100,700,300,500");
+    const xsA = [...new Set(cardA.children.map((p) => p.points[0][0]))].sort((a, b) => a - b);
+    assert.deepEqual(xsA, [110, 195, 205, 290], "2 columns inside the 200 pt card with 10 pt margins");
+});
+
+test("regenerating inside an object replaces only that object's grid, not the artboard grid", () => {
+    const { host, doc } = ready({});
+    host.call("generate", { settings: COLUMNS });
+    const card = selectedBox(doc, [100, 700, 300, 500]);
+    host.call("generate", { settings: CARD, target: { mode: "selection" } });
+    const r = host.call("generate", { settings: { ...CARD, columns: 3 }, target: { mode: "selection" } });
+    assert.equal(r.data.replaced, 1);
+    const regions = ownedGroups(doc).map((g) => tagsOf(g).MullionRegion).sort();
+    assert.deepEqual(regions, ["artboard:0", "object:100,700,300,500"]);
+    assert.ok(card.parent, "the user's object is untouched");
+});
+
+test("clearing the selection target removes only grids inside the selected objects", () => {
+    const { host, doc } = ready({});
+    host.call("generate", { settings: COLUMNS });
+    selectedBox(doc, [100, 700, 300, 500]);
+    host.call("generate", { settings: CARD, target: { mode: "selection" } });
+    const r = host.call("clear", { target: { mode: "selection" } });
+    assert.equal(r.data.removed, 1);
+    assert.deepEqual(ownedGroups(doc).map((g) => tagsOf(g).MullionRegion), ["artboard:0"]);
+});
+
+test("clearing an artboard also removes grids inside objects on it", () => {
+    const { host, doc } = ready({});
+    host.call("generate", { settings: COLUMNS });
+    selectedBox(doc, [100, 700, 300, 500]);
+    host.call("generate", { settings: CARD, target: { mode: "selection" } });
+    assert.equal(host.call("clear").data.removed, 2);
+});
+
+test("the selection target needs a selection and ignores Mullion's own grids", () => {
+    const { host, doc } = ready({});
+    const none = host.call("generate", { settings: CARD, target: { mode: "selection" } });
+    assert.equal(none.error.code, "NO_SELECTION");
+    host.call("generate", { settings: COLUMNS, lockLayer: false });
+    ownedGroups(doc)[0].children[0].selected = true; // a grid line
+    assert.equal(host.call("status").data.selection.count, 0);
+});
+
+test("objects too small for the margins are named in the error", () => {
+    const { host, doc } = ready({});
+    selectedBox(doc, [100, 700, 115, 500]);
+    const r = host.call("generate", { settings: CARD, target: { mode: "selection" } });
+    assert.equal(r.error.code, "INVALID_SETTINGS");
+    assert.match(r.error.message, /less than the object width of 15 pt/);
+});
+
+// ----------------------------------------------------------------- resizing
+
+test("resizeArtboards keeps the top-left corner and converts units", () => {
+    const { host, doc } = ready(THREE_BOARDS);
+    doc.activeArtboardIndex = 1;
+    const r = host.call("resizeArtboards", { width: 210, height: 297, units: "mm" });
+    assert.equal(r.ok, true, r.ok ? "" : r.error.message);
+    assert.equal(r.data.resized, 1);
+    const [left, top, right, bottom] = doc._artboards[1].artboardRect;
+    assert.deepEqual([left, top], [700, 300], "top-left corner stays put");
+    assert.ok(Math.abs(right - left - 595.2756) < 1e-3 && Math.abs(top - bottom - 841.8898) < 1e-3, "210 x 297 mm in points");
+    assert.deepEqual(plain(doc._artboards[0].artboardRect), [0, 792, 612, 0], "other artboards untouched");
+});
+
+test("resizeArtboards applies to all artboards and validates sizes", () => {
+    const { host, doc } = ready(THREE_BOARDS);
+    const r = host.call("resizeArtboards", { width: 1080, height: 1080, units: "px", target: { mode: "all" } });
+    assert.equal(r.data.resized, 3);
+    assert.deepEqual(doc._artboards.map((a) => a.artboardRect[2] - a.artboardRect[0]), [1080, 1080, 1080]);
+    assert.equal(host.call("resizeArtboards", { width: 0, height: 10, units: "pt" }).error.code, "INVALID_SIZE");
+    assert.equal(host.call("resizeArtboards", { width: 10, height: 10, units: "cm" }).error.code, "INVALID_SIZE");
+    assert.equal(host.call("resizeArtboards", { width: 10, height: 10, units: "pt", target: { mode: "selection" } }).error.code, "INVALID_TARGET");
+});
+
+// ------------------------------------------------------------------ alignment
+
+test("alignSelection reports, selects, and snaps off-grid objects", () => {
+    const { host, doc } = ready({});
+    const settings = { ...COLUMNS, columns: 3, columnGutter: 12 }; // column edges 36, 208, 220, 392, 404, 576
+    const onGrid = selectedBox(doc, [36, 756, 208, 600], "On grid");
+    const offGrid = selectedBox(doc, [40, 700, 205, 500], "Off grid"); // right edge 3 pt from 208; top 56 below 756
+
+    const check = host.call("alignSelection", { settings, action: "check" });
+    assert.equal(check.ok, true, check.ok ? "" : check.error.message);
+    assert.deepEqual([check.data.checked, check.data.offGrid, check.data.maxOffset], [2, 1, 56]);
+
+    host.call("alignSelection", { settings, action: "select" });
+    assert.equal(onGrid.selected, false);
+    assert.equal(offGrid.selected, true);
+
+    onGrid.selected = true;
+    const snap = host.call("alignSelection", { settings, action: "snap" });
+    assert.equal(snap.data.moved, 1);
+    assert.deepEqual(plain(offGrid.geometricBounds), [43, 756, 208, 556]);
+    assert.equal(host.call("alignSelection", { settings, action: "check" }).data.offGrid, 0);
+});
+
+test("snapping skips locked objects and needs a selection", () => {
+    const { host, doc } = ready({});
+    const locked = selectedBox(doc, [40, 700, 205, 500]);
+    locked._locked = true;
+    const r = host.call("alignSelection", { settings: COLUMNS, action: "snap" });
+    assert.equal(r.data.moved, 0);
+    assert.equal(r.data.skipped, 1);
+    doc.selection = null;
+    assert.equal(host.call("alignSelection", { settings: COLUMNS }).error.code, "NO_SELECTION");
+});
+
+// ------------------------------------------------------------- text metrics
+
+test("textMetrics reads leading from a selected text frame or edited text", () => {
+    const { host, doc } = ready({});
+    const frame = place(doc._layers[0], new TextFrame({ size: 11, leading: 14, font: "Helvetica Neue" }));
+    frame.selected = true;
+    assert.deepEqual(host.call("textMetrics").data, { size: 11, leading: 14, autoLeading: false, font: "Helvetica Neue" });
+
+    doc.selection = new TextFrame({ size: 10, autoLeading: true, autoLeadingAmount: 125 }).textRange;
+    assert.deepEqual(host.call("textMetrics").data, { size: 10, leading: 12.5, autoLeading: true, font: "Helvetica" });
+
+    doc.selection = null;
+    assert.equal(host.call("textMetrics").error.code, "NO_TEXT");
+});
+
+// -------------------------------------------------- baseline, ratios, blocks
+
+test("blocks are drawn as filled translucent rectangles beneath the lines", () => {
+    const { host, doc } = ready({});
+    const r = host.call("generate", {
+        settings: { ...COLUMNS, type: "modular", columns: 4, rows: 4, blocks: [{ column: 1, row: 1, columns: 2, rows: 1 }] }
+    });
+    assert.equal(r.ok, true, r.ok ? "" : r.error.message);
+    const group = ownedGroups(doc)[0];
+    const blocks = group.children.filter((p) => p.filled);
+    assert.equal(blocks.length, 1);
+    assert.equal(blocks[0].opacity, 20);
+    assert.equal(blocks[0].stroked, false);
+    assert.equal(group.children[group.children.length - 1], blocks[0], "block sits beneath the lines");
+});
+
+test("column grids with a baseline and unequal widths draw in one group", () => {
+    const { host, doc } = ready({});
+    const r = host.call("generate", {
+        settings: { ...COLUMNS, columnRatios: "2 1", addBaseline: true, baselineSpacing: 24, baselineOffset: 0 }
+    });
+    assert.equal(r.ok, true, r.ok ? "" : r.error.message);
+    assert.deepEqual(plain(r.data.metrics.columnWidths), [352, 176]);
+    assert.equal(r.data.metrics.baselineCount, 31);
+    assert.equal(ownedGroups(doc).length, 1);
 });

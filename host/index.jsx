@@ -17,11 +17,16 @@ $.global.Mullion = $.global.Mullion || {};
     M.OWNER_ID = "com.mullion.panel";
     M.ready = false;
 
+    // The adapter is chosen by host application; everything else is shared.
     var DEPENDENCIES = [
         "host/vendor/json2.js",
         "shared/grid-core.js",
-        "host/illustrator-adapter.jsx"
+        "@adapter"
     ];
+
+    function adapterFile() {
+        return /indesign/i.test(String(app.name)) ? "host/indesign-adapter.jsx" : "host/illustrator-adapter.jsx";
+    }
 
     function HostError(code, message, fields) {
         this.code = code;
@@ -87,10 +92,11 @@ $.global.Mullion = $.global.Mullion || {};
         try {
             var root = decodeURIComponent(String(encodedRoot));
             for (var i = 0; i < DEPENDENCIES.length; i++) {
-                var file = new File(root + "/" + DEPENDENCIES[i]);
+                var relative = DEPENDENCIES[i] === "@adapter" ? adapterFile() : DEPENDENCIES[i];
+                var file = new File(root + "/" + relative);
                 if (!file.exists) {
                     return '{"ok":false,"error":{"code":"MISSING_FILE","message":' +
-                        quote("Mullion is missing " + DEPENDENCIES[i] + ". Reinstall the extension.") + ',"fields":[]}}';
+                        quote("Mullion is missing " + relative + ". Reinstall the extension.") + ',"fields":[]}}';
                 }
                 $.evalFile(file);
             }
@@ -113,58 +119,72 @@ $.global.Mullion = $.global.Mullion || {};
     }
 
     /*
-     * Resolves payload.target to artboard descriptions.
-     * target: { mode: "active" (default) | "all" | "range", range: "1-3, 5" }
+     * Resolves payload.target to regions a grid can fill:
+     *   [{ index (artboard), name, rect, region, areaLabel }]
+     * target: { mode: "active" (default) | "all" | "range" | "selection", range: "1-3, 5" }
+     * `region` identifies the area ("artboard:2" or "object:l,t,r,b") so a new grid
+     * replaces only the grid previously drawn in the same area.
      */
     function resolveTargets(doc, target) {
         var mode = target && target.mode ? target.mode : "active";
+        var count = M.adapter.artboardCount(doc);
         var indices = [];
         var i;
+        if (mode === "selection") {
+            var objects = M.adapter.selectionTargets(doc);
+            if (!objects.length) {
+                throw new HostError("NO_SELECTION", "Select one or more objects to put a grid inside them.", [{ field: "selection", message: "Nothing selected." }]);
+            }
+            return objects;
+        }
         if (mode === "active") {
-            indices.push(doc.artboards.getActiveArtboardIndex());
+            indices.push(M.adapter.activeArtboardIndex(doc));
         } else if (mode === "all") {
-            for (i = 0; i < doc.artboards.length; i++) {
+            for (i = 0; i < count; i++) {
                 indices.push(i);
             }
         } else if (mode === "range") {
-            var parsed = M.core.parseArtboardRange(target.range, doc.artboards.length);
+            var parsed = M.core.parseArtboardRange(target.range, count);
             if (!parsed.ok) {
                 throw new HostError("INVALID_TARGET", parsed.error, [{ field: "range", message: parsed.error }]);
             }
             indices = parsed.indices;
         } else {
-            throw new HostError("INVALID_TARGET", "Choose which artboards to use: this artboard, all artboards, or a list.");
+            throw new HostError("INVALID_TARGET", "Choose where to apply the grid: this artboard, all artboards, a list, or the selected objects.");
         }
         var boards = [];
         for (i = 0; i < indices.length; i++) {
-            boards.push(M.adapter.artboardAt(doc, indices[i]));
+            var board = M.adapter.artboardAt(doc, indices[i]);
+            board.region = "artboard:" + indices[i];
+            board.areaLabel = M.adapter.AREA_NOUN;
+            boards.push(board);
         }
         return boards;
     }
 
     /*
-     * Builds the grid for every target artboard before anything is drawn, so an
-     * invalid artboard (for example one too small for the margins) draws nothing.
+     * Builds the grid for every target before anything is drawn, so an invalid
+     * target (for example one too small for the margins) draws nothing.
      */
     function buildForTargets(doc, payload) {
-        var boards = resolveTargets(doc, payload.target);
+        var targets = resolveTargets(doc, payload.target);
         var builds = [];
         var total = 0;
-        for (var i = 0; i < boards.length; i++) {
-            var grid = M.core.buildGrid(boards[i].rect, payload.settings || {});
+        for (var i = 0; i < targets.length; i++) {
+            var grid = M.core.buildGrid(targets[i].rect, payload.settings || {}, { areaLabel: targets[i].areaLabel });
             if (!grid.ok) {
                 var message = grid.errors[0].message;
-                if (boards.length > 1) {
-                    message = boards[i].name + ": " + message;
+                if (targets.length > 1) {
+                    message = targets[i].name + ": " + message;
                 }
                 throw new HostError("INVALID_SETTINGS", message, grid.errors);
             }
             total += grid.shapeCount;
-            builds.push({ artboard: boards[i], grid: grid });
+            builds.push({ artboard: targets[i], grid: grid });
         }
         if (total > M.core.LIMITS.maxTotalShapes) {
             throw new HostError("TOO_MANY_SHAPES",
-                "That would draw " + total + " shapes across " + boards.length + " artboards. Choose fewer artboards or a simpler grid to stay at or under " +
+                "That would draw " + total + " shapes across " + targets.length + " areas. Choose fewer areas or a simpler grid to stay at or under " +
                 M.core.LIMITS.maxTotalShapes + ".");
         }
         return { builds: builds, shapes: total };
@@ -205,12 +225,12 @@ $.global.Mullion = $.global.Mullion || {};
         return removed;
     }
 
-    function artboardIndices(built) {
-        var indices = [];
+    function regionsOf(built) {
+        var regions = [];
         for (var i = 0; i < built.builds.length; i++) {
-            indices.push(built.builds[i].artboard.index);
+            regions.push(built.builds[i].artboard.region);
         }
-        return indices;
+        return regions;
     }
 
     // "add" keeps existing grids so types can be combined; anything else replaces them.
@@ -218,12 +238,20 @@ $.global.Mullion = $.global.Mullion || {};
         return payload.mode !== "add";
     }
 
+    function readPositiveLength(value, units, label) {
+        var n = M.core.parseNumber(value);
+        if (!(typeof n === "number" && n > 0 && isFinite(n))) {
+            throw new HostError("INVALID_SIZE", label + " must be greater than 0.");
+        }
+        return M.core.toPoints(n, units);
+    }
+
     M.api = {
-        // Document, artboards, and grid layer state for the panel.
+        // Document, artboards, selection, and grid layer state for the panel.
         status: endpoint(function () {
             var doc = M.adapter.activeDocument();
             if (!doc) {
-                return { hasDocument: false };
+                return { hasDocument: false, host: M.adapter.HOST };
             }
             return M.adapter.describe(doc);
         }),
@@ -235,7 +263,7 @@ $.global.Mullion = $.global.Mullion || {};
             var doc = requireDocument();
             var built = buildForTargets(doc, payload);
             removeAllPreviews();
-            var hidden = replaces(payload) ? M.adapter.hideForPreview(doc, artboardIndices(built)) : 0;
+            var hidden = replaces(payload) ? M.adapter.hideForPreview(doc, regionsOf(built)) : 0;
             drawAll(doc, built, "preview");
             M.adapter.redraw();
             return summary(doc, built, { hidden: hidden });
@@ -252,9 +280,9 @@ $.global.Mullion = $.global.Mullion || {};
             return summary(doc, null, { removed: removed });
         }),
 
-        // Draws a grid on each target artboard and removes any preview. By default
-        // it replaces the Mullion grids already on those artboards; mode "add"
-        // keeps them so grid types can be combined.
+        // Draws a grid in each target area and removes any preview. By default it
+        // replaces the Mullion grids already in those areas; mode "add" keeps
+        // them so grid types can be combined.
         // Payload: { settings, target, mode: "replace" (default) | "add" }
         generate: endpoint(function (payload) {
             var doc = requireDocument();
@@ -262,29 +290,40 @@ $.global.Mullion = $.global.Mullion || {};
             removeAllPreviews();
             var replaced = { removed: 0, rescued: 0 };
             if (replaces(payload)) {
-                replaced = M.adapter.removeOwned(doc, { kind: "final", artboards: artboardIndices(built) }, { keepLayer: true });
+                replaced = M.adapter.removeOwned(doc, { kind: "final", regions: regionsOf(built) }, { keepLayer: true });
             }
             drawAll(doc, built, "final");
             M.adapter.redraw();
             return summary(doc, built, { replaced: replaced.removed, rescued: replaced.rescued });
         }),
 
-        // Removes Mullion grids (preview and generated) from the target artboards.
+        // Removes Mullion grids (preview and generated). Artboard targets clear
+        // everything on those artboards, including grids inside objects there;
+        // the selection target clears the grids inside the selected objects.
         // Payload: { target }
         clear: endpoint(function (payload) {
             var doc = requireDocument();
-            var boards = resolveTargets(doc, payload.target);
-            var indices = [];
-            for (var i = 0; i < boards.length; i++) {
-                indices.push(boards[i].index);
+            var targets = resolveTargets(doc, payload.target);
+            var filter = {};
+            var i;
+            if (payload.target && payload.target.mode === "selection") {
+                filter.regions = [];
+                for (i = 0; i < targets.length; i++) {
+                    filter.regions.push(targets[i].region);
+                }
+            } else {
+                filter.artboards = [];
+                for (i = 0; i < targets.length; i++) {
+                    filter.artboards.push(targets[i].index);
+                }
             }
-            var result = M.adapter.removeOwned(doc, { artboards: indices });
+            var result = M.adapter.removeOwned(doc, filter);
             M.adapter.redraw();
             return summary(doc, null, {
                 removed: result.removed,
                 rescued: result.rescued,
                 clearedArtboards: result.artboards,
-                targetArtboards: boards.length
+                targetArtboards: targets.length
             });
         }),
 
@@ -295,6 +334,91 @@ $.global.Mullion = $.global.Mullion || {};
             var changed = M.adapter.setGridLayer(doc, payload);
             M.adapter.redraw();
             return { changed: changed, status: M.adapter.describe(doc) };
+        }),
+
+        // Resizes target artboards, keeping each one's top-left corner in place.
+        // Payload: { width, height, units, target }
+        resizeArtboards: endpoint(function (payload) {
+            var doc = requireDocument();
+            if (payload.target && payload.target.mode === "selection") {
+                throw new HostError("INVALID_TARGET", "Choose artboards to resize, not selected objects.");
+            }
+            var units = payload.units || "pt";
+            if (!/^(pt|px|mm|in)$/.test(units)) {
+                throw new HostError("INVALID_SIZE", "Choose a unit: pt, px, mm, or in.");
+            }
+            var width = readPositiveLength(payload.width, units, "Width");
+            var height = readPositiveLength(payload.height, units, "Height");
+            var targets = resolveTargets(doc, payload.target);
+            for (var i = 0; i < targets.length; i++) {
+                M.adapter.resizeArtboard(doc, targets[i].index, width, height);
+            }
+            M.adapter.redraw();
+            return { resized: targets.length, width: width, height: height, status: M.adapter.describe(doc) };
+        }),
+
+        // Checks selected objects against the grid on their artboards.
+        // action "check" reports, "select" selects off-grid objects, "snap" moves
+        // them onto the nearest grid lines. Payload: { settings, action }
+        alignSelection: endpoint(function (payload) {
+            var doc = requireDocument();
+            var action = payload.action || "check";
+            var items = M.adapter.selectionItems(doc);
+            if (!items.length) {
+                throw new HostError("NO_SELECTION", "Select the objects to check against the grid.");
+            }
+            var cache = {};
+            var offGrid = [];
+            var maxOffset = 0;
+            var moved = 0;
+            var skipped = 0;
+            for (var i = 0; i < items.length; i++) {
+                var item = items[i];
+                var key = String(item.artboard);
+                if (!cache.hasOwnProperty(key)) {
+                    var board = M.adapter.artboardAt(doc, item.artboard);
+                    var grid = M.core.buildGrid(board.rect, payload.settings || {}, { areaLabel: M.adapter.AREA_NOUN });
+                    if (!grid.ok) {
+                        throw new HostError("INVALID_SETTINGS", board.name + ": " + grid.errors[0].message, grid.errors);
+                    }
+                    cache[key] = M.core.snapLines(grid);
+                }
+                var snap = M.core.snapRect(item.rect, cache[key]);
+                if (snap.onGrid) {
+                    continue;
+                }
+                offGrid.push(item);
+                maxOffset = Math.max(maxOffset, Math.abs(snap.dx), Math.abs(snap.dy));
+                if (action === "snap") {
+                    if (M.adapter.moveItem(item, snap.dx, snap.dy)) {
+                        moved++;
+                    } else {
+                        skipped++;
+                    }
+                }
+            }
+            if (action === "select") {
+                M.adapter.selectItems(doc, offGrid);
+            }
+            M.adapter.redraw();
+            return {
+                checked: items.length,
+                offGrid: offGrid.length,
+                maxOffset: Math.round(maxOffset * 100) / 100,
+                moved: moved,
+                skipped: skipped,
+                status: M.adapter.describe(doc)
+            };
+        }),
+
+        // Reads type size and leading from the selected text, for baseline grids.
+        textMetrics: endpoint(function () {
+            var doc = requireDocument();
+            var metrics = M.adapter.readTextMetrics(doc);
+            if (!metrics) {
+                throw new HostError("NO_TEXT", "Select a text frame, or click into text, to read its leading.");
+            }
+            return metrics;
         }),
 
         // Milestone 1 spike, kept as an install diagnostic: one line across the artboard.

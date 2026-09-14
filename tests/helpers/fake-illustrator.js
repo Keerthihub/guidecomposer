@@ -66,6 +66,20 @@ class PageItem {
         this._locked = false;
         this._hidden = false;
         this._tags = [];
+        this._bounds = null; // [left, top, right, bottom] for items without points
+        this.selected = false;
+    }
+
+    get geometricBounds() {
+        return this._bounds ? this._bounds.slice() : null;
+    }
+
+    translate(dx, dy) {
+        if (this._bounds) {
+            this._bounds = [this._bounds[0] + dx, this._bounds[1] + dy, this._bounds[2] + dx, this._bounds[3] + dy];
+        }
+        this.translated = (this.translated || [0, 0]);
+        this.translated = [this.translated[0] + dx, this.translated[1] + dy];
     }
 
     get tags() {
@@ -139,6 +153,29 @@ class PathItem extends PageItem {
 
     get pathPoints() {
         return collection(this.pathPointList);
+    }
+
+    get geometricBounds() {
+        if (this._bounds || !this.points.length) {
+            return super.geometricBounds;
+        }
+        const xs = this.points.map((p) => p[0]);
+        const ys = this.points.map((p) => p[1]);
+        return [Math.min(...xs), Math.max(...ys), Math.max(...xs), Math.min(...ys)];
+    }
+
+    translate(dx, dy) {
+        this.points = this.points.map((p) => [p[0] + dx, p[1] + dy]);
+        super.translate(dx, dy);
+    }
+}
+
+class TextFrame extends PageItem {
+    constructor({ size = 10, leading = 12, autoLeading = false, autoLeadingAmount = 120, font = "Helvetica" } = {}) {
+        super("TextFrame");
+        const characterAttributes = { size, leading, autoLeading, textFont: { name: font } };
+        const paragraphAttributes = { autoLeadingAmount };
+        this.textRange = { typename: "TextRange", characterAttributes, paragraphAttributes };
     }
 }
 
@@ -253,6 +290,35 @@ class Document {
         });
     }
 
+    get selection() {
+        if (this._textSelection) return this._textSelection;
+        const found = [];
+        const visit = (container) => {
+            for (const child of container.children) {
+                if (child.selected) found.push(child);
+                if (child.children) visit(child);
+            }
+        };
+        this._layers.forEach(visit);
+        return found;
+    }
+
+    set selection(value) {
+        this._textSelection = null;
+        const visit = (container) => {
+            for (const child of container.children) {
+                child.selected = false;
+                if (child.children) visit(child);
+            }
+        };
+        this._layers.forEach(visit);
+        if (value && value.typename === "TextRange") {
+            this._textSelection = value;
+        } else if (value && value.length) {
+            value.forEach((item) => { item.selected = true; });
+        }
+    }
+
     get activeLayer() { return this._activeLayer; }
     set activeLayer(layer) { this._activeLayer = layer; }
 
@@ -277,6 +343,7 @@ class CMYKColor { constructor() { this.typename = "CMYKColor"; this.cyan = 0; th
  */
 function createHost() {
     const app = {
+        name: "Adobe Illustrator",
         _documents: [],
         coordinateSystem: ENUMS.CoordinateSystem.DOCUMENTCOORDINATESYSTEM,
         redrawCount: 0,
@@ -331,4 +398,4 @@ function createHost() {
     return { context, sandbox, app, openDocument, boot, call, classes: { PathItem, GroupItem, Layer } };
 }
 
-module.exports = { createHost, PathItem, GroupItem, ROOT };
+module.exports = { createHost, PathItem, GroupItem, TextFrame, ROOT };
