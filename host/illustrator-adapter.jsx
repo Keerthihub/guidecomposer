@@ -477,7 +477,7 @@
         var hasText = false;
         var points = 0;
         var firstBounds = null;
-        var limit = 6000;
+        var limit = 3000; // Reading points is slow in the host; stop well before users notice.
         if (!selection || typeof selection.length !== "number" || selection.typename === "TextRange") {
             return { paths: paths, artboard: A.activeArtboardIndex(doc), hasText: selection && selection.typename === "TextRange" };
         }
@@ -510,7 +510,7 @@
                 hasText = true;
             }
         }
-        for (var s = 0; s < selection.length; s++) {
+        for (var s = 0; s < selection.length && points <= limit; s++) {
             if (isInsideOwnedGrid(selection[s])) {
                 continue;
             }

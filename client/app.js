@@ -26,6 +26,11 @@
     const STORAGE_UI = "mullion.ui.v1";
 
     const PREVIEW_DELAY_MS = 200;
+    // Redrawing thousands of shapes on every edit stalls Illustrator and fills its
+    // undo history, so live preview pauses above this many shapes (Generate still works).
+    const PREVIEW_MAX_SHAPES = 1500;
+    // A host call that hasn't answered by now is abandoned so the panel stays usable.
+    const HOST_TIMEOUT_MS = 90000;
     const STATUS_THROTTLE_MS = 600;
     const STEP_REPEAT_DELAY_MS = 400;
     const STEP_REPEAT_MS = 70;
@@ -494,13 +499,25 @@
             const job = jobs.shift();
             active = job;
             onBusyChange(isBusy());
-            bridge.call(job.method, job.payload)
-                .catch((err) => ({ ok: false, error: { code: "PANEL_ERROR", message: String((err && err.message) || err), fields: [] } }))
-                .then((result) => {
-                    active = null;
-                    job.resolve(result);
-                    pump();
-                });
+            let timer = null;
+            const timeout = new Promise((resolve) => {
+                timer = window.setTimeout(() => resolve({
+                    ok: false,
+                    error: {
+                        code: "TIMEOUT",
+                        message: appName() + " didn't respond. If a dialog is open there, close it, then try again.",
+                        fields: []
+                    }
+                }), HOST_TIMEOUT_MS);
+            });
+            const call = bridge.call(job.method, job.payload)
+                .catch((err) => ({ ok: false, error: { code: "PANEL_ERROR", message: String((err && err.message) || err), fields: [] } }));
+            Promise.race([call, timeout]).then((result) => {
+                window.clearTimeout(timer);
+                active = null;
+                job.resolve(result);
+                pump();
+            });
         }
 
         return {
@@ -834,7 +851,9 @@
     let currentBlocks = [];
     let formatSwapped = false;
     let panelMode = "grid";
+    let previewDrawn = false; // Whether a live preview may be on the document.
     let geometry = null; // Selected artwork paths, for construction lines.
+    let geometryKey = "";
 
     const bridge = window.__adobe_cep__ && typeof window.CSInterface === "function" ? createCepBridge() : createMockBridge();
     const queue = createQueue(bridge, (isBusy) => {
@@ -862,6 +881,10 @@
             button.addEventListener("click", action.run);
             els.status.appendChild(button);
         }
+    }
+
+    function appName() {
+        return hostStatus.host === "indesign" ? "InDesign" : "Illustrator";
     }
 
     function nouns() {
@@ -1639,15 +1662,23 @@
         });
     }
 
-    async function refreshGeometry() {
+    // Reads the selected artwork's paths. Reading many paths takes Illustrator a
+    // while, so this only runs again when the selection looks different, unless forced.
+    async function refreshGeometry(force) {
         if (panelMode !== "construct") {
             return;
         }
         if (!hostStatus.hasDocument) {
             geometry = null;
+            geometryKey = "";
             update();
             return;
         }
+        const key = JSON.stringify([hostStatus.documentName, hostStatus.selection]);
+        if (!force && geometry && key === geometryKey) {
+            return;
+        }
+        geometryKey = key;
         const response = await queue.enqueue("selectionGeometry", undefined, { coalesce: true });
         if (response.superseded || panelMode !== "construct") {
             return;
@@ -1688,7 +1719,7 @@
         }
         storage.updateUi({ panelMode, libraryCategory: library.category });
         if (panelMode === "construct") {
-            refreshGeometry();
+            refreshGeometry(true);
         }
         update();
     }
@@ -1843,6 +1874,17 @@
         if (key === lastPreviewKey) {
             return;
         }
+        const shapes = (lastResult.shapeCount || 0) * Math.max(1, panelMode === "construct" ? 1 : targetState.boards.length);
+        if (shapes > PREVIEW_MAX_SHAPES) {
+            lastPreviewKey = key;
+            queue.drop("preview");
+            if (previewDrawn) {
+                previewDrawn = false;
+                queue.enqueue("clearPreview", undefined, { coalesce: true });
+            }
+            say("Preview paused: " + shapes.toLocaleString("en-US") + " shapes is too many to redraw on every change. Generate draws them.", "warning");
+            return;
+        }
         const target = readTarget();
         const mode = readMode();
         previewTimer = window.setTimeout(async () => {
@@ -1853,6 +1895,7 @@
                 return;
             }
             if (response.ok) {
+                previewDrawn = true;
                 hostStatus = response.data.status;
                 syncLayerButtons();
                 const where = panelMode === "construct" ? "the selected artwork"
@@ -1877,6 +1920,7 @@
             return;
         }
         queue.drop("preview");
+        previewDrawn = false;
         if (options && options.skipHost) {
             return;
         }
@@ -2324,6 +2368,27 @@
         applySettings(preset.settings, "Loaded preset \u201c" + name + "\u201d.");
     }
 
+    /*
+     * The current settings with every length expressed in another unit. A layout
+     * that brings its own units must not reinterpret the lengths it leaves alone
+     * (24 pt spacing must not become 24 in).
+     */
+    function settingsInUnits(units) {
+        const settings = cleanSettings(readSettings());
+        if (!units || units === currentUnits || core.UNITS.indexOf(units) === -1) {
+            return settings;
+        }
+        LENGTH_FIELDS.forEach((name) => {
+            const exact = exactValue(name, currentUnits);
+            const value = exact !== null ? exact : core.parseNumber(settings[name]);
+            if (Number.isFinite(value)) {
+                settings[name] = Number(formatNumber(core.fromPoints(core.toPoints(value, currentUnits), units)));
+            }
+        });
+        settings.units = units;
+        return settings;
+    }
+
     // Layouts change layout fields only, sized for the active artboard; appearance stays.
     function applyLayout(id) {
         const layout = layouts.find(id);
@@ -2332,7 +2397,7 @@
         }
         const resolved = layouts.resolveLayout(layout, currentRect(), currentUnits);
         const note = layout.relative ? "Margins are sized for this " + currentAreaLabel() + "." : layouts.describeArtboard(layout);
-        applySettings(Object.assign(cleanSettings(readSettings()), resolved), "Applied \u201c" + layout.name + "\u201d." + (note ? " " + note : ""));
+        applySettings(Object.assign(settingsInUnits(resolved.units), resolved), "Applied \u201c" + layout.name + "\u201d." + (note ? " " + note : ""));
         if (panelMode === "layouts") {
             say(els.status.textContent, "ok", { label: "Edit settings", run: () => setMode("grid") });
         }
@@ -2409,7 +2474,8 @@
         const rect = fixedSize
             ? [0, core.toPoints(fixedSize.height, fixedSize.units), core.toPoints(fixedSize.width, fixedSize.units), 0]
             : currentRect();
-        const settings = Object.assign(cleanSettings(readSettings()), layouts.resolveLayout(layout, rect, currentUnits));
+        const resolved = layouts.resolveLayout(layout, rect, currentUnits);
+        const settings = Object.assign(settingsInUnits(resolved.units), resolved);
         if (settings.output === "boxes" && !BOX_TYPES[settings.type]) {
             settings.output = "lines";
         }
@@ -2693,7 +2759,10 @@
         els.toggleVisible.addEventListener("click", toggleVisible);
         els.toggleLock.addEventListener("click", toggleLock);
         els.refresh.addEventListener("click", () => {
-            refreshStatus(true).then(() => say("Read the document again."));
+            refreshStatus(true).then(() => {
+            refreshGeometry(true);
+            say("Read the document again.");
+        });
         });
 
         els.stageToggle.addEventListener("click", () => {

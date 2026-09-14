@@ -55,6 +55,10 @@ First release candidate.
 - Live drawing of the grid with column width, module size, and shape count; collapsible.
 - Matches all four host UI brightness settings; keyboard accessible; works docked down to 240 px wide.
 - Draw test line diagnostic.
+- Live preview pauses for grids over 1,500 shapes, which would stall the app on every edit; Generate still draws them.
+- Construct reads the selected artwork only when the selection changes, and at most 3,000 points.
+- A host call that gets no answer for 90 seconds is abandoned with a message, so the panel never stays busy.
+- Applying a layout in other units converts the lengths it doesn't set (24 pt spacing no longer becomes 24 in).
 - When the extension's files change while the panel is open, the panel says so and offers Reload panel, so it never runs stale code against newer host scripts.
 
 ### Hosts

@@ -381,6 +381,16 @@ async function main() {
         await evaluate(setField("columns", "10"));
         await sleep(450);
         check(/Previewing/.test(await evaluate(text("status"))), "rapid edits still end in a preview");
+        await evaluate(setField("type", "pattern"));
+        await evaluate(setField("pattern", "dots"));
+        await evaluate(setField("patternSize", "9"));
+        await sleep(450);
+        check(/Preview paused: 4,941 shapes/.test(await evaluate(text("status"))) && await evaluate(`document.getElementById("status").dataset.tone`) === "warning", "huge grids pause live preview: " + await evaluate(text("status")));
+        await evaluate(setField("patternSize", "24"));
+        await evaluate(setField("pattern", "square"));
+        await evaluate(setField("type", "columns"));
+        await sleep(450);
+        check(/Previewing/.test(await evaluate(text("status"))), "preview resumes for smaller grids: " + await evaluate(text("status")));
         await evaluate(click("generate"));
         await sleep(300);
         check(/Added a column grid to Artboard 1 \(22 shapes\)/.test(await evaluate(text("status"))), "generate reports result: " + await evaluate(text("status")));
@@ -473,6 +483,10 @@ async function main() {
         await evaluate(`document.querySelector('#library-grid .tile[data-layout="web-1440"]').click()`);
         check(await evaluate(value("units")) === "px" && await evaluate(value("marginLeft")) === "120", "fixed web layout keeps px and 120 margins");
         check(/Made for a 1440 × 1024 px artboard./.test(await evaluate(text("status"))), "fixed layout names its artboard");
+        await evaluate(`(() => { const s = document.getElementById("library-search"); s.value = "letter, 3"; s.dispatchEvent(new Event("input", { bubbles: true })); })()`);
+        await evaluate(`document.querySelector('#library-grid .tile[data-layout="letter-3"]').click()`);
+        check(await evaluate(value("units")) === "in" && await evaluate(value("patternSize")) === "0.333" && await evaluate(value("baselineSpacing")) === "0.167", "an inch layout converts the lengths it doesn't set (24 pt -> 0.333 in, 12 pt -> 0.167 in)");
+        await evaluate(`(() => { const s = document.getElementById("library-search"); s.value = ""; s.dispatchEvent(new Event("input", { bubbles: true })); })()`);
         await evaluate(chip("Patterns"));
         await evaluate(`document.querySelector('#library-grid .tile[data-layout="dots-5mm"]').click()`);
         check(await evaluate(value("type")) === "pattern" && await evaluate(value("pattern")) === "dots", "pattern layout applies");
