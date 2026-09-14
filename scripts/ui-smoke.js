@@ -593,6 +593,18 @@ async function main() {
         await evaluate(`(() => { const s = document.getElementById("target-mode"); s.value = "selection"; s.dispatchEvent(new Event("change", { bubbles: true })); })()`);
         check(await evaluate(`document.getElementById("format-apply").disabled`) === true, "resize is off while targeting objects");
 
+        // ---------------------------------------------------------------- InDesign vocabulary and page settings
+        await load("?theme=dark&host=indesign");
+        await evaluate(`(() => { const s = document.getElementById("target-mode"); s.value = "active"; s.dispatchEvent(new Event("change", { bubbles: true })); })()`);
+        check(await evaluate(`Array.from(document.getElementById("target-mode").options).map(o => o.textContent).join("|")`) === "This page|All pages|Chosen pages|Selected objects", "InDesign says pages");
+        check(await evaluate(text("artboard-name")) === "Page 1", "InDesign page name in the readout");
+        check(await evaluate(`document.querySelector('[data-host-only="indesign"]').hidden`) === false, "page margins control shown in InDesign");
+        await evaluate(click("page-margins"));
+        await sleep(250);
+        check(/Set margins and columns on Page 1|Set margins and columns on 1 page/.test(await evaluate(text("status"))), "page margins message: " + await evaluate(text("status")));
+        await load("?theme=dark");
+        check(await evaluate(`document.querySelector('[data-host-only="indesign"]').hidden`) === true, "page margins control hidden in Illustrator");
+
         // ---------------------------------------------------------------- keyboard
         await evaluate(`(() => { const el = document.querySelector('[name="columnGutter"]'); el.value = "12"; el.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", shiftKey: true, bubbles: true })); })()`);
         check(await evaluate(value("columnGutter")) === "22", "Shift+ArrowUp steps by 10");

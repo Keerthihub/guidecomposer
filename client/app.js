@@ -35,7 +35,7 @@
 
     const formats = window.MullionFormats || { GROUPS: [], FORMATS: [], find: () => null, toPoints: () => ({}), label: () => "" };
 
-    const HOST_METHODS = ["status", "preview", "clearPreview", "generate", "clear", "setGridLayer", "resizeArtboards", "alignSelection", "textMetrics", "drawTestLine"];
+    const HOST_METHODS = ["status", "preview", "clearPreview", "generate", "clear", "setGridLayer", "resizeArtboards", "alignSelection", "textMetrics", "applyPageMargins", "drawTestLine"];
     const LENGTH_FIELDS = ["columnGutter", "rowGutter", "marginTop", "marginRight", "marginBottom", "marginLeft", "baselineSpacing", "baselineOffset", "patternSize"];
     const MARGIN_FIELDS = ["marginTop", "marginRight", "marginBottom", "marginLeft"];
     const NUMBER_FIELDS = LENGTH_FIELDS.concat(["columns", "rows", "strokeWidth", "opacity", "dotSize", "rings", "spokes", "gutterOpacity"]);
@@ -182,11 +182,18 @@
     // Browser stand-in for Illustrator, driven by the same grid core.
     function createMockBridge() {
         const params = new URLSearchParams(window.location.search);
-        const boards = [
-            { index: 0, name: "Artboard 1", rect: [0, 792, 612, 0] },
-            { index: 1, name: "Card", rect: [700, 300, 1000, 0] },
-            { index: 2, name: "Poster", rect: [1100, 1224, 1892, 0] }
-        ];
+        const mockHost = params.get("host") === "indesign" ? "indesign" : "illustrator";
+        const boards = mockHost === "indesign"
+            ? [
+                { index: 0, name: "Page 1", rect: [0, 0, 612, -792] },
+                { index: 1, name: "Page 2", rect: [612, 0, 1224, -792] },
+                { index: 2, name: "Page 3", rect: [0, -900, 612, -1692] }
+            ]
+            : [
+                { index: 0, name: "Artboard 1", rect: [0, 792, 612, 0] },
+                { index: 1, name: "Card", rect: [700, 300, 1000, 0] },
+                { index: 2, name: "Poster", rect: [1100, 1224, 1892, 0] }
+            ];
         const state = {
             hasDocument: !params.has("nodoc"),
             groups: [], // { kind, artboard }
@@ -206,11 +213,11 @@
 
         function status() {
             if (!state.hasDocument) {
-                return { hasDocument: false };
+                return { hasDocument: false, host: mockHost };
             }
             const onActive = state.groups.filter((g) => g.artboard === 0);
             return {
-                host: "illustrator",
+                host: mockHost,
                 hasDocument: true,
                 documentName: "Mock document",
                 selection: { count: state.selection.length, objects: state.selection.map((rect) => ({ rect, artboard: 0 })) },
@@ -232,7 +239,7 @@
                 if (!state.selection.length) {
                     return fail("NO_SELECTION", "Select one or more objects to put a grid inside them.");
                 }
-                return { ok: true, boards: state.selection.map((rect) => ({ index: 0, name: "Object on Artboard 1", rect, areaLabel: "object" })) };
+                return { ok: true, boards: state.selection.map((rect) => ({ index: 0, name: "Object on " + boards[0].name, rect, areaLabel: "object" })) };
             }
             if (mode === "active") {
                 return { ok: true, boards: [boards[0]] };
@@ -360,6 +367,17 @@
                     return p.action === "snap" ? [rect[0] + snap.dx, rect[1] + snap.dy, rect[2] + snap.dx, rect[3] + snap.dy] : rect;
                 });
                 return ok({ checked: state.selection.length, offGrid, maxOffset, moved: p.action === "snap" ? offGrid : 0, skipped: 0, status: status() });
+            },
+            applyPageMargins: (p) => {
+                if (mockHost !== "indesign") {
+                    return fail("UNSUPPORTED", "Page margins and columns are an InDesign feature. In Illustrator, Generate draws the grid.");
+                }
+                const resolved = targets(p.target);
+                if (!resolved.ok) {
+                    return resolved;
+                }
+                const s = p.settings || {};
+                return ok({ pages: resolved.boards.length, baseline: s.type === "baseline" || s.addBaseline === true, status: status() });
             },
             textMetrics: () => {
                 if (!state.hasDocument) {
@@ -555,6 +573,7 @@
         formatRotate: $("format-rotate"),
         formatApply: $("format-apply"),
         presetsExport: $("presets-export"),
+        pageMargins: $("page-margins"),
         presetsImport: $("presets-import"),
         toggleVisible: $("toggle-visible"),
         toggleLock: $("toggle-lock"),
@@ -804,6 +823,24 @@
         document.querySelectorAll("[data-noun]").forEach((node) => {
             node.textContent = n.one;
         });
+        document.querySelectorAll("[data-host-only]").forEach((node) => {
+            node.hidden = node.dataset.hostOnly !== (hostStatus.host || "illustrator");
+        });
+    }
+
+    async function applyPageMargins() {
+        const target = readTarget();
+        const response = await queue.enqueue("applyPageMargins", { settings: readSettings(), target });
+        if (response.superseded) {
+            return;
+        }
+        if (!response.ok) {
+            sayError(response);
+            return;
+        }
+        applyStatus(response.data.status);
+        say("Set margins and columns on " + areaWords(response.data.pages) +
+            (response.data.baseline ? ", and the document baseline grid." : "."), "ok");
     }
 
     function sayError(result) {
@@ -1455,6 +1492,7 @@
             button.disabled = busy || !hasDoc;
         });
         els.leadingFromText.disabled = !hasDoc;
+        els.pageMargins.disabled = busy || !hasDoc || selectionMode || !valid;
     }
 
     function setIconButton(button, icon, label, engaged) {
@@ -2393,6 +2431,7 @@
         });
         els.formatApply.addEventListener("click", resizeToFormat);
         els.presetsExport.addEventListener("click", exportPresets);
+        els.pageMargins.addEventListener("click", applyPageMargins);
         els.presetsImport.addEventListener("click", importPresets);
         els.addMode.addEventListener("change", () => {
             storage.updateUi({ addMode: els.addMode.checked });
