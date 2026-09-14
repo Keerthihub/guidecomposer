@@ -871,3 +871,142 @@ test("messages can name the area being divided", () => {
     const r = core.buildGrid([0, 100, 50, 0], settings({ marginLeft: 30, marginRight: 30 }), { areaLabel: "object" });
     assert.match(r.errors[0].message, /less than the object width of 50 pt/);
 });
+
+// ------------------------------------------------------------ grid systems
+
+test("rule of fifths divides each side into fifths", () => {
+    const r = composition([0, 500, 500, 0], Object.assign({ compFifths: true }, NO_MARGINS));
+    assert.equal(r.ok, true);
+    assert.deepEqual(ofKind(r, "fifths").filter((s) => s.x1 === s.x2).map((s) => s.x1), [100, 200, 300, 400]);
+});
+
+test("harmonic armature: diagonals, four reciprocals, and eight corner-to-midpoint lines", () => {
+    // A 300 x 200 area: reciprocal from the top-left corner ends on the bottom edge at u = h*h/w = 133.3333.
+    const r = composition([0, 200, 300, 0], Object.assign({ compArmature: true }, NO_MARGINS));
+    assert.equal(r.ok, true);
+    const lines = ofKind(r, "armature");
+    assert.equal(lines.length, 14);
+    const set = segmentSet(lines);
+    assert.ok(set.includes(segmentSet([{ x1: 0, y1: 200, x2: 133.3333, y2: 0 }])[0]), "reciprocal from top-left");
+    assert.ok(set.includes(segmentSet([{ x1: 0, y1: 200, x2: 300, y2: 100 }])[0]), "top-left to right midpoint");
+    assert.ok(set.includes(segmentSet([{ x1: 300, y1: 0, x2: 150, y2: 200 }])[0]), "bottom-right to top midpoint");
+});
+
+test("reciprocals are perpendicular to the opposite diagonal", () => {
+    const r = composition([0, 200, 300, 0], Object.assign({ compDynamic: true }, NO_MARGINS));
+    const reciprocal = ofKind(r, "dynamic").find((s) => s.x1 === 0 && s.y1 === 200);
+    const rx = reciprocal.x2 - reciprocal.x1;
+    const ry = reciprocal.y2 - reciprocal.y1;
+    // The other diagonal runs from (300, 200) to (0, 0).
+    assert.ok(Math.abs(rx * -300 + ry * -200) < 0.1, "dot product is zero");
+});
+
+test("dynamic rectangle adds lines through the eyes", () => {
+    const r = composition([0, 200, 300, 0], Object.assign({ compDynamic: true }, NO_MARGINS));
+    assert.equal(r.ok, true);
+    // eye at u = w*h*h/(w*w+h*h) = 92.3077, v = w*w*h/(w*w+h*h) = 138.4615 from the top
+    const verticals = ofKind(r, "dynamic").filter((s) => s.x1 === s.x2).map((s) => s.x1).sort((a, b) => a - b);
+    assert.deepEqual(verticals, [92.3077, 207.6923]);
+    const horizontals = ofKind(r, "dynamic").filter((s) => s.y1 === s.y2).map((s) => s.y1).sort((a, b) => a - b);
+    assert.deepEqual(horizontals, [61.5385, 138.4615]);
+});
+
+test("Villard's figure crosses at one third", () => {
+    const r = composition([0, 900, 600, 0], Object.assign({ compVillard: true }, NO_MARGINS));
+    assert.equal(r.ok, true);
+    const lines = ofKind(r, "villard");
+    assert.ok(lines.some((s) => s.y1 === 600 && s.y2 === 600), "horizontal at one third from the top");
+    assert.ok(lines.some((s) => s.x1 === 200 && s.x2 === 200) && lines.some((s) => s.x1 === 400 && s.x2 === 400), "verticals at thirds");
+    assert.equal(lines.length, 7);
+});
+
+test("compound grids overlay a second, gutterless column count", () => {
+    const r = build([0, 100, 120, 0], Object.assign({ columns: 3, columnGutter: 0, overlayColumns: 4 }, NO_MARGINS));
+    assert.equal(r.ok, true);
+    assert.deepEqual(xs(ofKind(r, "overlay")), [30, 60, 90]);
+    assert.deepEqual(xs(ofKind(r, "column")), [0, 40, 80, 120]);
+    assert.deepEqual(fieldsOf(build(LETTER, { overlayColumns: 49 })), ["overlayColumns"]);
+    assert.equal(build(LETTER, { overlayColumns: 0 }).segments.some((s) => s.kind === "overlay"), false);
+});
+
+test("square modules make rows as tall as the columns are wide", () => {
+    const r = build(LETTER, { type: "modular", columns: 6, columnGutter: 12, rowGutter: 12, squareModules: true, rows: 99 });
+    assert.equal(r.ok, true);
+    assert.equal(r.metrics.columnWidth, 80);
+    assert.equal(r.metrics.rowHeight, 80);
+    assert.equal(r.tracks.rows.length, 7); // floor((720 + 12) / 92)
+    assert.deepEqual(r.tracks.rows[1], { top: 664, bottom: 584 });
+    assert.deepEqual(fieldsOf(build(LETTER, { type: "modular", columnRatios: "2 1", squareModules: true })), ["squareModules"]);
+});
+
+test("angled grids tilt the diagonal pattern", () => {
+    const r = pattern([0, 100, 100, 0], { pattern: "diagonal", patternSize: 50, patternAngle: 30 });
+    assert.equal(r.ok, true);
+    for (const s of ofKind(r, "pattern")) {
+        const angle = Math.abs(Math.atan2(s.y2 - s.y1, s.x2 - s.x1) * 180 / Math.PI);
+        assert.ok(Math.abs(angle - 30) < 0.05 || Math.abs(angle - 150) < 0.05, `angle ${angle}`);
+    }
+    assert.deepEqual(fieldsOf(pattern(LETTER, { pattern: "diagonal", patternAngle: 90 })), ["patternAngle"]);
+});
+
+// ------------------------------------------------------------ construction
+
+const K = 0.5522847498307936;
+function circlePath(cx, cy, r) {
+    const k = K * r;
+    return {
+        closed: true,
+        points: [
+            { anchor: [cx, cy + r], left: [cx - k, cy + r], right: [cx + k, cy + r] },
+            { anchor: [cx + r, cy], left: [cx + r, cy + k], right: [cx + r, cy - k] },
+            { anchor: [cx, cy - r], left: [cx + k, cy - r], right: [cx - k, cy - r] },
+            { anchor: [cx - r, cy], left: [cx - r, cy - k], right: [cx - r, cy + k] }
+        ]
+    };
+}
+function boxPath(left, top, right, bottom) {
+    const corner = (x, y) => ({ anchor: [x, y], left: [x, y], right: [x, y] });
+    return { closed: true, points: [corner(left, top), corner(right, top), corner(right, bottom), corner(left, bottom)] };
+}
+const CON = { conBounds: true, conKeylines: true, conCircles: true, conCenter: false, conDiagonals: false, conExtend: "artboard", output: "lines", strokeColor: "#E0457B", strokeWidth: 0.5, opacity: 100 };
+
+test("construction finds the circle, its extremes, and the bounds of a circular mark", () => {
+    const r = core.buildConstruction([circlePath(300, 400, 100)], LETTER, CON);
+    assert.equal(r.ok, true, r.ok ? "" : r.errors[0].message);
+    assert.equal(r.curves.length, 1);
+    const [top] = r.curves[0].points;
+    assert.deepEqual(top.anchor, [300, 500], "fitted circle has radius 100 around (300, 400)");
+    assert.deepEqual(r.content, { left: 200, top: 500, right: 400, bottom: 300, width: 200, height: 200 });
+    assert.deepEqual(xs(ofKind(r, "keyline").filter((s) => s.x1 === s.x2)).sort((a, b) => a - b), [200, 300, 400]);
+    const vertical = ofKind(r, "keyline").find((s) => s.x1 === 300);
+    assert.deepEqual([vertical.y1, vertical.y2], [792, 0], "key lines run across the artboard");
+    assert.equal(ofKind(r, "bounds").length, 4);
+    assert.deepEqual(r.settings.kindColors, { bounds: "#8C93A1", keyline: "#2F7CF6", circle: "#E0457B" });
+});
+
+test("construction keylines follow curve extremes even without anchors there", () => {
+    // One cubic from (0, 0) to (0, 100) bulging right: its X extreme (75) has no anchor.
+    const s = { closed: false, points: [{ anchor: [0, 0], left: [0, 0], right: [100, 50] }, { anchor: [0, 100], left: [100, 50], right: [0, 100] }] };
+    const r = core.buildConstruction([s], LETTER, Object.assign({}, CON, { conCircles: false }));
+    const xsFound = xs(ofKind(r, "keyline").filter((l) => l.x1 === l.x2));
+    assert.ok(xsFound.some((x) => Math.abs(x - 75) < 0.01), "bulge extreme at x = 75: " + xsFound);
+});
+
+test("straight artwork gets no circles; mixed artwork merges duplicate circles", () => {
+    assert.equal(core.buildConstruction([boxPath(100, 700, 300, 500)], LETTER, CON).curves.length, 0);
+    const two = core.buildConstruction([circlePath(300, 400, 100), circlePath(300, 400, 100.1), circlePath(100, 100, 40)], LETTER, CON);
+    assert.equal(two.curves.length, 2);
+});
+
+test("construction options: extend around the artwork, centers, diagonals, and validation", () => {
+    const around = core.buildConstruction([boxPath(100, 700, 300, 500)], LETTER, Object.assign({}, CON, { conExtend: "bounds", conPadding: 20, conCenter: true, conDiagonals: true }));
+    const left = ofKind(around, "keyline").find((s) => s.x1 === 100);
+    assert.deepEqual([left.y1, left.y2], [720, 480], "lines extend 20 pt past the artwork");
+    assert.equal(ofKind(around, "center").length, 2);
+    assert.equal(ofKind(around, "diagonal").length, 2);
+
+    assert.deepEqual(fieldsOf(core.buildConstruction([boxPath(1, 2, 3, 1)], LETTER, Object.assign({}, CON, { conBounds: false, conKeylines: false, conCircles: false }))), ["construction"]);
+    assert.deepEqual(fieldsOf(core.buildConstruction([], LETTER, CON)), ["selection"]);
+    assert.deepEqual(fieldsOf(core.buildConstruction([boxPath(1, 2, 3, 1)], LETTER, Object.assign({}, CON, { conKeylineColor: "blue" }))), ["conKeylineColor"]);
+    assert.equal(core.buildConstruction([boxPath(1, 2, 3, 1)], LETTER, Object.assign({}, CON, { output: "guides", conKeylineColor: "blue" })).ok, true, "colors ignored for guides");
+});

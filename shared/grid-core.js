@@ -48,14 +48,17 @@
     var SPIRAL_FOCI = { "top-left": true, "top-right": true, "bottom-left": true, "bottom-right": true };
     var PATTERNS = { square: true, dots: true, isometric: true, hexagon: true, radial: true, diagonal: true };
     var LINE_STYLES = { solid: true, dashed: true, dotted: true };
-    var COMPOSITION_FLAGS = ["compThirds", "compGolden", "compDiagonals", "compCenter", "compSpiral"];
+    var COMPOSITION_FLAGS = ["compThirds", "compFifths", "compGolden", "compDiagonals", "compCenter",
+        "compArmature", "compDynamic", "compVillard", "compSpiral"];
+    var CONSTRUCTION_FLAGS = ["conBounds", "conKeylines", "conCircles", "conCenter", "conDiagonals"];
 
     // Whole-number fields: [minimum, maximum].
     var COUNT_LIMITS = {
         columns: [1, 100],
         rows: [1, 100],
         rings: [1, 50],
-        spokes: [0, 72]
+        spokes: [0, 72],
+        overlayColumns: [0, 48]
     };
 
     var LIMITS = {
@@ -92,6 +95,23 @@
         compDiagonals: false,
         compCenter: false,
         compSpiral: false,
+        compFifths: false,
+        compArmature: false,
+        compDynamic: false,
+        compVillard: false,
+        overlayColumns: 0,
+        squareModules: false,
+        patternAngle: 45,
+        conBounds: true,
+        conKeylines: true,
+        conCircles: true,
+        conCenter: false,
+        conDiagonals: false,
+        conExtend: "artboard",
+        conPadding: 24,
+        conBoundsColor: "#8C93A1",
+        conKeylineColor: "#2F7CF6",
+        conCircleColor: "#E0457B",
         spiralFocus: "bottom-right",
         pattern: "square",
         patternSize: 24,
@@ -128,6 +148,14 @@
         baselineOffset: "Baseline offset",
         composition: "Composition guides",
         spiralFocus: "Spiral focus",
+        overlayColumns: "Overlay columns",
+        patternAngle: "Angle",
+        construction: "Construction lines",
+        conPadding: "Extension",
+        conBoundsColor: "Bounds color",
+        conKeylineColor: "Key line color",
+        conCircleColor: "Circle color",
+        selection: "Selection",
         pattern: "Pattern",
         patternSize: "Size",
         dotSize: "Dot size",
@@ -232,9 +260,9 @@
             if (!o.columnRatios) {
                 fields.push("columns");
             }
-            fields.push("columnGutter");
+            fields.push("columnGutter", "overlayColumns");
             if (type === "modular") {
-                if (!o.rowRatios) {
+                if (!o.rowRatios && !o.squareModules) {
                     fields.push("rows");
                 }
                 fields.push("rowGutter");
@@ -403,11 +431,16 @@
             }
         }
 
+        if (s.type === "modular") {
+            s.squareModules = pick(raw, "squareModules") === true;
+        }
+
         var fields = relevantFields(s.type, {
             pattern: s.pattern,
             addBaseline: s.addBaseline,
             columnRatios: s.columnRatios,
-            rowRatios: s.rowRatios
+            rowRatios: s.rowRatios,
+            squareModules: s.squareModules
         });
         for (i = 0; i < fields.length; i++) {
             var key = fields[i];
@@ -471,6 +504,15 @@
             addError("output", "Boxes work with column and modular grids. Choose lines or guides.");
         } else if (s.output === "guides" && s.type === "pattern" && s.pattern === "dots") {
             addError("output", "Dot grids draw filled dots, which can't be guides. Choose lines.");
+        }
+
+        if (s.type === "pattern" && s.pattern === "diagonal") {
+            var angle = parseNumber(pick(raw, "patternAngle"));
+            if (!isFiniteNumber(angle) || angle < 5 || angle > 85) {
+                addError("patternAngle", "Angle must be from 5 to 85 degrees.");
+            } else {
+                s.patternAngle = angle;
+            }
         }
 
         if (s.type === "pattern" && s.pattern === "dots") {
@@ -867,6 +909,29 @@
         return { ok: true, count: count, segments: out };
     }
 
+    /*
+     * Reciprocal diagonals of a w x h rectangle: from each corner, the line
+     * perpendicular to the diagonal that doesn't pass through it, to the far side.
+     * Returns [u1, v1, u2, v2] in local coordinates (v downward).
+     */
+    function reciprocals(w, h) {
+        function hit(u, v, du, dv) {
+            var ts = [];
+            if (du > EPSILON) { ts.push((w - u) / du); }
+            if (du < -EPSILON) { ts.push(-u / du); }
+            if (dv > EPSILON) { ts.push((h - v) / dv); }
+            if (dv < -EPSILON) { ts.push(-v / dv); }
+            var tMin = Infinity;
+            for (var k = 0; k < ts.length; k++) {
+                if (ts[k] > EPSILON && ts[k] < tMin) {
+                    tMin = ts[k];
+                }
+            }
+            return [u, v, u + du * tMin, v + dv * tMin];
+        }
+        return [hit(0, 0, h, w), hit(w, 0, -h, w), hit(w, h, -h, -w), hit(0, h, h, -w)];
+    }
+
     function failure(errors) {
         return { ok: false, errors: errors, segments: [], boxes: [], polygons: [], curves: [], dots: [] };
     }
@@ -921,8 +986,10 @@
             if (s.pattern === "square") {
                 families = [[90, size], [0, size]];
             } else if (s.pattern === "diagonal") {
-                // Diamond cells `size` wide along each edge.
-                families = [[45, size / Math.SQRT2], [135, size / Math.SQRT2]];
+                // Two families mirrored about the vertical, spaced so each diamond is `size` wide.
+                var tilt = s.patternAngle || 45;
+                var gap = size * Math.sin(tilt * Math.PI / 180);
+                families = [[tilt, gap], [180 - tilt, gap]];
             } else {
                 // Equilateral triangles with sides `size`.
                 families = [[90, size * SQRT3 / 2], [30, size * SQRT3 / 2], [150, size * SQRT3 / 2]];
@@ -1110,9 +1177,27 @@
         }
 
         if (s.type === "modular") {
-            var rows = divideSpan(content.height, s.rows, s.rowGutter, s.rowRatios);
+            var rows;
+            if (s.squareModules && metrics.columnWidth) {
+                // Rows as tall as the columns are wide, as many as fit from the top margin.
+                var squareCount = Math.floor((content.height + s.rowGutter) / (metrics.columnWidth + s.rowGutter) + EPSILON);
+                var squareTracks = [];
+                for (j = 0; j < squareCount; j++) {
+                    var squareStart = j * (metrics.columnWidth + s.rowGutter);
+                    squareTracks.push({ start: squareStart, end: squareStart + metrics.columnWidth });
+                }
+                rows = squareCount >= 1 ? { ok: true, size: metrics.columnWidth, equal: true, tracks: squareTracks } : { ok: false, size: 0 };
+                s.rows = squareCount;
+            } else if (s.squareModules) {
+                rows = { ok: false, size: 0 };
+            } else {
+                rows = divideSpan(content.height, s.rows, s.rowGutter, s.rowRatios);
+            }
             if (!rows.ok) {
-                errors.push({
+                errors.push(s.squareModules ? {
+                    field: "squareModules",
+                    message: "Square modules need equal columns that fit between the margins at least once."
+                } : {
                     field: "rowGutter",
                     message: "Rows don't fit. " + s.rows + " rows with " + formatMeasure(s.rowGutter, unit) +
                         " gutters need more than " + formatMeasure(s.rowGutter * (s.rows - 1), unit) +
@@ -1132,6 +1217,13 @@
                         segments.push(horizontal("row", content.top - edges[i], spanLeft, spanRight));
                     }
                 }
+            }
+        }
+
+        if ((s.type === "columns" || s.type === "modular") && s.overlayColumns > 1 && errors.length === 0) {
+            // A second, gutterless division of the same width: a compound grid such as 3 + 4.
+            for (i = 1; i < s.overlayColumns; i++) {
+                segments.push(vertical("overlay", content.left + content.width * i / s.overlayColumns, spanTop, spanBottom));
             }
         }
 
@@ -1250,6 +1342,57 @@
             if (s.compCenter) {
                 segments.push(vertical("center", l + cw / 2, t, b));
                 segments.push(horizontal("center", t - ch / 2, l, r));
+            }
+            if (s.compFifths) {
+                for (i = 1; i <= 4; i++) {
+                    segments.push(vertical("fifths", l + cw * i / 5, t, b));
+                    segments.push(horizontal("fifths", t - ch * i / 5, l, r));
+                }
+            }
+            if (s.compArmature || s.compDynamic || s.compVillard) {
+                var local = function (kind, u1, v1, u2, v2) {
+                    // (u, v) measured from the top-left corner, v downward.
+                    segments.push(segment(kind, l + u1, t - v1, l + u2, t - v2));
+                };
+                if (s.compArmature || s.compDynamic) {
+                    local("armature", 0, 0, cw, ch);
+                    local("armature", cw, 0, 0, ch);
+                    var recips = reciprocals(cw, ch);
+                    for (i = 0; i < recips.length; i++) {
+                        local(s.compArmature ? "armature" : "dynamic", recips[i][0], recips[i][1], recips[i][2], recips[i][3]);
+                    }
+                }
+                if (s.compArmature) {
+                    // Each corner to the midpoints of the two sides it doesn't touch.
+                    local("armature", 0, 0, cw, ch / 2);
+                    local("armature", 0, 0, cw / 2, ch);
+                    local("armature", cw, 0, 0, ch / 2);
+                    local("armature", cw, 0, cw / 2, ch);
+                    local("armature", cw, ch, 0, ch / 2);
+                    local("armature", cw, ch, cw / 2, 0);
+                    local("armature", 0, ch, cw, ch / 2);
+                    local("armature", 0, ch, cw / 2, 0);
+                }
+                if (s.compDynamic) {
+                    // Lines through the "eyes", where reciprocals cross the diagonals.
+                    var denominator = cw * cw + ch * ch;
+                    var eyeU = cw * ch * ch / denominator;
+                    var eyeV = cw * cw * ch / denominator;
+                    local("dynamic", eyeU, 0, eyeU, ch);
+                    local("dynamic", cw - eyeU, 0, cw - eyeU, ch);
+                    local("dynamic", 0, eyeV, cw, eyeV);
+                    local("dynamic", 0, ch - eyeV, cw, ch - eyeV);
+                }
+                if (s.compVillard) {
+                    // Villard's figure: diagonals and corner-to-top-center lines cross at one third.
+                    local("villard", 0, 0, cw, ch);
+                    local("villard", cw, 0, 0, ch);
+                    local("villard", 0, ch, cw / 2, 0);
+                    local("villard", cw, ch, cw / 2, 0);
+                    local("villard", 0, ch / 3, cw, ch / 3);
+                    local("villard", cw / 3, 0, cw / 3, ch);
+                    local("villard", cw * 2 / 3, 0, cw * 2 / 3, ch);
+                }
             }
             if (s.compSpiral) {
                 var spiral = goldenSpiral(content, s.spiralFocus, LIMITS.spiralSquares);
@@ -1385,6 +1528,290 @@
         return { dx: dx, dy: dy, onGrid: Math.abs(dx) <= tol && Math.abs(dy) <= tol };
     }
 
+    // ------------------------------------------------------------ construction
+
+    function cubicPoint(p0, c1, c2, p3, t) {
+        var m = 1 - t;
+        var a = m * m * m;
+        var b = 3 * m * m * t;
+        var c = 3 * m * t * t;
+        var d = t * t * t;
+        return [a * p0[0] + b * c1[0] + c * c2[0] + d * p3[0], a * p0[1] + b * c1[1] + c * c2[1] + d * p3[1]];
+    }
+
+    // Parameters in (0, 1) where a cubic's coordinate on one axis turns around.
+    function axisExtrema(p0, c1, c2, p3, axis) {
+        var d0 = c1[axis] - p0[axis];
+        var d1 = c2[axis] - c1[axis];
+        var d2 = p3[axis] - c2[axis];
+        var qa = d0 - 2 * d1 + d2;
+        var qb = 2 * (d1 - d0);
+        var qc = d0;
+        var roots = [];
+        if (Math.abs(qa) < 1e-9) {
+            if (Math.abs(qb) > 1e-9) {
+                roots.push(-qc / qb);
+            }
+        } else {
+            var disc = qb * qb - 4 * qa * qc;
+            if (disc >= 0) {
+                var sq = Math.sqrt(disc);
+                roots.push((-qb + sq) / (2 * qa), (-qb - sq) / (2 * qa));
+            }
+        }
+        var out = [];
+        for (var i = 0; i < roots.length; i++) {
+            if (roots[i] > 1e-6 && roots[i] < 1 - 1e-6) {
+                out.push(roots[i]);
+            }
+        }
+        return out;
+    }
+
+    function circleThrough(a, b, c) {
+        var d = 2 * (a[0] * (b[1] - c[1]) + b[0] * (c[1] - a[1]) + c[0] * (a[1] - b[1]));
+        if (Math.abs(d) < 1e-9) {
+            return null;
+        }
+        var a2 = a[0] * a[0] + a[1] * a[1];
+        var b2 = b[0] * b[0] + b[1] * b[1];
+        var c2 = c[0] * c[0] + c[1] * c[1];
+        var ux = (a2 * (b[1] - c[1]) + b2 * (c[1] - a[1]) + c2 * (a[1] - b[1])) / d;
+        var uy = (a2 * (c[0] - b[0]) + b2 * (a[0] - c[0]) + c2 * (b[0] - a[0])) / d;
+        return { x: ux, y: uy, r: Math.sqrt((a[0] - ux) * (a[0] - ux) + (a[1] - uy) * (a[1] - uy)) };
+    }
+
+    function mergeValue(list, value, tolerance) {
+        for (var i = 0; i < list.length; i++) {
+            if (Math.abs(list[i] - value) <= tolerance) {
+                return;
+            }
+        }
+        list.push(value);
+    }
+
+    /*
+     * Construction lines for artwork, as used to present logo geometry.
+     *   paths: [{ closed, points: [{ anchor, left, right }] }] in Illustrator
+     *          coordinates (Y up); left/right are the incoming/outgoing handles
+     *   rect:  artboard rectangle [left, top, right, bottom], for extending lines
+     *   raw:   panel settings (construction options and appearance)
+     * Draws the artwork's bounding box, key lines through anchors and curve
+     * extremes, circles fitted to circular arcs, and optional center lines and
+     * diagonals. Returns the same shape lists as buildGrid.
+     * Segment kinds: "bounds", "keyline", "center", "diagonal"; curve kind "circle".
+     */
+    function buildConstruction(paths, rect, raw) {
+        var styled = normalizeSettings(assignSettings(raw, { type: "columns", columnRatios: "", rowRatios: "", blocks: [], addBaseline: false }));
+        var errors = styled.errors.slice();
+        var s = styled.settings;
+        var i, j;
+
+        var any = false;
+        for (i = 0; i < CONSTRUCTION_FLAGS.length; i++) {
+            s[CONSTRUCTION_FLAGS[i]] = pick(raw, CONSTRUCTION_FLAGS[i]) === true;
+            any = any || s[CONSTRUCTION_FLAGS[i]];
+        }
+        if (!any) {
+            errors.push({ field: "construction", message: "Choose at least one kind of construction line." });
+        }
+        s.conExtend = pick(raw, "conExtend") === "bounds" ? "bounds" : "artboard";
+        var padding = parseNumber(pick(raw, "conPadding"));
+        if (!isProvided(raw, "conPadding")) {
+            padding = fromPoints(DEFAULTS.conPadding, s.units);
+        }
+        if (!isFiniteNumber(padding) || padding < 0) {
+            errors.push({ field: "conPadding", message: "Extension must be a number of 0 or more." });
+        } else {
+            s.conPadding = toPoints(padding, s.units);
+        }
+        if (s.output !== "guides") {
+            s.kindColors = {};
+            var colorFields = [["bounds", "conBoundsColor"], ["keyline", "conKeylineColor"], ["circle", "conCircleColor"]];
+            for (i = 0; i < colorFields.length; i++) {
+                var hex = pick(raw, colorFields[i][1]);
+                if (!isHexColor(hex)) {
+                    errors.push({ field: colorFields[i][1], message: FIELD_NAMES[colorFields[i][1]] + " must be a hex color such as #2F7CF6." });
+                } else {
+                    s.kindColors[colorFields[i][0]] = hex.toUpperCase();
+                    s[colorFields[i][1]] = hex.toUpperCase();
+                }
+            }
+        }
+
+        var board = readRect(rect);
+        if (!board.ok) {
+            errors.push({ field: "artboard", message: board.error });
+        }
+
+        // Sample every segment for bounds; collect anchors, curve extremes, and arcs.
+        var xs = [];
+        var ys = [];
+        var arcs = [];
+        var minX = Infinity;
+        var maxX = -Infinity;
+        var minY = Infinity;
+        var maxY = -Infinity;
+        var pointCount = 0;
+        function include(pt) {
+            minX = Math.min(minX, pt[0]);
+            maxX = Math.max(maxX, pt[0]);
+            minY = Math.min(minY, pt[1]);
+            maxY = Math.max(maxY, pt[1]);
+        }
+        for (i = 0; paths && i < paths.length; i++) {
+            var pts = paths[i].points || [];
+            pointCount += pts.length;
+            var segmentCount = paths[i].closed ? pts.length : pts.length - 1;
+            for (j = 0; j < pts.length; j++) {
+                include(pts[j].anchor);
+            }
+            for (j = 0; j < segmentCount; j++) {
+                var from = pts[j];
+                var to = pts[(j + 1) % pts.length];
+                var p0 = from.anchor;
+                var c1 = from.right || from.anchor;
+                var c2 = to.left || to.anchor;
+                var p3 = to.anchor;
+                for (var step = 1; step < 16; step++) {
+                    include(cubicPoint(p0, c1, c2, p3, step / 16));
+                }
+                var straight = Math.abs(c1[0] - p0[0]) + Math.abs(c1[1] - p0[1]) + Math.abs(c2[0] - p3[0]) + Math.abs(c2[1] - p3[1]) < 1e-6;
+                if (!straight) {
+                    arcs.push([p0, c1, c2, p3]);
+                }
+            }
+        }
+        if (!pointCount || !(maxX - minX > EPSILON || maxY - minY > EPSILON)) {
+            errors.push({ field: "selection", message: "Select artwork made of paths. Convert text to outlines first." });
+        }
+        if (errors.length) {
+            return failure(errors);
+        }
+
+        var size = Math.max(maxX - minX, maxY - minY);
+        var tolerance = Math.max(0.25, size * 0.002);
+        for (i = 0; i < paths.length; i++) {
+            for (j = 0; j < paths[i].points.length; j++) {
+                mergeValue(xs, paths[i].points[j].anchor[0], tolerance);
+                mergeValue(ys, paths[i].points[j].anchor[1], tolerance);
+            }
+        }
+        for (i = 0; i < arcs.length; i++) {
+            var arc = arcs[i];
+            var tx = axisExtrema(arc[0], arc[1], arc[2], arc[3], 0);
+            var ty = axisExtrema(arc[0], arc[1], arc[2], arc[3], 1);
+            for (j = 0; j < tx.length; j++) {
+                mergeValue(xs, cubicPoint(arc[0], arc[1], arc[2], arc[3], tx[j])[0], tolerance);
+            }
+            for (j = 0; j < ty.length; j++) {
+                mergeValue(ys, cubicPoint(arc[0], arc[1], arc[2], arc[3], ty[j])[1], tolerance);
+            }
+        }
+
+        var a = board.box;
+        var extentLeft = s.conExtend === "artboard" ? a.left : minX - s.conPadding;
+        var extentRight = s.conExtend === "artboard" ? a.right : maxX + s.conPadding;
+        var extentTop = s.conExtend === "artboard" ? a.top : maxY + s.conPadding;
+        var extentBottom = s.conExtend === "artboard" ? a.bottom : minY - s.conPadding;
+
+        var segments = [];
+        var curves = [];
+        if (s.conBounds) {
+            segments.push(horizontal("bounds", maxY, minX, maxX));
+            segments.push(horizontal("bounds", minY, minX, maxX));
+            segments.push(vertical("bounds", minX, maxY, minY));
+            segments.push(vertical("bounds", maxX, maxY, minY));
+        }
+        if (s.conKeylines) {
+            for (i = 0; i < xs.length; i++) {
+                segments.push(vertical("keyline", xs[i], extentTop, extentBottom));
+            }
+            for (i = 0; i < ys.length; i++) {
+                segments.push(horizontal("keyline", ys[i], extentLeft, extentRight));
+            }
+        }
+        if (s.conCenter) {
+            segments.push(vertical("center", (minX + maxX) / 2, extentTop, extentBottom));
+            segments.push(horizontal("center", (minY + maxY) / 2, extentLeft, extentRight));
+        }
+        if (s.conDiagonals) {
+            segments.push(segment("diagonal", minX, maxY, maxX, minY));
+            segments.push(segment("diagonal", minX, minY, maxX, maxY));
+        }
+
+        var circles = [];
+        if (s.conCircles) {
+            for (i = 0; i < arcs.length; i++) {
+                var q = arcs[i];
+                var fit = circleThrough(q[0], cubicPoint(q[0], q[1], q[2], q[3], 0.5), q[3]);
+                if (!fit || fit.r < tolerance * 2 || fit.r > size * 5) {
+                    continue;
+                }
+                var round1 = cubicPoint(q[0], q[1], q[2], q[3], 0.25);
+                var round3 = cubicPoint(q[0], q[1], q[2], q[3], 0.75);
+                var dev1 = Math.abs(Math.sqrt((round1[0] - fit.x) * (round1[0] - fit.x) + (round1[1] - fit.y) * (round1[1] - fit.y)) - fit.r);
+                var dev3 = Math.abs(Math.sqrt((round3[0] - fit.x) * (round3[0] - fit.x) + (round3[1] - fit.y) * (round3[1] - fit.y)) - fit.r);
+                if (dev1 > fit.r * 0.015 + 0.05 || dev3 > fit.r * 0.015 + 0.05) {
+                    continue; // Not a circular arc.
+                }
+                var duplicate = false;
+                for (j = 0; j < circles.length; j++) {
+                    if (Math.abs(circles[j].x - fit.x) <= tolerance * 2 && Math.abs(circles[j].y - fit.y) <= tolerance * 2 && Math.abs(circles[j].r - fit.r) <= tolerance * 2) {
+                        duplicate = true;
+                        break;
+                    }
+                }
+                if (!duplicate) {
+                    circles.push(fit);
+                }
+            }
+            for (i = 0; i < circles.length; i++) {
+                curves.push(circle("circle", circles[i].x, circles[i].y, circles[i].r));
+            }
+        }
+
+        s.type = "construction";
+        segments = dedupeSegments(segments);
+        var shapeCount = segments.length + curves.length;
+        if (shapeCount > LIMITS.maxShapes) {
+            return failure([{ field: "selection", message: "That artwork needs " + shapeCount + " construction lines. Select fewer or simpler paths." }]);
+        }
+        return {
+            ok: true,
+            errors: [],
+            settings: s,
+            artboard: { left: round(a.left), top: round(a.top), right: round(a.right), bottom: round(a.bottom), width: round(a.width), height: round(a.height) },
+            content: { left: round(minX), top: round(maxY), right: round(maxX), bottom: round(minY), width: round(maxX - minX), height: round(maxY - minY) },
+            metrics: { keylines: s.conKeylines ? xs.length + ys.length : 0, circles: circles.length },
+            tracks: { columns: [], rows: [] },
+            segments: segments,
+            boxes: [],
+            polygons: [],
+            curves: curves,
+            dots: [],
+            shapeCount: shapeCount
+        };
+    }
+
+    function assignSettings(raw, overrides) {
+        var out = {};
+        var key;
+        if (raw) {
+            for (key in raw) {
+                if (hasOwn(raw, key)) {
+                    out[key] = raw[key];
+                }
+            }
+        }
+        for (key in overrides) {
+            if (hasOwn(overrides, key)) {
+                out[key] = overrides[key];
+            }
+        }
+        return out;
+    }
+
     /*
      * Dash pattern for a line style, scaled to the stroke width.
      * Returns { dashes: [dash, gap] or [], roundCaps }.
@@ -1420,6 +1847,7 @@
         PATTERNS: ["square", "dots", "isometric", "hexagon", "radial", "diagonal"],
         LINE_STYLES: ["solid", "dashed", "dotted"],
         COMPOSITION_FLAGS: COMPOSITION_FLAGS,
+        CONSTRUCTION_FLAGS: CONSTRUCTION_FLAGS,
         defaults: copyDefaults,
         parseNumber: parseNumber,
         toPoints: toPoints,
@@ -1431,6 +1859,7 @@
         parseRatios: parseRatios,
         parseBlocks: parseBlocks,
         snapLines: snapLines,
+        buildConstruction: buildConstruction,
         snapRect: snapRect,
         readRect: readRect,
         divideSpan: divideSpan,
