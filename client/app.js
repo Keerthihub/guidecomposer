@@ -116,12 +116,12 @@
             return new Promise((resolve) => cs.evalScript(script, resolve));
         }
 
-        // Loads host/index.jsx if the manifest's ScriptPath hasn't yet, then boots.
+        // Always reloads host/index.jsx before booting, so an updated extension never
+        // runs an older copy still held in the app's script engine.
         // The root path is URI-encoded, so it cannot break out of the string literal.
         function boot() {
             const script =
-                '(function (r) { if (typeof Mullion === "undefined" || !Mullion.boot) {' +
-                ' $.evalFile(new File(decodeURIComponent(r) + "/host/index.jsx")); }' +
+                '(function (r) { $.evalFile(new File(decodeURIComponent(r) + "/host/index.jsx"));' +
                 ' return Mullion.boot(r); }("' + encodedRoot + '"))';
             booting = evalScript(script).then(parseHostResponse);
             return booting;
