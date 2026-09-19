@@ -1,6 +1,6 @@
 # GuideComposer
 
-A layout-grid panel for Adobe Illustrator.
+A free, open-source layout-grid panel for Adobe Illustrator.
 
 GuideComposer draws column, modular, and baseline grids, classic grid systems, composition guides, and patterns, on artboards, pages, or inside selected objects. It draws construction lines around logos, checks and snaps artwork to the grid, and ships with a visual library of 128 layouts. Grids live on their own layer and carry ownership tags, so previews, regenerating, and clearing never touch your artwork.
 
@@ -11,9 +11,20 @@ GuideComposer draws column, modular, and baseline grids, classic grid systems, c
 - Free and open source (MIT). Never sold, nothing gated — see [Licence and third-party code](#licence-and-third-party-code)
 - No network access, no accounts, no Node.js inside the panel
 
-This file is for whoever works on the code. Customer-facing documentation lives
-in [docs/](docs/README.md); the remaining work before this can be sold is in
+GuideComposer is currently preparing for its first public release. When the
+first signed build is available, download it from this repository's
+**Releases** page. User documentation lives in [docs/](docs/README.md), and the
+remaining pre-release work is tracked in
 [docs/LAUNCH-CHECKLIST.md](docs/LAUNCH-CHECKLIST.md).
+
+Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before
+opening an issue or pull request. Large changes should begin with an issue so
+the approach can be agreed before anyone spends time implementing it.
+
+For help, search or open a GitHub issue and include **More > Copy diagnostics**
+when possible. Issues are read, but this volunteer project cannot promise a
+reply or a fix by a particular date. Report security problems privately through
+GitHub's **Security > Report a vulnerability** form.
 
 ## Contents
 
@@ -402,8 +413,7 @@ Supporter Pack and custom work, which are not in this repository.
 
 - [LICENSE](LICENSE) — MIT, plus a plain-language section on what it does not
   cover: the vendored Adobe and public-domain files, the Adobe application
-  itself, the separately sold materials, and the name. One placeholder left,
-  `[COPYRIGHT_HOLDER]`.
+  itself, the separately sold materials, and the name.
 - [TERMS.md](TERMS.md) — Part 1 is the free extension and is finished. Part 2 is
   the paid pack and is a **template with placeholders, not reviewed by a
   lawyer**; see [docs/LAUNCH-CHECKLIST.md](docs/LAUNCH-CHECKLIST.md), step 3.

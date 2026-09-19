@@ -45,13 +45,11 @@ grep -rn "\[[A-Z_]\{3,\}\]" --include="*.md" --include="*.yml" \
      --include="LICENSE" --include="NOTICE" . | grep -v node_modules
 ```
 
-The MIT licence cut most of this work away. `LICENSE` now needs **one** token —
-the copyright holder — and needs no lawyer. What remains is about the paid pack
-and about support.
+The MIT licence cut most of this work away. The copyright holder is now
+**Keerthihub** in both `LICENSE` and `NOTICE`. What remains is about the paid
+pack and about support.
 
-- [ ] `LICENSE` — `[COPYRIGHT_HOLDER]` only. The name you want on the copyright
-      line of every copy, forever. A personal name is normal for a solo project.
-- [ ] `NOTICE` — the same name.
+- [x] `LICENSE` and `NOTICE` — copyright holder: **Keerthihub**.
 - [ ] `TERMS.md` — **Part 2 only.** Part 1 (the free extension) is finished; the
       pack's terms need the store, seat holder, update and refund policies.
 - [ ] `PRIVACY.md` — your identity, support address, retention periods, and what
@@ -59,9 +57,9 @@ and about support.
 - [ ] `SECURITY.md` — support address and response time.
 - [ ] `docs/COMPATIBILITY.md`, `docs/TROUBLESHOOTING.md` — support address and
       the versions you actually tested.
-- [ ] `.github/ISSUE_TEMPLATE/config.yml` — your GitHub owner/repo and support
-      address. The repository is public now, so keep this rather than deleting
-      it: issues are how free users reach you without costing you an inbox.
+- [x] `.github/ISSUE_TEMPLATE/config.yml` — repository links point to
+      `Keerthihub/guidecomposer`; free support uses issues and security reports
+      use GitHub's private vulnerability form.
 
 **Done when:** the `grep` above returns nothing. A lawyer is no longer needed for
 `LICENSE` — MIT is a standard, widely-litigated text and changing a word of it
@@ -98,9 +96,12 @@ acknowledgement, and the same address appears everywhere a customer might look.
 Adobe accepts a self-signed certificate for `.zxp` packages.
 
 ```sh
-ZXPSignCmd -selfSignedCert US CA "Your Company" "Your Name" "<password>" ~/Certificates/product.p12 -validityDays 3650
+scripts/create-signing-cert-mac.sh <country-code> "<state-or-province>"
 ```
 
+- [x] Rosetta installed and Adobe's official macOS `ZXPSignCmd` 4.1.1 placed at
+      `/Users/keerthismac/Tools/Adobe-ZXPSignCmd-4.1.1/ZXPSignCmd` after the
+      downloaded Git object hash was verified.
 - [ ] Certificate created **outside** this repository, with a long validity.
 - [ ] Password stored in a password manager; certificate backed up somewhere you
       will still have it in five years.
@@ -226,15 +227,14 @@ involves a payment page.
 - [ ] Attach the signed `.zxp` to a GitHub Release, with its SHA-256 checksum
       and install instructions for both operating systems in the release notes.
       Tagging is what produces it — `../scripts/package.md`.
-- [ ] Write the README's opening for a stranger: what it does, one screenshot or
-      GIF, how to install, and that it is free. Not the internal README's
-      audience — that file is for whoever works on the code.
-- [ ] Add `CONTRIBUTING.md` and a code of conduct if you want contributions, or
-      say plainly in the README that issues are welcome and pull requests are
-      not, if you would rather keep control. Either is fine; silence is not.
-- [ ] Decide what support you actually promise free users, and write it in the
-      README. "Issues are read, replies are not guaranteed" is honest and
-      sustainable. A promise you cannot keep at 1,000 users is worse than none.
+- [ ] Add one strong screenshot or GIF and final install steps to the public
+      README. Its opening, product summary, free/open-source status and Releases
+      download direction are already written.
+- [x] Accept pull requests with maintainer review. `CONTRIBUTING.md` and the pull
+      request template document the checks, boundaries, and review policy.
+- [x] Free support policy: GitHub issues are read on a best-effort basis; no
+      response time or fix is promised. Private security reports use GitHub
+      Security Advisories.
 - [ ] Adobe Exchange listing: publisher profile, listing text from
       `../MARKETING.md`, artwork from `LISTING-ARTWORK.md`, the signed `.zxp`,
       declared versions, submit for review. Free listings are still reviewed,
@@ -310,11 +310,10 @@ support copy. "Files" lists every file the token appears in.
 
 | Token | What it is | Files |
 | --- | --- | --- |
-| `[COPYRIGHT_HOLDER]` | The name on the copyright line of every copy of the code, for ever. Changing it later does not change copies already published | `LICENSE`, `NOTICE` |
 | `[PUBLISHER_NAME]` | The name you sell the pack under — a person or a company | `PRIVACY.md`, `TERMS.md` |
 | `[PUBLISHER_ADDRESS]` | The postal address on the pack's terms. Required by consumer law in many places; a registered business address, not your home, if you can | `PRIVACY.md`, `TERMS.md` |
 | `[JURISDICTION]` | Country (and state/province) whose law governs the pack's terms | `TERMS.md` |
-| `[SUPPORT_EMAIL]` | The support address from step 4 | `PRIVACY.md`, `TERMS.md`, `SECURITY.md`, `docs/TROUBLESHOOTING.md`, `docs/COMPATIBILITY.md`, `.github/ISSUE_TEMPLATE/config.yml` |
+| `[SUPPORT_EMAIL]` | The support address from step 4 | `PRIVACY.md`, `TERMS.md`, `SECURITY.md`, `docs/TROUBLESHOOTING.md`, `docs/COMPATIBILITY.md` |
 | `[SUPPORT_LANGUAGE]` | The language(s) you answer in | `TERMS.md` |
 | `[SUPPORT_PERIOD]` | How long pack support lasts after purchase (e.g. "12 months") | `TERMS.md` |
 | `[SUPPORT_RESPONSE_TIME]` | How quickly you answer (e.g. "two working days") | `docs/TROUBLESHOOTING.md`, `SECURITY.md` |
@@ -331,10 +330,7 @@ support copy. "Files" lists every file the token appears in.
 | `[TESTED_ILLUSTRATOR_VERSIONS]` | The Illustrator versions you have actually run it in | `docs/COMPATIBILITY.md` |
 | `[TESTED_MACOS_VERSIONS]` | The macOS versions you tested (from step 7) | `docs/COMPATIBILITY.md` |
 | `[TESTED_WINDOWS_VERSIONS]` | The Windows versions and builds you tested (from step 7) | `docs/COMPATIBILITY.md` |
-| `[GITHUB_OWNER]` / `[GITHUB_REPO]` | Your GitHub account and repository name | `.github/ISSUE_TEMPLATE/config.yml` |
 
 Two things deliberately left blank because no one but you can know them: the
-identity you trade under, and what you charge for the pack.
-
-`[COPYRIGHT_HOLDER]` is the one that cannot be changed later. It goes on every
-published copy of the code, and copies already out keep whatever it said.
+identity you trade under, and what you charge for the pack. The permanent
+copyright decision is complete: published copies will name **Keerthihub**.

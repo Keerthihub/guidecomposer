@@ -1,15 +1,11 @@
-# Customers should never have to create a GitHub account to get help.
 blank_issues_enabled: false
 contact_links:
-  - name: Email support
-    url: mailto:[SUPPORT_EMAIL]
-    about: Bought the plugin and need help? Email us — no account needed. Include More > Copy diagnostics.
   - name: Troubleshooting guide
-    url: https://github.com/[GITHUB_OWNER]/[GITHUB_REPO]/blob/main/docs/TROUBLESHOOTING.md
+    url: https://github.com/Keerthihub/guidecomposer/blob/main/docs/TROUBLESHOOTING.md
     about: Panel missing, blank, or showing a message you don't recognise? Start here.
   - name: Updating and presets
-    url: https://github.com/[GITHUB_OWNER]/[GITHUB_REPO]/blob/main/docs/UPDATING.md
+    url: https://github.com/Keerthihub/guidecomposer/blob/main/docs/UPDATING.md
     about: What survives an update, and what an uninstall deletes. Export your presets first.
   - name: Security report
-    url: https://github.com/[GITHUB_OWNER]/[GITHUB_REPO]/blob/main/SECURITY.md
-    about: Found a vulnerability? Report it privately, not as a public issue.
+    url: https://github.com/Keerthihub/guidecomposer/security/advisories/new
+    about: Found a vulnerability? Report it privately through GitHub, not as a public issue.

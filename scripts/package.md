@@ -9,11 +9,21 @@ CEP extensions ship as signed `.zxp` files. Don't package GuideComposer as `.ccx
 - **On GitHub (no local tools).** Push the repository to GitHub, then add two repository secrets under Settings > Secrets and variables > Actions: `ZXP_CERT_BASE64` (on macOS: `base64 -i cert.p12 | pbcopy`) and `ZXP_CERT_PASSWORD`. Push a tag such as `v0.1.0`, or run **Signed release** from the Actions tab. See [What the release workflow does](#what-the-release-workflow-does) below — a tag publishes a permanent GitHub Release; a manual run only signs.
 - **On your computer.** Download ZXPSignCmd for your OS from Adobe's [CEP-Resources repository](https://github.com/Adobe-CEP/CEP-Resources) (`ZXPSignCMD` folder). On macOS, run `chmod +x ZXPSignCmd` and approve it in System Settings > Privacy & Security if blocked. Adobe's macOS build is Intel-only: on Apple Silicon Macs install Rosetta once with `softwareupdate --install-rosetta --agree-to-license`.
 
-**Create a certificate.** Adobe accepts self-signed certificates for ZXP packages. Store the certificate **outside this repository** and the password in a password manager.
+**Create a certificate.** Adobe accepts self-signed certificates for ZXP
+packages. Store the certificate **outside this repository** and the password in
+a password manager. On the prepared development Mac, run the helper with the
+correct two-letter country code and state/province; it prompts privately for the
+password and refuses to overwrite an existing lifetime certificate:
 
 ```sh
-ZXPSignCmd -selfSignedCert US CA "Your Company" "Your Name" "<password>" ~/Certificates/mullion.p12 -validityDays 3650
+scripts/create-signing-cert-mac.sh IN "Tamil Nadu"
 ```
+
+Change `IN` and `Tamil Nadu` if they are not the certificate owner's correct
+location. The helper uses Adobe's `ZXPSignCmd`, organization `Keerthihub`,
+common name `GuideComposer ZXP Signing`, a 3,650-day validity, and writes to
+`~/Documents/GuideComposer Signing/guidecomposer-signing.p12`. Set
+`ZXPSIGNCMD` or `GUIDECOMPOSER_CERT_DIR` to override those two paths.
 
 Use the same certificate for every release. Updates signed with a different certificate may fail to install over the previous version.
 
@@ -43,8 +53,8 @@ Passing a password as a command argument can expose it to other processes on the
 **macOS / Linux**
 
 ```sh
-export ZXPSIGNCMD=~/Tools/ZXPSignCmd
-export MULLION_CERT=~/Certificates/mullion.p12
+export ZXPSIGNCMD=~/Tools/Adobe-ZXPSignCmd-4.1.1/ZXPSignCmd
+export MULLION_CERT=~/Documents/GuideComposer\ Signing/guidecomposer-signing.p12
 npm run sign:mac          # prompts for the password; writes dist/guidecomposer-<version>.zxp
 ```
 
@@ -55,7 +65,7 @@ npm run build
 $version = node -p "require('./package.json').version"
 $password = Read-Host "Certificate password" -AsSecureString
 $plain = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($password))
-& C:\Tools\ZXPSignCmd.exe -sign dist\guidecomposer "dist\guidecomposer-$version.zxp" C:\Certificates\mullion.p12 $plain -tsa http://timestamp.digicert.com
+& C:\Tools\ZXPSignCmd.exe -sign dist\guidecomposer "dist\guidecomposer-$version.zxp" C:\Certificates\guidecomposer-signing.p12 $plain -tsa http://timestamp.digicert.com
 & C:\Tools\ZXPSignCmd.exe -verify "dist\guidecomposer-$version.zxp" -certinfo
 ```
 
