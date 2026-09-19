@@ -463,8 +463,8 @@ async function main() {
         await evaluate(setField("patternSize", "24"));
         await evaluate(setField("pattern", "square"));
         await evaluate(setField("type", "columns"));
-        await sleep(450);
-        check(/Previewing/.test(await evaluate(text("status"))), "preview resumes for smaller grids: " + await evaluate(text("status")));
+        const previewResumed = await waitFor(`/Previewing/.test(document.getElementById("status").textContent)`);
+        check(previewResumed, "preview resumes for smaller grids: " + await evaluate(text("status")));
         await evaluate(click("generate"));
         await sleep(300);
         check(/Added a column grid to Artboard 1 \(22 shapes\)/.test(await evaluate(text("status"))), "generate reports result: " + await evaluate(text("status")));
@@ -766,8 +766,8 @@ async function main() {
         await sleep(300);
         check(/Redrew the construction lines/.test(await evaluate(text("status"))), "generating again replaces construction lines");
         await evaluate(click("clear"));
-        await sleep(300);
-        check(/Cleared construction lines from Artboard 1/.test(await evaluate(text("status"))), "clear construction: " + await evaluate(text("status")));
+        const constructionCleared = await waitFor(`/Cleared construction lines from Artboard 1/.test(document.getElementById("status").textContent)`);
+        check(constructionCleared, "clear construction: " + await evaluate(text("status")));
         await evaluate(setField("conExtend", "artboard"));
         await evaluate(setField("conCenter", false));
         await evaluate(setField("conDiagonals", false));
