@@ -193,3 +193,25 @@ test("layouts hand back their own copy of a block list", () => {
     assert.equal(resolveLayout(layout, SIZES.letter, "pt").blocks.length, 3);
     assert.equal(layout.settings.blocks[0].columns, 4);
 });
+
+test("a layout with its own units resets lengths in those units, not in points", () => {
+    const inches = LAYOUTS.find((l) => l.settings && l.settings.units === "in");
+    const resolved = resolveLayout(inches, [0, 792, 612, 0], "pt");
+    assert.equal(resolved.units, "in");
+    // The reset values are written in points; handing back 12 for a baseline
+    // would mean twelve inches the moment this layout is applied.
+    assert.equal(resolved.baselineSpacing, 0.167, "12 pt baseline expressed in inches");
+    assert.equal(resolved.patternSize, 0.333, "24 pt pattern cell expressed in inches");
+
+    const millimetres = LAYOUTS.find((l) => l.settings && l.settings.units === "mm");
+    const mm = resolveLayout(millimetres, [0, 792, 612, 0], "pt");
+    assert.equal(mm.baselineSpacing, 4.2);
+    assert.equal(mm.patternSize, 8.5);
+
+    // Every layout must stay buildable after its own reset.
+    for (const layout of LAYOUTS) {
+        const settings = resolveLayout(layout, [0, 792, 612, 0], "pt");
+        const built = core.buildGrid([0, 792, 612, 0], settings);
+        assert.equal(typeof built.ok, "boolean", layout.id);
+    }
+});

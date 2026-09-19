@@ -726,6 +726,24 @@ async function main() {
         check(await evaluate(`document.getElementById("opacity-slider").value`) === "70", "slider follows the field");
         await evaluate(click("reset"));
 
+        // ------------------------------------------------- settings from the document
+        await evaluate(click("reset"));
+        await evaluate(`document.querySelectorAll("details.section").forEach((d) => { d.open = true; })`);
+        await evaluate(setTarget("active"));
+        await evaluate(click("load-document-grid"));
+        await sleep(300);
+        check(/No Mullion grid on this artboard/.test(await evaluate(text("status"))), "nothing to read before a grid exists: " + await evaluate(text("status")));
+        await evaluate(setField("columns", "5"));
+        await evaluate(click("generate"));
+        await sleep(300);
+        await evaluate(click("reset"));
+        check(await evaluate(value("columns")) === "12", "reset returns to the default");
+        await evaluate(click("load-document-grid"));
+        await sleep(300);
+        check(await evaluate(value("columns")) === "5" && /Loaded the settings that drew this grid/.test(await evaluate(text("status"))), "a grid hands its settings back: " + await evaluate(text("status")) + " + ");
+        await evaluate(click("clear"));
+        await sleep(300);
+
         // ---------------------------------------------------------------- InDesign vocabulary and page settings
         await load("?theme=dark&host=indesign");
         await evaluate(`(() => { const s = document.getElementById("target-mode"); s.value = "active"; s.dispatchEvent(new Event("change", { bubbles: true })); })()`);

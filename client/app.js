@@ -55,7 +55,7 @@
 
     const formats = window.MullionFormats || { GROUPS: [], FORMATS: [], find: () => null, toPoints: () => ({}), label: () => "" };
 
-    const HOST_METHODS = ["status", "preview", "clearPreview", "generate", "clear", "setGridLayer", "resizeArtboards", "alignSelection", "textMetrics", "applyPageMargins", "selectionGeometry", "drawTestLine"];
+    const HOST_METHODS = ["status", "preview", "clearPreview", "generate", "clear", "setGridLayer", "resizeArtboards", "alignSelection", "textMetrics", "applyPageMargins", "selectionGeometry", "documentGrid", "drawTestLine"];
     const LENGTH_FIELDS = ["columnGutter", "rowGutter", "marginTop", "marginRight", "marginBottom", "marginLeft", "baselineSpacing", "baselineOffset", "patternSize", "conPadding"];
     const MARGIN_FIELDS = ["marginTop", "marginRight", "marginBottom", "marginLeft"];
     const NUMBER_FIELDS = LENGTH_FIELDS.concat(["columns", "rows", "strokeWidth", "opacity", "dotSize", "rings", "spokes", "gutterOpacity", "overlayColumns", "patternAngle"]);
@@ -395,7 +395,7 @@
                 state.groups = state.groups.filter((g) => indices.indexOf(g.artboard) === -1);
             }
             const replaced = before - state.groups.length;
-            resolved.boards.forEach((b) => state.groups.push({ kind, artboard: b.index }));
+            resolved.boards.forEach((b) => state.groups.push({ kind, artboard: b.index, settings: payload.settings }));
             state.layer = state.layer || { visible: true, locked: false };
             state.layer.visible = true;
             if (kind === "final") {
@@ -506,6 +506,14 @@
                     return noDocument;
                 }
                 return ok({ size: 11, leading: 14, autoLeading: false, font: "Helvetica" });
+            },
+            // Grids record the settings that drew them, as tags in the real host.
+            documentGrid: () => {
+                if (!state.hasDocument) {
+                    return noDocument;
+                }
+                const grid = state.groups.find((g) => g.kind === "final" && g.artboard === 0 && g.settings);
+                return grid ? ok({ found: true, schema: 1, settings: grid.settings, area: "artboard:0" }) : ok({ found: false });
             },
             drawTestLine: () => {
                 if (!state.hasDocument) {
@@ -795,6 +803,7 @@
         presetCancel: $("preset-cancel"),
         reset: $("reset"),
         testLine: $("test-line"),
+        loadDocumentGrid: $("load-document-grid"),
         previewToggle: $("preview-toggle"),
         clear: $("clear"),
         generate: $("generate"),
@@ -2476,6 +2485,26 @@
         }
     }
 
+    /*
+     * Grids carry the settings that drew them, so a document opened later (or by
+     * someone else) can hand its grid back to the panel.
+     */
+    async function loadDocumentGrid() {
+        const response = await queue.enqueue("documentGrid");
+        if (response.superseded) {
+            return;
+        }
+        if (!response.ok) {
+            sayError(response);
+            return;
+        }
+        if (!response.data.found) {
+            say("No Mullion grid on this " + nouns().one + " to read settings from.");
+            return;
+        }
+        applySettings(settingsFromStored(response.data.settings), "Loaded the settings that drew this grid.");
+    }
+
     async function drawTestLine() {
         const response = await queue.enqueue("drawTestLine");
         if (response.superseded) {
@@ -3417,6 +3446,7 @@
         els.generate.addEventListener("click", generate);
         els.clear.addEventListener("click", clear);
         els.testLine.addEventListener("click", drawTestLine);
+        els.loadDocumentGrid.addEventListener("click", loadDocumentGrid);
 
         // Arrow keys move between the mode tabs, which changes the mode as they
         // go: a mode entered that way keeps focus on the tabs.

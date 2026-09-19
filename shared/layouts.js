@@ -449,10 +449,25 @@
      * Returns every grid field the layout decides: the ones it sets, and the
      * ones it resets. Appearance is left alone.
      */
+    // The reset lengths are written in points; a layout that brings its own
+    // units must hand them back in those units, or a 12 pt baseline would become
+    // a 12 inch one the moment an inch layout is applied.
+    var RESET_LENGTHS = ["columnGutter", "rowGutter", "marginTop", "marginRight", "marginBottom", "marginLeft",
+        "baselineSpacing", "baselineOffset", "patternSize"];
+
     function resolveLayout(layout, rect, units) {
         var out = assign(resetSettings(), layout.settings);
         out.units = layout.settings.units || units || "pt";
         out.blocks = copyList(out.blocks); // Never hand back the library's own array.
+        var perUnit = POINTS_PER_UNIT[out.units] || 1;
+        if (perUnit !== 1) {
+            for (var r = 0; r < RESET_LENGTHS.length; r++) {
+                var field = RESET_LENGTHS[r];
+                if (!Object.prototype.hasOwnProperty.call(layout.settings, field)) {
+                    out[field] = roundFor(RESET[field] / perUnit, out.units);
+                }
+            }
+        }
         var rel = layout.relative;
         if (rel) {
             var width = rect[2] - rect[0];

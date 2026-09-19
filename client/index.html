@@ -350,7 +350,7 @@
             <option value="in">Inches</option>
           </select>
         </label>
-        <label class="check check--inline" data-for="columns modular baseline">
+        <label class="check check--inline" data-for="columns modular baseline pattern">
           <input type="checkbox" name="extendToEdges">
           <span>Extend to edges</span>
         </label>
@@ -505,6 +505,8 @@
           <button type="button" class="button button--quiet" id="presets-export">Export presets</button>
           <button type="button" class="button button--quiet" id="presets-import">Import presets</button>
         </div>
+        <button type="button" class="button button--quiet" id="load-document-grid">Use this document's grid settings</button>
+        <p class="note">Grids remember the settings that drew them, so you can pick up a document a colleague set up.</p>
         <button type="button" class="button button--quiet" id="reset">Reset settings to defaults</button>
         <button type="button" class="button button--quiet" id="test-line">Draw test line</button>
         <p class="note">The test line checks that Mullion can draw in this document. Clear removes it.</p>

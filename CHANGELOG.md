@@ -13,6 +13,19 @@ First release candidate.
 - Compound grids (overlay columns) and square modules.
 - Patterns: square grid, dot grid, isometric grid, hexagons, diagonal grid at any angle, and radial grid.
 
+### Safety and ownership
+
+- Which artboard a grid belongs to is worked out from where the grid sits, so deleting or reordering artboards no longer sends Clear to the wrong one.
+- Grids stay Mullion's own at any depth, so grouping one with your artwork no longer makes it impossible to clear.
+- Object and construction grids are matched by overlap, so moving the artwork replaces its grid instead of drawing a second one on top.
+- A new grid is drawn before the old one is removed, so a failure can never leave you with neither; in InDesign the failure now reaches InDesign's own rollback.
+- Grids you have edited are handed back to you rather than deleted, and reported as kept.
+- Previews left behind by a crash, or by a file saved while a preview was on screen, are cleared the next time the panel reads the document, and any grid they hid is shown again.
+- Ending a preview puts back a grid layer you had hidden.
+- Every call pins the coordinate system it reads and writes in, so another script's settings cannot place grids, construction lines or snapped objects away from where they belong.
+- Modal dialogs are suppressed while Mullion runs, so a stray alert can no longer park a call for ever.
+- Every grid records the settings that drew it, and **More > Use this document's grid settings** reads them back, so a document carries the recipe for its own grid.
+
 ### Construction lines
 
 - Select a logo or artwork to draw its bounding box, key lines through anchors and curve extremes, and fitted circles, with optional center lines and diagonals.
@@ -86,6 +99,8 @@ First release candidate.
   with acceptance criteria — including the one table of every placeholder.
 
 ### Development
+
+- `scripts/qa/run-illustrator-qa.sh` runs 72 checks in a real Illustrator and fails the run if any of them do, so the host can be verified the same way every release.
 
 - ES3 checker for host scripts, an automated test suite covering the grid
   engine, both host adapters against fake DOMs, the layout library and the
