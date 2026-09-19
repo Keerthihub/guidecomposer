@@ -41,16 +41,22 @@ async function main() {
         "--headless=new", `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`,
         "--no-first-run", "--no-default-browser-check", "--allow-file-access-from-files",
         // Linux CI runners restrict the user namespaces Chrome's sandbox needs.
-        ...(process.platform === "linux" ? ["--no-sandbox"] : []),
+        ...(process.platform === "linux" ? ["--no-sandbox", "--disable-dev-shm-usage"] : []),
+        "--disable-gpu",
         "about:blank"
-    ], { stdio: "ignore" });
+    ], { stdio: ["ignore", "ignore", "pipe"] });
+    let chromeStderr = "";
+    chrome.stderr.on("data", (chunk) => {
+        // Keep only the useful tail and print it only when startup fails.
+        chromeStderr = (chromeStderr + chunk.toString()).slice(-4000);
+    });
 
     let ws;
     const failures = [];
     const pageErrors = [];
     try {
         let target;
-        for (let i = 0; i < 50 && !target; i++) {
+        for (let i = 0; i < 150 && !target; i++) {
             await sleep(100);
             try {
                 const list = await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json();
@@ -59,7 +65,7 @@ async function main() {
                 // Chrome is still starting.
             }
         }
-        if (!target) throw new Error("Could not connect to headless Chrome");
+        if (!target) throw new Error("Could not connect to headless Chrome" + (chromeStderr ? ":\n" + chromeStderr : ""));
 
         ws = new WebSocket(target.webSocketDebuggerUrl);
         await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject; });
@@ -102,6 +108,16 @@ async function main() {
             const r = await send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true });
             if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text);
             return r.result.value;
+        };
+        const waitFor = async (expression, timeoutMs = 3000) => {
+            const deadline = Date.now() + timeoutMs;
+            let value;
+            do {
+                value = await evaluate(expression);
+                if (value) return value;
+                await sleep(50);
+            } while (Date.now() < deadline);
+            return value;
         };
         const load = async (query) => {
             await send("Page.navigate", { url: PAGE + query });
@@ -414,12 +430,10 @@ async function main() {
         check(await evaluate(`document.getElementById("toggle-visible").disabled`) === false, "show/hide enabled once a grid exists");
         check(await evaluate(`document.getElementById("toggle-lock").dataset.engaged`) === "true", "lock shows engaged (grids locked by default)");
         await evaluate(click("toggle-visible"));
-        await sleep(200);
-        check(await evaluate(text("status")) === "Grids hidden.", "hide grids");
-        check(await evaluate(`document.getElementById("toggle-visible").title`) === "Show grids", "button now offers Show grids");
+        check(await waitFor(`${text("status")} === "Grids hidden."`), "hide grids");
+        check(await waitFor(`document.getElementById("toggle-visible").title === "Show grids"`), "button now offers Show grids");
         await evaluate(click("toggle-visible"));
-        await sleep(200);
-        check(await evaluate(text("status")) === "Grids shown.", "show grids");
+        check(await waitFor(`${text("status")} === "Grids shown."`), "show grids");
         await evaluate(click("toggle-lock"));
         await sleep(200);
         check(await evaluate(text("status")) === "Grids unlocked.", "unlock grids");
@@ -470,8 +484,7 @@ async function main() {
         await evaluate(`(() => { const c = document.getElementById("add-mode"); c.checked = false; c.dispatchEvent(new Event("change", { bubbles: true })); })()`);
         await evaluate(setField("type", "columns"));
         await evaluate(click("clear"));
-        await sleep(300);
-        check(/Cleared 2 grids from Artboard 1/.test(await evaluate(text("status"))), "clear reports result: " + await evaluate(text("status")));
+        check(await waitFor(`/Cleared 2 grids from Artboard 1/.test(${text("status")})`), "clear reports result: " + await evaluate(text("status")));
         check(await evaluate(`document.getElementById("preview-toggle").checked`) === false &&
             /Preview is off/.test(await evaluate(text("status"))), "Clear stops previewing and says so: " + await evaluate(text("status")));
 
