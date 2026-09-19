@@ -6,6 +6,8 @@ Sales page copy, pricing, screenshots, and a demo video script. Keep every claim
 **Tagline:** Professional Layout Grids for Illustrator
 **Scope of this release:** Illustrator only. InDesign is written but has never been run in InDesign, so it is not declared in the manifest and must not appear in any listing, screenshot or claim until `npm run qa:indesign` passes. Photoshop is not supported and is not planned.
 
+**Business model:** the extension is free and open source (MIT). Money comes from the optional Supporter Pack and custom work, never from locking features. Nothing in this file may describe a paid version of the plugin, a licence key, or a feature the free download does not have.
+
 ## Positioning
 
 **For** designers who build layouts in Adobe Illustrator
@@ -83,14 +85,42 @@ GuideComposer only ever changes what it created. Grids live on their own non-pri
 
 ### Call to action
 
-Get GuideComposer — [PRICE], one-time purchase.
+Download GuideComposer — free, open source, no account.
 
 ## Pricing
 
-- **Launch price: $29**, rising to **$39** after the first month or first 100 sales. The feature set (library, alignment, composition, patterns, construction lines) supports pricing above basic column tools; a launch discount rewards early buyers and reviews.
-- **Studio license (5 seats): $99** once teams start asking. Preset export and import is the selling point for studios.
-- Avoid subscriptions; "one-time purchase, no account" is a reason to buy.
-- Use your beta survey's price question (BETA.md) to confirm before launch.
+The extension is free and open source (MIT). Revenue comes from materials and
+work sold beside it, never from unlocking features. There is no paid tier of the
+plugin, no licence key, and no upgrade prompt.
+
+| | Price | What it is |
+| --- | --- | --- |
+| **GuideComposer** | Free | The complete extension. GitHub and Adobe Exchange. |
+| **Founding Supporter Pack** | $12 | Template `.ai` files, a beginner guide, tutorials. |
+| **Custom grid system** | $49 / $99 / $199+ | Designer / studio / agency. Built to brief. |
+
+**The pack must not be "more layouts".** The free extension already ships 128
+layouts in ten categories, including 11 print/poster, 8 screen/UI, 8 social and
+20 modular. A pack of "50+ premium grid presets" would be selling a worse
+version of something the user already has, and the first review that notices
+will say so. Sell what the extension cannot be:
+
+- **Illustrator `.ai` documents** — a finished magazine spread, a poster series,
+  a brand-guidelines page, each built on a GuideComposer grid, with the layers,
+  type styles and swatches set up. The grid is free; the document around it is
+  the work.
+- **Teaching** — the beginner PDF and the videos. Most people who download a
+  grid panel do not know when to use a 12-column over a modular grid, or how a
+  baseline grid relates to leading. That gap is real, and the plugin does not
+  fill it.
+- **Being the reason it exists** — a supporter badge, name in the README,
+  early access. Some buyers of a $12 pack are paying for the project, not the
+  files. Say so honestly rather than padding the file count.
+
+Guidance: keep launch to one paid item. Add tiers only once people are using the
+free extension and asking for something specific. Use your beta survey's price
+question (BETA.md) to test the $12 figure, and ask testers directly what they
+would want in a pack — that answer is worth more than a guess here.
 
 ## Screenshots
 

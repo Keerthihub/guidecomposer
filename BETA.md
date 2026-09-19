@@ -25,7 +25,7 @@ Mix Illustrator versions (2022 through the latest) and screen setups (docked, fl
 >
 > I'm building GuideComposer, a panel that makes layout grids in Illustrator: columns, modular and baseline grids, composition guides like the golden spiral, and patterns. You can put a grid inside any object, snap artwork to it, and pick from over a hundred ready-made layouts.
 >
-> I'm looking for a few designers to use it on real work for two weeks and tell me what's confusing, broken, or missing. It takes about 15 minutes to get started, plus a short feedback form at the end. Beta testers get the full version free when it launches.
+> I'm looking for a few designers to use it on real work for two weeks and tell me what's confusing, broken, or missing. It takes about 15 minutes to get started, plus a short feedback form at the end. It is free and open source, and it will stay that way — you are not testing a trial.
 >
 > It works offline, needs no account, and never touches artwork it didn't create.
 >

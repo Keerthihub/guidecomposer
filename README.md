@@ -8,6 +8,7 @@ GuideComposer draws column, modular, and baseline grids, classic grid systems, c
 - Platform: CEP panel extension (Illustrator has no UXP support)
 - Declared support: Illustrator 2022 (26.0) or later; macOS and Windows. **The declared range is wider than what has been run** — see [Verification status](#verification-status), and give customers [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) instead of that table.
 - **This release ships Illustrator only.** The InDesign adapter, its tests and its QA script stay in the tree and stay green, but `CSXS/manifest.xml` declares `ILST` alone, so the panel does not appear in InDesign. Declaring `IDSN` is gated on `npm run qa:indesign` passing in a real InDesign — see the InDesign row below.
+- Free and open source (MIT). Never sold, nothing gated — see [Licence and third-party code](#licence-and-third-party-code)
 - No network access, no accounts, no Node.js inside the panel
 
 This file is for whoever works on the code. Customer-facing documentation lives
@@ -391,24 +392,30 @@ What the rehearsal does not prove: that the rename works for *your* name and id.
 Run `npm run check && npm run test:ui` yourself afterwards, and reinstall the
 development extension before trusting it.
 
-After release, don't change the id: Clear recognizes grids by it, so grids made by earlier versions would no longer be cleared. The same change also strands the customer's settings and presets, which CEP stores per extension id — see [docs/UPDATING.md](docs/UPDATING.md).
+After release, don't change the id: Clear recognizes grids by it, so grids made by earlier versions would no longer be cleared. The same change also strands the user's settings and presets, which CEP stores per extension id — see [docs/UPDATING.md](docs/UPDATING.md).
 
 ## Licence and third-party code
 
-This is **not** open-source software. It is a paid, proprietary product.
+GuideComposer is free and open source under the **MIT licence**. The extension
+is never sold and nothing in it is gated; revenue comes from an optional
+Supporter Pack and custom work, which are not in this repository.
 
-- [LICENSE](LICENSE) — the end-user licence agreement a buyer accepts: personal
-  and commercial use, no redistribution, no warranty. It is a **template with
-  placeholders, not reviewed by a lawyer**; see
-  [docs/LAUNCH-CHECKLIST.md](docs/LAUNCH-CHECKLIST.md), step 3.
+- [LICENSE](LICENSE) — MIT, plus a plain-language section on what it does not
+  cover: the vendored Adobe and public-domain files, the Adobe application
+  itself, the separately sold materials, and the name. One placeholder left,
+  `[COPYRIGHT_HOLDER]`.
+- [TERMS.md](TERMS.md) — Part 1 is the free extension and is finished. Part 2 is
+  the paid pack and is a **template with placeholders, not reviewed by a
+  lawyer**; see [docs/LAUNCH-CHECKLIST.md](docs/LAUNCH-CHECKLIST.md), step 3.
 - [NOTICE](NOTICE) — third-party attribution for `client/vendor/CSInterface.js`
-  (Adobe) and `host/vendor/json2.js` (public domain), quoted from the files as
-  shipped. These notices must travel with every copy.
+  (Adobe, under Adobe's own terms) and `host/vendor/json2.js` (public domain),
+  quoted from the files as shipped. The MIT licence on our code does not extend
+  to theirs, and these notices must travel with every copy.
 - [SECURITY.md](SECURITY.md) — how to report a vulnerability, and the properties
   the automated checks enforce (no network, no Node.js, no injection, no
   development files in the package).
 
 **The licence cannot go inside the `.zxp`**: the build only permits `CSXS/`,
 `client/`, `host/`, `shared/` and `icons/`, and the release checks reject
-anything else. It reaches the customer in the sales zip and on the listing page
+anything else. It reaches users through the repository and the GitHub Release
 instead — see [scripts/package.md](scripts/package.md) → Distribute.

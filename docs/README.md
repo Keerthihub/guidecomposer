@@ -1,11 +1,11 @@
 # Documentation
 
-**For customers** — written to be read by someone who bought the plugin, and
+**For users** — written to be read by anyone who installed the plugin, and
 safe to publish as-is (they ask for no registry edits and no terminal commands):
 
 | Page | Read it when |
 | --- | --- |
-| [COMPATIBILITY.md](COMPATIBILITY.md) | Before buying: which applications, versions and systems are supported |
+| [COMPATIBILITY.md](COMPATIBILITY.md) | Before installing: which applications, versions and systems are supported |
 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | The panel is missing, blank, or showing a message; also how to find your version and report a bug |
 | [UPDATING.md](UPDATING.md) | Before updating, reinstalling, or moving to a new computer — what survives and what doesn't |
 

@@ -1,76 +1,37 @@
 # Launch checklist
 
-Everything still standing between this repository and a product someone can buy.
-Only you can do these: they need a legal name, a bank account, a certificate, a
-clean machine, or a decision.
+Everything still standing between this repository and a launch. Only you can do
+these: they need a legal name, a certificate, a clean machine, or a decision.
 
-Work top to bottom — later steps depend on earlier ones (the name has to be
-final before the artwork; the certificate before the signing; the signing before
-anyone can test what customers will install). Each step says **how you know it
-is done**.
+**The model.** The extension is free and open source under the MIT licence.
+Nobody pays to unlock it, and nothing in it may ever be gated. Revenue comes
+from an optional Supporter Pack and from custom work, sold beside it. That
+changes what this list is for: the goal is no longer "a stranger can buy it",
+it is **"a stranger can install it in two minutes without being asked for
+anything"** — because adoption is what the paid things depend on.
+
+Work top to bottom — later steps depend on earlier ones (the certificate before
+the signing; the signing before anyone can test what users will install). Each
+step says **how you know it is done**.
 
 Nothing here is blocked by code. The code is finished and tested; this list is
 the business.
 
 ---
 
-## 1. Choose the final name, and clear it
+## 1 and 2. Name and rename — done
 
-The product still carries a placeholder name and the placeholder extension id
-`com.keerthi.guidecomposer`. (Once you have run step 2, this page renames itself along
-with everything else, and steps 1 and 2 are behind you.)
+The product is **GuideComposer**, id `com.keerthi.guidecomposer`, renamed
+throughout by `npm run rename`. Tagline: *Professional Layout Grids for
+Illustrator*.
 
-- [ ] Search national trademark registers for the name in the classes that cover
-      computer software, at minimum where you will sell and where you live
-      (USPTO TESS, EUIPO eSearch, UK IPO, WIPO Global Brand Database — all free).
-- [ ] Search the Adobe Exchange / Creative Cloud Marketplace and the app stores
-      for an existing plugin with a confusable name.
-- [ ] Check that the matching domain and social handles are available, if you
-      want them.
-- [ ] If the stakes are high, have a trademark attorney do a clearance search.
-      This is the one piece of legal advice that is cheap relative to the cost of
-      being wrong after launch.
+**The id is now frozen.** `Clear` finds grids by it, so changing it again after
+the first public release would strand every grid drawn by an earlier version.
 
-**Done when:** you have written the final name and the final reverse-DNS id
-(e.g. `com.yourstudio.yourproduct`) somewhere permanent, and you are willing to
-put it on a receipt.
-
-**Then:** *Reference: `../README.md` → Renaming.*
-
----
-
-## 2. Run the rename tool
-
-```sh
-npm run rename -- --name "Your Product" --id com.yourstudio.yourproduct --dry-run
-npm run rename -- --name "Your Product" --id com.yourstudio.yourproduct
-npm run check && npm run test:ui
-npm run icons        # only if you also changed the icon
-```
-
-The tool renames everything customers see, and leaves internal identifiers
-alone. The **Rename rehearsal** job in `.github/workflows/check.yml` runs this
-same sequence on a throwaway copy on every push, so it is exercised
-continuously — but it has never been run on *your* chosen name.
-
-- [ ] Rename run, `npm run check` and `npm run test:ui` pass afterwards.
-- [ ] Development extension reinstalled
-      (`scripts/install-dev-mac.sh --uninstall && scripts/install-dev-mac.sh`)
-      and the panel opens under its new name.
-- [ ] The placeholder-name note has disappeared from `README.md` (the tool
-      removes it).
-
-**Done when:** `grep -ri mullion . --exclude-dir=node_modules --exclude-dir=.git`
-returns only internal identifiers (`MullionCore`, `Mullion.api`,
-`mullion.settings.v1`, and the rename tool and its test), and nothing a customer
-could read.
-
-**Do this before any artwork, any listing text, and any sale.** After the first
-public release the id must never change again: `Clear` finds grids by it, so
-grids made by earlier versions would become unremovable (`docs/UPDATING.md`,
-last table row).
-
-*Reference: `../README.md` → Renaming; `../scripts/rename.js`.*
+One thing was deliberately skipped and is still worth doing before you publish
+widely: a trademark search on the name (USPTO TESS, EUIPO eSearch, UK IPO, WIPO
+Global Brand Database — all free), plus a look through Adobe Exchange for a
+confusable plugin name. Cheap now; expensive after people know the name.
 
 ---
 
@@ -84,22 +45,29 @@ grep -rn "\[[A-Z_]\{3,\}\]" --include="*.md" --include="*.yml" \
      --include="LICENSE" --include="NOTICE" . | grep -v node_modules
 ```
 
-- [ ] `LICENSE` — the end-user licence agreement the buyer accepts.
-- [ ] `TERMS.md` — the short public summary.
-- [ ] `PRIVACY.md` — already accurate about behaviour; needs your identity,
-      support address, and retention periods.
-- [ ] `NOTICE` — needs your name and the year only.
-- [ ] `SECURITY.md` — support address and response time.
-- [ ] `docs/COMPATIBILITY.md`, `docs/TROUBLESHOOTING.md` — support address, the
-      versions you actually tested, refund wording.
-- [ ] `.github/ISSUE_TEMPLATE/config.yml` — your GitHub owner/repo and support
-      address, **or** delete that folder if the repository stays private.
-- [ ] `MARKETING.md` — price and update policy (step 9).
+The MIT licence cut most of this work away. `LICENSE` now needs **one** token —
+the copyright holder — and needs no lawyer. What remains is about the paid pack
+and about support.
 
-**Done when:** the `grep` above returns nothing, and a lawyer qualified in your
-jurisdiction has read `LICENSE` and `TERMS.md`. Selling to consumers in the EU
-and UK brings statutory rights (withdrawal period, guarantees) that a template
-cannot cover for you.
+- [ ] `LICENSE` — `[COPYRIGHT_HOLDER]` only. The name you want on the copyright
+      line of every copy, forever. A personal name is normal for a solo project.
+- [ ] `NOTICE` — the same name.
+- [ ] `TERMS.md` — **Part 2 only.** Part 1 (the free extension) is finished; the
+      pack's terms need the store, seat holder, update and refund policies.
+- [ ] `PRIVACY.md` — your identity, support address, retention periods, and what
+      your store passes you about a buyer.
+- [ ] `SECURITY.md` — support address and response time.
+- [ ] `docs/COMPATIBILITY.md`, `docs/TROUBLESHOOTING.md` — support address and
+      the versions you actually tested.
+- [ ] `.github/ISSUE_TEMPLATE/config.yml` — your GitHub owner/repo and support
+      address. The repository is public now, so keep this rather than deleting
+      it: issues are how free users reach you without costing you an inbox.
+
+**Done when:** the `grep` above returns nothing. A lawyer is no longer needed for
+`LICENSE` — MIT is a standard, widely-litigated text and changing a word of it
+makes it worse. Have someone qualified read `TERMS.md` Part 2 before you take
+money, and note that selling to consumers in the EU and UK brings statutory
+rights (withdrawal period, guarantees) that a template cannot cover for you.
 
 *Reference: `../LICENSE`, `../TERMS.md`, `../PRIVACY.md`, `../NOTICE`.*
 
@@ -247,48 +215,77 @@ same thing. For this release they already are.
 
 ---
 
-## 9. Set the price
+## 9. Publish the free extension
 
-- [ ] Read the price question in your beta survey (`../BETA.md`, section 5).
-- [ ] Decide the launch price, the regular price, and whether there is a studio
-      or multi-seat licence — the seat count you choose must match `[SEAT_COUNT]`
-      in `LICENSE` and `TERMS.md`.
-- [ ] Decide the update policy (free within a major version is the usual
-      answer), and write it into `[UPDATE_POLICY]`.
-- [ ] Decide the refund policy, and write it into `[REFUND_POLICY]`.
-- [ ] Check what your store keeps (platform fee, payment fee, VAT/sales tax
-      handling) and whether it acts as merchant of record — if it does not, tax
-      registration is your problem, in every jurisdiction you sell into.
+This is the launch. Everything that earns money depends on it, and nothing here
+involves a payment page.
 
-**Done when:** the price, the seat terms, the update policy, and the refund
-policy say the same thing in the licence, the terms, the listing, and the
-checkout page. `../MARKETING.md` has a starting recommendation, not a decision.
+- [ ] Create the public GitHub repository, push, and check that `LICENSE`,
+      `NOTICE`, `README.md` and `docs/` read correctly to someone who has never
+      seen the project.
+- [ ] Attach the signed `.zxp` to a GitHub Release, with its SHA-256 checksum
+      and install instructions for both operating systems in the release notes.
+      Tagging is what produces it — `../scripts/package.md`.
+- [ ] Write the README's opening for a stranger: what it does, one screenshot or
+      GIF, how to install, and that it is free. Not the internal README's
+      audience — that file is for whoever works on the code.
+- [ ] Add `CONTRIBUTING.md` and a code of conduct if you want contributions, or
+      say plainly in the README that issues are welcome and pull requests are
+      not, if you would rather keep control. Either is fine; silence is not.
+- [ ] Decide what support you actually promise free users, and write it in the
+      README. "Issues are read, replies are not guaranteed" is honest and
+      sustainable. A promise you cannot keep at 1,000 users is worse than none.
+- [ ] Adobe Exchange listing: publisher profile, listing text from
+      `../MARKETING.md`, artwork from `LISTING-ARTWORK.md`, the signed `.zxp`,
+      declared versions, submit for review. Free listings are still reviewed,
+      and review takes time — start it early.
+
+**Done when:** someone who has never spoken to you can find the project, install
+it, and use it, without an account, a key, or an email address.
 
 ---
 
-## 10. Build the sales package and the listing
+## 10. Set up the Supporter Pack
 
-- [ ] Assemble the sales zip: the `.zxp`, the installation guide PDF,
-      `LICENSE.txt`, `PRIVACY.txt`, the troubleshooting page, and a quick-start
-      link (`../scripts/package.md` → Distribute). **The licence cannot go inside
-      the `.zxp`** — the package may only contain the extension's own files — so
-      the zip is how it reaches the customer, and the listing page is where they
-      read it before buying.
-- [ ] Produce the listing artwork (`LISTING-ARTWORK.md`), and confirm the exact
-      pixel sizes in the submission form before drawing anything.
-- [ ] Write the listing text from `../MARKETING.md`, and check every claim in it
-      against what you have actually verified.
-- [ ] Publish the privacy policy and terms at stable public URLs — a store
-      listing needs to link to them, not to a repository file.
-- [ ] Direct sale: set up the store (Gumroad, Lemon Squeezy, your own),
-      test-buy your own product end to end, and confirm the delivery email
-      contains the download and the licence.
-- [ ] Adobe Marketplace (optional, later): publisher profile, listing, upload the
-      signed `.zxp`, declare supported versions, submit for review.
+Only after step 9. The pack is worth nothing until people are using the
+extension.
 
-**Done when:** a stranger can buy it, download it, install it from the
-instructions in the zip, and read the licence they agreed to — without emailing
-you.
+- [ ] **Decide what is actually in it.** The free extension already ships 128
+      layouts, including print, screen, social and modular. A pack of "more
+      presets" competes with the free product and loses. See the Pricing section
+      of `../MARKETING.md` for what to sell instead: Illustrator documents,
+      teaching, and supporting the project.
+- [ ] Make the materials. This is real design work and it is not in this
+      repository; budget for it honestly.
+- [ ] Set up the store (Gumroad or similar), and check whether it is merchant of
+      record. If it is not, VAT and sales-tax registration is your problem in
+      every jurisdiction you sell into — for a $12 product that can cost more
+      than it earns.
+- [ ] Fill `[STORE_NAME]`, `[UPDATE_POLICY]`, `[REFUND_POLICY]`, `[SEAT_HOLDER]`
+      and `[SUPPORT_PERIOD]` in `../TERMS.md`, and make the checkout page say the
+      same thing.
+- [ ] Test-buy your own pack end to end and confirm the delivery email arrives
+      with the download and the terms.
+- [ ] Publish the privacy policy and terms at stable public URLs — a checkout
+      page must link to them, not to a repository file.
+
+**Done when:** you have bought your own pack from a different email address and
+received something you would be happy to have paid $12 for.
+
+---
+
+## 10a. Donations inside the panel — optional, and not yet possible
+
+You asked for a "Support this project" link in an About section. There is no
+About section in the panel today, and no URL to point it at. When you have a
+GitHub Sponsors or Gumroad page, this is a small change: one line in the More
+section beside the version number, opening in the system browser.
+
+Two cautions. Adobe Exchange has rules about external payment links in listed
+extensions — check them before adding it, not after a rejection. And the panel
+currently makes **no network connections at all**, which `PRIVACY.md` and
+`TERMS.md` both state as a feature; a link the user clicks does not break that,
+but anything that loads remotely would.
 
 ---
 
@@ -313,31 +310,31 @@ support copy. "Files" lists every file the token appears in.
 
 | Token | What it is | Files |
 | --- | --- | --- |
-| `[PRODUCT_NAME]` | Final product name (the rename tool fills the rest of the repository; these files use the token because they are written before the name exists) | `LICENSE`, `NOTICE` |
-| `[PUBLISHER_NAME]` | The legal name you sell under — a person or a company | `LICENSE`, `NOTICE`, `PRIVACY.md`, `TERMS.md` |
-| `[PUBLISHER_ADDRESS]` | The postal address on the licence. Required by consumer law in many places; a registered business address, not your home, if you can | `LICENSE`, `PRIVACY.md`, `TERMS.md` |
-| `[JURISDICTION]` | Country (and state/province) whose law governs, and whose courts hear disputes | `LICENSE`, `TERMS.md` |
-| `[SUPPORT_EMAIL]` | The support address from step 4 | `LICENSE`, `PRIVACY.md`, `TERMS.md`, `SECURITY.md`, `docs/TROUBLESHOOTING.md`, `docs/COMPATIBILITY.md`, `.github/ISSUE_TEMPLATE/config.yml` |
-| `[SUPPORT_LANGUAGE]` | The language(s) you answer in | `LICENSE`, `TERMS.md` |
-| `[SUPPORT_PERIOD]` | How long support lasts after purchase (e.g. "12 months") | `LICENSE`, `TERMS.md` |
+| `[COPYRIGHT_HOLDER]` | The name on the copyright line of every copy of the code, for ever. Changing it later does not change copies already published | `LICENSE`, `NOTICE` |
+| `[PUBLISHER_NAME]` | The name you sell the pack under — a person or a company | `PRIVACY.md`, `TERMS.md` |
+| `[PUBLISHER_ADDRESS]` | The postal address on the pack's terms. Required by consumer law in many places; a registered business address, not your home, if you can | `PRIVACY.md`, `TERMS.md` |
+| `[JURISDICTION]` | Country (and state/province) whose law governs the pack's terms | `TERMS.md` |
+| `[SUPPORT_EMAIL]` | The support address from step 4 | `PRIVACY.md`, `TERMS.md`, `SECURITY.md`, `docs/TROUBLESHOOTING.md`, `docs/COMPATIBILITY.md`, `.github/ISSUE_TEMPLATE/config.yml` |
+| `[SUPPORT_LANGUAGE]` | The language(s) you answer in | `TERMS.md` |
+| `[SUPPORT_PERIOD]` | How long pack support lasts after purchase (e.g. "12 months") | `TERMS.md` |
 | `[SUPPORT_RESPONSE_TIME]` | How quickly you answer (e.g. "two working days") | `docs/TROUBLESHOOTING.md`, `SECURITY.md` |
 | `[DATA_REQUEST_RESPONSE_TIME]` | How quickly you answer a data request (e.g. "within 30 days") | `PRIVACY.md` |
 | `[RETENTION_PERIOD]` | How long you keep support email | `PRIVACY.md` |
-| `[SEAT_COUNT]` | How many computers one licence covers | `LICENSE`, `TERMS.md` |
-| `[SEAT_HOLDER]` | Who may use those installations (e.g. "one named person") | `LICENSE`, `TERMS.md` |
-| `[UPDATE_POLICY]` | Which updates are free (e.g. "all 1.x updates are free") | `LICENSE`, `TERMS.md`, `MARKETING.md` |
-| `[REFUND_POLICY]` | Your refund terms in full | `LICENSE`, `TERMS.md` |
-| `[REFUND_POLICY_SHORT]` | One clause version, for the InDesign beta note | `docs/COMPATIBILITY.md` |
-| `[LIABILITY_PERIOD]` | Look-back period for the liability cap (e.g. "12 months") | `LICENSE` |
-| `[PRICE]` | The launch price | `MARKETING.md` |
-| `[STORE_NAME]` | The store you sell through | `PRIVACY.md` |
+| `[SEAT_HOLDER]` | Who may use the pack's materials (e.g. "one named person") | `TERMS.md` |
+| `[UPDATE_POLICY]` | Whether pack buyers get later versions of the pack | `TERMS.md`, `MARKETING.md` |
+| `[REFUND_POLICY]` | Your refund terms for the pack, in full | `TERMS.md` |
+| `[STORE_NAME]` | The store you sell the pack through | `PRIVACY.md`, `TERMS.md` |
 | `[ORDER_DETAILS]` | What that store passes to you about a buyer | `PRIVACY.md` |
-| `[VERSION]` | The version these documents were written for | `LICENSE`, `docs/COMPATIBILITY.md` |
-| `[DATE]` / `[YEAR]` | Publication date; copyright year | `LICENSE`, `NOTICE`, `PRIVACY.md`, `TERMS.md` |
+| `[VERSION]` | The version these documents were written for | `docs/COMPATIBILITY.md` |
+| `[DATE]` | The date these documents were last updated | `PRIVACY.md`, `TERMS.md` |
+| `[ISSUES_URL]` | Where free users report bugs — your GitHub issues page | `TERMS.md` |
 | `[TESTED_ILLUSTRATOR_VERSIONS]` | The Illustrator versions you have actually run it in | `docs/COMPATIBILITY.md` |
 | `[TESTED_MACOS_VERSIONS]` | The macOS versions you tested (from step 7) | `docs/COMPATIBILITY.md` |
 | `[TESTED_WINDOWS_VERSIONS]` | The Windows versions and builds you tested (from step 7) | `docs/COMPATIBILITY.md` |
-| `[GITHUB_OWNER]` / `[GITHUB_REPO]` | Your GitHub account and repository name, if you make the repository public for issue reporting. If you keep it private, delete `.github/ISSUE_TEMPLATE/` instead and point customers only at email | `.github/ISSUE_TEMPLATE/config.yml` |
+| `[GITHUB_OWNER]` / `[GITHUB_REPO]` | Your GitHub account and repository name | `.github/ISSUE_TEMPLATE/config.yml` |
 
 Two things deliberately left blank because no one but you can know them: the
-identity you trade under, and what you charge.
+identity you trade under, and what you charge for the pack.
+
+`[COPYRIGHT_HOLDER]` is the one that cannot be changed later. It goes on every
+published copy of the code, and copies already out keep whatever it said.

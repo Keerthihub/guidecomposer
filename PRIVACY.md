@@ -48,10 +48,14 @@ us.
 
 ## Purchases
 
-If you bought GuideComposer through a store (for example the Adobe Creative Cloud
-Marketplace, or [STORE_NAME]), that store processes your payment and personal
-information under its own privacy policy, not this one. We receive only what the
-store shares with sellers, such as [ORDER_DETAILS].
+**The extension is free.** Downloading it from GitHub or the Adobe Creative
+Cloud Marketplace involves no payment and no account with us, and we learn
+nothing about you by your downloading it.
+
+If you buy the optional Supporter Pack through [STORE_NAME], that store
+processes your payment and personal information under its own privacy policy,
+not this one. We receive only what the store shares with sellers, such as
+[ORDER_DETAILS].
 
 ## Support requests
 

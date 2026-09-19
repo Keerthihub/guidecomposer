@@ -85,10 +85,17 @@ First release candidate.
 - Applying a layout in other units converts the lengths it doesn't set (24 pt spacing no longer becomes 24 in).
 - When the extension's files change while the panel is open, the panel says so and offers Reload panel, so it never runs stale code against newer host scripts.
 
+### Licence and distribution
+
+- **Free and open source under the MIT licence.** The extension is not sold, and nothing in it is gated behind a payment: there is no licence key, no trial, no locked feature, and no account. Revenue, where there is any, comes from optional materials and custom work sold beside it, which are not part of this repository.
+- `LICENSE` replaces the proprietary end-user agreement with MIT, plus a plain section on what MIT does not cover: the vendored Adobe and public-domain files, the Adobe application itself, separately sold materials, and the name.
+- `TERMS.md` is now in two parts — the free extension under MIT, and the optional paid pack — so the two can never be confused for one another.
+- The vendored files keep their own terms: `client/vendor/CSInterface.js` is Adobe's, `host/vendor/json2.js` is public domain. See `NOTICE`.
+
 ### Hosts
 
 - Illustrator 2022 (26.0) and later on macOS and Windows.
-- **Illustrator only.** InDesign support is written, and tested against a simulated InDesign, but it has never been run in InDesign, so `CSXS/manifest.xml` does not declare it and the panel does not appear there. It will ship in a later release, in the same purchase, once `npm run qa:indesign` passes in a real copy.
+- **Illustrator only.** InDesign support is written, and tested against a simulated InDesign, but it has never been run in InDesign, so `CSXS/manifest.xml` does not declare it and the panel does not appear there. It will ship in a later release, once `npm run qa:indesign` passes in a real copy.
 - Photoshop is not supported and is not planned.
 
 > **The declared Illustrator range is wider than what has been tested.**

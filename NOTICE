@@ -1,14 +1,15 @@
 THIRD-PARTY NOTICES
 ===================
 
-[PRODUCT_NAME]
-Copyright © [YEAR] [PUBLISHER_NAME]. All rights reserved.
-Licensed under the End-User Licence Agreement in LICENSE.
+GuideComposer
+Copyright © 2026 [COPYRIGHT_HOLDER].
+Licensed under the MIT Licence — see LICENSE.
 
-[PRODUCT_NAME] includes the third-party files listed below. They remain the
+GuideComposer includes the third-party files listed below. They remain the
 property of their authors and are used under their own terms. Nothing in
-LICENSE limits your rights under those terms. Do not remove these notices; they
-must travel with every copy of the software (see LICENSE section 4).
+LICENSE limits your rights under those terms, and the MIT licence on our code
+does not extend to theirs. Do not remove these notices; they must travel with
+every copy of the software.
 
 This file was compiled by reading the headers of the files as they are shipped.
 Each quotation below is copied from the file itself.
