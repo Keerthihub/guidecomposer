@@ -1,0 +1,85 @@
+THIRD-PARTY NOTICES
+===================
+
+[PRODUCT_NAME]
+Copyright © [YEAR] [PUBLISHER_NAME]. All rights reserved.
+Licensed under the End-User Licence Agreement in LICENSE.
+
+[PRODUCT_NAME] includes the third-party files listed below. They remain the
+property of their authors and are used under their own terms. Nothing in
+LICENSE limits your rights under those terms. Do not remove these notices; they
+must travel with every copy of the software (see LICENSE section 4).
+
+This file was compiled by reading the headers of the files as they are shipped.
+Each quotation below is copied from the file itself.
+
+--------------------------------------------------------------------------------
+1. CSInterface.js — version 12.0.0
+   Shipped at: client/vendor/CSInterface.js
+   Author:     Adobe Systems Incorporated (Adobe Inc.)
+   Purpose:    The CEP JavaScript bridge. It is how the panel talks to
+               Illustrator and InDesign; a CEP extension cannot work without it.
+   Source:     https://github.com/Adobe-CEP/CEP-Resources (CEP_12.x/CSInterface.js)
+
+   Notice, quoted verbatim from the file header:
+
+       /**************************************************************************************************
+       *
+       * ADOBE SYSTEMS INCORPORATED
+       * Copyright 2020 Adobe Systems Incorporated
+       * All Rights Reserved.
+       *
+       * NOTICE:  Adobe permits you to use, modify, and distribute this file in accordance with the
+       * terms of the Adobe license agreement accompanying it.  If you have received this file from a
+       * source other than Adobe, then your use, modification, or distribution of it requires the prior
+       * written permission of Adobe.
+       *
+       **************************************************************************************************/
+
+       /** CSInterface - v12.0.0 */
+
+   Note for the publisher: the header refers to "the Adobe license agreement
+   accompanying it". Obtain this file from Adobe's own CEP-Resources repository
+   (not from a third party), keep a record of where and when you downloaded it,
+   and read the licence terms that Adobe publishes with the CEP resources. This
+   file is redistributed here on the basis that Adobe publishes it for use in
+   CEP extensions, which are by design redistributed to users. Confirm that with
+   the Adobe terms current at your release date.
+
+--------------------------------------------------------------------------------
+2. json2.js — dated 2023-05-10
+   Shipped at: host/vendor/json2.js
+   Author:     Douglas Crockford
+   Purpose:    Provides JSON.stringify and JSON.parse to ExtendScript, whose
+               ES3 engine has no built-in JSON object.
+   Source:     https://github.com/douglascrockford/JSON-js
+
+   Notice, quoted verbatim from the file header:
+
+       //  json2.js
+       //  2023-05-10
+       //  Public Domain.
+       //  NO WARRANTY EXPRESSED OR IMPLIED. USE AT YOUR OWN RISK.
+       //
+       //  USE YOUR OWN COPY. IT IS EXTREMELY UNWISE TO LOAD CODE FROM SERVERS YOU DO
+       //  NOT CONTROL.
+
+   Public domain: no licence conditions attach, and no attribution is required.
+   It is acknowledged here because the author's notice ships inside the file and
+   must not be stripped.
+
+--------------------------------------------------------------------------------
+
+Nothing else in the shipped package is third-party code. There are no bundled
+fonts (the panel uses the operating system's UI font stack), no icon sets, no
+frameworks, and no dependencies installed at build time that reach the customer:
+the only entry in package.json's devDependencies, acorn, is used by the ES3
+checker and is never packaged.
+
+Build-time tools the publisher uses, which are not distributed with the product
+and so are not licensed to the customer:
+
+  - acorn (MIT) — parses host scripts in scripts/check-es3.js.
+  - ZXPSignCmd (Adobe) — signs the .zxp. Downloaded at release time by
+    .github/workflows/release.yml, pinned to a commit and verified by SHA-256.
+    Not part of the product.

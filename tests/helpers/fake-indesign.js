@@ -33,7 +33,20 @@ const ENUMS = {
     ResizeMethods: { REPLACING_CURRENT_DIMENSIONS_WITH: "ResizeMethods.REPLACING_CURRENT_DIMENSIONS_WITH" },
     SelectionOptions: { ADD_TO: "SelectionOptions.ADD_TO", REPLACE_WITH: "SelectionOptions.REPLACE_WITH" },
     NothingEnum: { NOTHING: "NothingEnum.NOTHING" },
-    Leading: { AUTO: "Leading.AUTO" }
+    Leading: { AUTO: "Leading.AUTO" },
+    RulerOrigin: {
+        PAGE_ORIGIN: "RulerOrigin.PAGE_ORIGIN",
+        SPREAD_ORIGIN: "RulerOrigin.SPREAD_ORIGIN",
+        RULER_PER_PAGE: "RulerOrigin.RULER_PER_PAGE"
+    },
+    UserInteractionLevels: {
+        INTERACT_WITH_ALL: "UserInteractionLevels.INTERACT_WITH_ALL",
+        NEVER_INTERACT: "UserInteractionLevels.NEVER_INTERACT"
+    },
+    BaselineGridRelativeOption: {
+        TOP_OF_PAGE: "BaselineGridRelativeOption.TOP_OF_PAGE",
+        TOP_OF_MARGIN: "BaselineGridRelativeOption.TOP_OF_MARGIN"
+    }
 };
 
 let currentApp = null;
@@ -205,6 +218,21 @@ class Guide extends Labeled {
     }
 }
 
+/*
+ * The cursor sitting in text. InDesign raises an error when you read a property
+ * this doesn't have, rather than returning nothing, which is the trap the
+ * adapter has to survive.
+ */
+class InsertionPoint {
+    constructor() {
+        this.contents = "Heading";
+    }
+
+    get geometricBounds() { throw new Error("Object does not support the property or method 'geometricBounds'"); }
+    get paths() { throw new Error("Object does not support the property or method 'paths'"); }
+    extractLabel() { throw new Error("Object does not support the property or method 'extractLabel'"); }
+}
+
 class Page {
     constructor(doc, index, bounds) {
         this.doc = doc;
@@ -215,6 +243,8 @@ class Page {
         this.guideList = [];
         this.isValid = true;
         this.marginPreferences = { top: 36, bottom: 36, left: 36, right: 36, columnCount: 1, columnGutter: 12 };
+        // On facing pages, odd pages are right-hand and even ones left-hand.
+        this.side = index % 2 === 0 ? "PageSideOptions.RIGHT_HAND" : "PageSideOptions.LEFT_HAND";
         const adder = (Klass) => (layer, at, reference, props) => this.addItem(new Klass(this, layer || doc.activeLayer), props);
         this.rectangles = { add: adder(Rectangle) };
         this.graphicLines = { add: adder(GraphicLine) };
@@ -303,8 +333,16 @@ class Document {
         this.activeLayer = this.layerList[0];
         this.colorList = [];
         this.selectionList = [];
-        this.gridPreferences = { baselineDivision: 12, baselineStart: 36 };
+        this.gridPreferences = {
+            baselineDivision: 12,
+            baselineStart: 36,
+            baselineGridRelativeOption: ENUMS.BaselineGridRelativeOption.TOP_OF_PAGE
+        };
+        this.documentPreferences = { facingPages: false };
         this.swatches = { itemByName: (n) => (n === "None" ? { name: "None", isValid: true } : { isValid: false }) };
+        // A document's view settings: Mullion pins these while it reads geometry.
+        this.viewPreferences = { rulerOrigin: "RulerOrigin.PAGE_ORIGIN" };
+        this.zeroPoint = [0, 0];
         this.strokeStyles = { itemByName: (n) => (["Solid", "Dashed", "Dotted"].includes(n) ? { name: n, isValid: true } : { isValid: false }) };
     }
 
@@ -336,6 +374,14 @@ class Document {
 
     get pageItems() { return collection(this.pageList.flatMap((p) => p.items)); }
 
+    // One spread per page, as in a single-page-spread document. Master spreads
+    // are deliberately absent: Mullion must not treat master items as page grids.
+    get spreads() {
+        return collection(this.pageList.map((page) => ({
+            get pageItems() { return collection(page.items); }
+        })));
+    }
+
     get selection() { return this.selectionList.slice(); }
     set selection(value) { this.selectionList = value ? [].concat(value) : []; }
 }
@@ -345,13 +391,26 @@ function createInDesignHost() {
         name: "Adobe InDesign 2026",
         _documents: [],
         transactions: [],
-        scriptPreferences: { measurementUnit: ENUMS.MeasurementUnits.PICAS, enableRedraw: true },
+        version: "20.0",
+        scriptPreferences: {
+            measurementUnit: ENUMS.MeasurementUnits.PICAS,
+            enableRedraw: true,
+            userInteractionLevel: ENUMS.UserInteractionLevels.INTERACT_WITH_ALL
+        },
         get documents() { return collection(this._documents); },
         get activeDocument() { return this._documents[0]; },
         activeWindow: { get activePage() { return currentApp._activePage; } },
         doScript(fn, language, args, undoMode, name) {
-            this.transactions.push({ name, undoMode, language });
-            return fn();
+            const record = { name, undoMode, language, threw: false };
+            this.transactions.push(record);
+            try {
+                return fn();
+            } catch (err) {
+                // InDesign rolls an ENTIRE_SCRIPT step back only when the error
+                // escapes doScript, so the tests check that it did.
+                record.threw = true;
+                throw err;
+            }
         },
         select(target, option) {
             const doc = this.activeDocument;
@@ -411,4 +470,4 @@ function createInDesignHost() {
     };
 }
 
-module.exports = { createInDesignHost, ENUMS, Rectangle, GraphicLine, TextFrame, Group, ROOT };
+module.exports = { createInDesignHost, ENUMS, Rectangle, GraphicLine, TextFrame, TextSelection: InsertionPoint, Group, ROOT };

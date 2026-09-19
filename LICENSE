@@ -1,0 +1,173 @@
+# End-User Licence Agreement — [PRODUCT_NAME]
+
+> **This is a template, not legal advice.** It was drafted to describe how this
+> software actually behaves, and it has **not** been reviewed by a lawyer. Have
+> a lawyer qualified in [JURISDICTION] review it, and fill in every
+> `[PLACEHOLDER]`, before you sell a single copy. Placeholders are listed in
+> `docs/LAUNCH-CHECKLIST.md`.
+>
+> This is **not** an open-source licence. [PRODUCT_NAME] is proprietary,
+> paid software. Do not replace this file with an MIT or GPL licence unless you
+> intend to give the software away.
+
+Version [VERSION] — last updated [DATE]
+
+## 1. Parties
+
+This agreement is between **[PUBLISHER_NAME]**, of [PUBLISHER_ADDRESS] ("we",
+"us"), and you, the person or organisation that obtained a licence to
+[PRODUCT_NAME] ("you").
+
+By installing or using [PRODUCT_NAME] you accept this agreement. If you do not
+accept it, do not install it, and request a refund under section 9.
+
+## 2. What you are buying
+
+A licence to use [PRODUCT_NAME]. You are not buying the software itself. We keep
+ownership of [PRODUCT_NAME] and of every copy of it, including all intellectual
+property rights in it.
+
+## 3. What you may do
+
+Subject to payment and to the rest of this agreement, we grant you a
+non-exclusive, non-transferable, worldwide licence to:
+
+- **Install and use** [PRODUCT_NAME] on up to [SEAT_COUNT] computers that you
+  own or control, and that are used by [SEAT_HOLDER].
+- **Use it for commercial work.** Artwork, grids, layouts and files you produce
+  with [PRODUCT_NAME] are yours. We claim no rights in them, and you owe us
+  nothing further for them: no royalties, no attribution, no per-project fee.
+- **Keep backup copies** of the installation file for your own use.
+
+## 4. What you may not do
+
+You may not:
+
+- Sell, rent, lend, sublicense, publish, share, or otherwise distribute
+  [PRODUCT_NAME] or its installation file (`.zxp`), in whole or in part,
+  including inside a template, course, bundle, or asset pack.
+- Use one licence across more computers or people than section 3 allows, or
+  share your download link or licence details.
+- Reverse engineer, decompile, or disassemble [PRODUCT_NAME], or attempt to
+  derive its source code, except to the extent that this restriction is
+  prohibited by law in [JURISDICTION].
+- Modify [PRODUCT_NAME], or create derivative works from it, and distribute the
+  result.
+- Remove, obscure or alter any copyright, trademark or licence notice in
+  [PRODUCT_NAME], including the notices in the `NOTICE` file.
+- Use [PRODUCT_NAME] to build a product that competes with it.
+
+Using [PRODUCT_NAME] outside this licence is copyright infringement as well as a
+breach of this agreement.
+
+## 5. Transfers
+
+This licence is personal to you. You may not transfer it to anyone else without
+our written agreement. If you bought it as an organisation, you may reassign it
+between your own staff, provided only [SEAT_COUNT] installations are in use at
+any time.
+
+## 6. Third-party software
+
+[PRODUCT_NAME] includes third-party components listed in the `NOTICE` file
+supplied with it. Those components remain under their own terms, which the
+`NOTICE` file reproduces or points to. Nothing in this agreement limits rights
+you have under those terms.
+
+[PRODUCT_NAME] is an independent product. It is not made, endorsed, supported or
+certified by Adobe. Adobe, Illustrator and InDesign are trademarks of Adobe Inc.
+You need your own licensed copy of Adobe Illustrator or Adobe InDesign to use
+[PRODUCT_NAME].
+
+## 7. Updates
+
+We may, but need not, release updates. Unless we say otherwise at the time of
+sale, [UPDATE_POLICY]. An update replaces the version it updates and is covered
+by this agreement, unless it comes with its own licence.
+
+Nothing obliges us to keep [PRODUCT_NAME] compatible with future versions of
+Adobe Illustrator or Adobe InDesign, or with future operating systems.
+
+## 8. Support
+
+Support is provided at [SUPPORT_EMAIL] on a reasonable-effort basis, in
+[SUPPORT_LANGUAGE], for [SUPPORT_PERIOD] from the date of purchase. Support does
+not include training, custom development, or design advice.
+
+## 9. Refunds
+
+[REFUND_POLICY]
+
+If you bought [PRODUCT_NAME] through a store, that store's refund policy applies
+in addition to any statutory rights you have, and you should ask the store
+first.
+
+## 10. Your data
+
+[PRODUCT_NAME] makes no network connections and collects no data. See
+`PRIVACY.md`.
+
+## 11. No warranty
+
+To the fullest extent permitted by law, [PRODUCT_NAME] is provided **"as is"**
+and **"as available"**, without warranty of any kind, express or implied,
+including any implied warranty of merchantability, fitness for a particular
+purpose, accuracy, or non-infringement.
+
+We do not warrant that [PRODUCT_NAME] will be uninterrupted or error-free, that
+it will work with every version of Illustrator or InDesign, or that any defect
+will be corrected.
+
+**Keep backups.** [PRODUCT_NAME] draws into and deletes from your documents at
+your instruction. Save your work before using it, and keep backups of any file
+that matters.
+
+Some jurisdictions do not allow the exclusion of implied warranties, so parts of
+this section may not apply to you. Consumers may have statutory rights that this
+agreement cannot limit.
+
+## 12. Limitation of liability
+
+To the fullest extent permitted by law:
+
+- We are not liable for any indirect, incidental, special, consequential or
+  punitive damages, or for lost profits, lost business, lost or corrupted
+  artwork, or lost data, however caused.
+- Our total liability for all claims arising out of or relating to
+  [PRODUCT_NAME] is limited to the amount you actually paid for your licence in
+  the [LIABILITY_PERIOD] before the claim arose.
+
+Nothing in this agreement excludes liability that cannot be excluded by law,
+such as liability for death or personal injury caused by negligence, or for
+fraud.
+
+## 13. Termination
+
+This licence ends automatically if you materially breach it, in particular
+section 4. On termination you must stop using [PRODUCT_NAME] and delete every
+copy. Sections 2, 4, 11, 12 and 14 survive termination.
+
+You may end this licence at any time by deleting every copy. Ending it does not
+by itself entitle you to a refund.
+
+## 14. Governing law
+
+This agreement is governed by the laws of [JURISDICTION], and the courts of
+[JURISDICTION] have exclusive jurisdiction over any dispute, except where
+mandatory consumer law gives you the right to bring proceedings where you live.
+
+## 15. Whole agreement
+
+This agreement, with `PRIVACY.md`, `TERMS.md` and the `NOTICE` file, is the
+whole agreement between us about [PRODUCT_NAME]. If any part of it is found
+unenforceable, the rest stays in force.
+
+## 16. Contact
+
+[PUBLISHER_NAME]
+[PUBLISHER_ADDRESS]
+[SUPPORT_EMAIL]
+
+---
+
+Copyright © [YEAR] [PUBLISHER_NAME]. All rights reserved.

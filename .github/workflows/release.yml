@@ -1,24 +1,40 @@
 name: Signed release
 
-# Builds and signs the .zxp on a Windows runner, so no local signing tools
-# (or Rosetta on Apple Silicon Macs) are needed.
+# Builds, tests, signs and publishes the .zxp.
 #
 # One-time setup, in the GitHub repository's Settings > Secrets and variables > Actions:
 #   ZXP_CERT_BASE64    your .p12 certificate, base64-encoded
 #                      (macOS: base64 -i cert.p12 | pbcopy)
 #   ZXP_CERT_PASSWORD  the certificate password
 #
-# Run it from the Actions tab (Signed release > Run workflow) or by pushing a
-# tag such as v0.1.0. The signed package is attached to the run as an artifact.
+# Push a tag such as v0.1.0 (the tag must match package.json's version) or run
+# it from the Actions tab. A tag push publishes a permanent GitHub Release with
+# the signed .zxp, its SHA-256, and the CHANGELOG section for that version.
+# A workflow_dispatch run signs but publishes nothing.
 
 on:
   workflow_dispatch:
   push:
     tags: ["v*"]
 
+# Least privilege: only the publish job may write, and only to releases.
+permissions:
+  contents: read
+
+# Never cancel a release in flight, and never sign the same tag twice at once.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  sign:
-    runs-on: windows-latest
+  guard:
+    # Fails fast when the pushed tag does not match package.json, so pushing
+    # v0.2.0 on a 0.1.0 commit can no longer produce a mislabelled package.
+    name: Tag and version agree
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      name: ${{ steps.version.outputs.name }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -26,10 +42,91 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Checks and production build
+      - name: Check the tag against package.json, the manifest, the host, and the changelog
+        env:
+          TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: node scripts/release-checks.js --tag "$TAG"
+      - id: version
+        run: |
+          set -euo pipefail
+          echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+          echo "name=$(node -p "require('./package.json').name")" >> "$GITHUB_OUTPUT"
+
+  verify:
+    # The panel smoke test gates the release, not just pull requests: a panel
+    # that throws on load must never reach a customer's machine signed.
+    name: Checks and panel test (${{ matrix.os }})
+    needs: guard
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: ubuntu-latest
+            chrome: /usr/bin/google-chrome
+          - os: macos-latest
+            chrome: /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+          - os: windows-latest
+            chrome: C:\Program Files\Google\Chrome\Application\chrome.exe
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: ES3 check, unit tests, production build
+        run: npm run build
+      - name: Panel smoke test (headless Chrome)
+        env:
+          CHROME_PATH: ${{ matrix.chrome }}
+        run: node scripts/ui-smoke.js --screenshots panel-screenshots
+      - name: Keep screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-panel-screenshots-${{ matrix.os }}
+          path: panel-screenshots
+          retention-days: 30
+          if-no-files-found: warn
+
+  sign:
+    name: Sign the package
+    needs: [guard, verify]
+    runs-on: windows-latest
+    env:
+      # ZXPSignCmd is pinned to the commit that last changed the binary in
+      # Adobe's CEP-Resources repository, and verified against the SHA-256 of
+      # that file, because the signing certificate and its password are in this
+      # job's environment. Recorded 2026-09-19 by downloading the file at this
+      # commit and at master: both hashed to the value below.
+      #   file:   ZXPSignCMD/4.1.103/win64/ZXPSignCmd.exe (5,518,896 bytes)
+      #   commit: de5053ce92705e4a4ec68f519fc962dfbae70724
+      ZXPSIGNCMD_COMMIT: de5053ce92705e4a4ec68f519fc962dfbae70724
+      ZXPSIGNCMD_SHA256: DC2E711A46504830062AC1AFEDE1F8EE08C1E21399B6C30D7D38CF907C35BCF5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Production build
         run: npm run build
 
-      - name: Sign the package
+      - name: Download and verify ZXPSignCmd
+        shell: pwsh
+        run: |
+          $tool = Join-Path $env:RUNNER_TEMP "ZXPSignCmd.exe"
+          $url = "https://raw.githubusercontent.com/Adobe-CEP/CEP-Resources/$env:ZXPSIGNCMD_COMMIT/ZXPSignCMD/4.1.103/win64/ZXPSignCmd.exe"
+          Invoke-WebRequest $url -OutFile $tool
+          $actual = (Get-FileHash $tool -Algorithm SHA256).Hash
+          if ($actual -ne $env:ZXPSIGNCMD_SHA256) {
+            throw "ZXPSignCmd SHA-256 mismatch. Expected $env:ZXPSIGNCMD_SHA256, got $actual. Do not sign with this file; verify the change in Adobe's repository and update the pin deliberately."
+          }
+          "Verified ZXPSignCmd $actual"
+
+      - name: Sign
         shell: pwsh
         env:
           ZXP_CERT_BASE64: ${{ secrets.ZXP_CERT_BASE64 }}
@@ -38,21 +135,78 @@ jobs:
           if (-not $env:ZXP_CERT_BASE64 -or -not $env:ZXP_CERT_PASSWORD) {
             throw "Add the ZXP_CERT_BASE64 and ZXP_CERT_PASSWORD repository secrets first (see the top of this workflow file)."
           }
-          $name = node -p "require('./package.json').name"
-          $version = node -p "require('./package.json').version"
+          $name = "${{ needs.guard.outputs.name }}"
+          $version = "${{ needs.guard.outputs.version }}"
           $tool = Join-Path $env:RUNNER_TEMP "ZXPSignCmd.exe"
-          Invoke-WebRequest "https://raw.githubusercontent.com/Adobe-CEP/CEP-Resources/master/ZXPSignCMD/4.1.103/win64/ZXPSignCmd.exe" -OutFile $tool
           $cert = Join-Path $env:RUNNER_TEMP "cert.p12"
           [IO.File]::WriteAllBytes($cert, [Convert]::FromBase64String($env:ZXP_CERT_BASE64))
           $out = "dist\$name-$version.zxp"
-          & $tool -sign "dist\$name" $out $cert $env:ZXP_CERT_PASSWORD -tsa http://timestamp.digicert.com
-          if ($LASTEXITCODE -ne 0) { throw "Signing failed" }
-          & $tool -verify $out -certinfo
-          if ($LASTEXITCODE -ne 0) { throw "Verification failed" }
-          Remove-Item $cert
-          "ZXP=$out" | Out-File -FilePath $env:GITHUB_ENV -Append
+          try {
+            & $tool -sign "dist\$name" $out $cert $env:ZXP_CERT_PASSWORD -tsa http://timestamp.digicert.com
+            if ($LASTEXITCODE -ne 0) { throw "Signing failed" }
+            & $tool -verify $out -certinfo
+            if ($LASTEXITCODE -ne 0) { throw "Verification failed" }
+          } finally {
+            Remove-Item $cert -ErrorAction SilentlyContinue
+          }
+          # The checksum customers can verify against the published release.
+          $hash = (Get-FileHash $out -Algorithm SHA256).Hash.ToLower()
+          "$hash  $name-$version.zxp" | Out-File -FilePath "dist\$name-$version.zxp.sha256" -Encoding ascii
+          "Signed $out"
+          "SHA-256: $hash"
 
       - uses: actions/upload-artifact@v4
         with:
           name: signed-zxp
-          path: ${{ env.ZXP }}
+          path: |
+            dist/*.zxp
+            dist/*.zxp.sha256
+          # Only a hand-off to the publish job below. The permanent copy is the
+          # GitHub Release, which never expires.
+          retention-days: 7
+          if-no-files-found: error
+
+  publish:
+    # A tag must leave behind something a customer can be given months later:
+    # a permanent release with the .zxp, its checksum, and its changelog notes.
+    name: Publish the GitHub Release
+    needs: [guard, sign]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          name: signed-zxp
+          path: dist
+      - name: Release notes from CHANGELOG.md
+        run: node scripts/release-checks.js --notes "${{ needs.guard.outputs.version }}" > release-notes.md
+      - name: Add the checksum to the notes
+        run: |
+          set -euo pipefail
+          {
+            echo
+            echo "## Verify your download"
+            echo
+            echo '```'
+            cat dist/*.zxp.sha256
+            echo '```'
+            echo
+            echo "macOS: \`shasum -a 256 <file>\` — Windows: \`Get-FileHash <file> -Algorithm SHA256\`"
+            echo
+            echo "Installation, troubleshooting and what survives an update: see docs/ in this repository."
+          } >> release-notes.md
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "${{ github.ref_name }}" \
+            --title "${{ needs.guard.outputs.name }} ${{ needs.guard.outputs.version }}" \
+            --notes-file release-notes.md \
+            dist/*.zxp dist/*.zxp.sha256

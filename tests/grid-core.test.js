@@ -53,6 +53,31 @@ function fieldsOf(result) {
     return result.errors.map((e) => e.field);
 }
 
+// Every number a result would put on the page.
+function coordinates(result) {
+    const out = [];
+    for (const s of result.segments) {
+        out.push(s.x1, s.y1, s.x2, s.y2);
+    }
+    for (const b of result.boxes) {
+        out.push(b.left, b.top, b.right, b.bottom);
+    }
+    for (const p of result.polygons) {
+        for (const point of p.points) {
+            out.push(point[0], point[1]);
+        }
+    }
+    for (const c of result.curves) {
+        for (const p of c.points) {
+            out.push(...p.anchor, ...p.left, ...p.right);
+        }
+    }
+    for (const d of result.dots) {
+        out.push(d.x, d.y, d.d);
+    }
+    return out;
+}
+
 // ---------------------------------------------------------------- units
 
 test("converts every supported unit to points", () => {
@@ -341,6 +366,60 @@ test("baseline spacing and offset are validated", () => {
     assert.match(dense.errors[0].message, /1441 baselines/);
 });
 
+test("ratios far enough apart to break the arithmetic are refused, and named", () => {
+    // 1e308 + 1e308 overflows to Infinity, which used to leave every column NaN.
+    const overflow = build(LETTER, { columnRatios: "1e308 1e308" });
+    assert.equal(overflow.ok, false);
+    assert.deepEqual(fieldsOf(overflow), ["columnRatios"]);
+    assert.match(overflow.errors[0].message, /Column widths don't fit/);
+    assert.equal(overflow.segments.length, 0);
+
+    // A ratio that collapses one column is the ratio's fault, not the gutter's.
+    const collapsing = build(LETTER, { columnRatios: "1 1000000000", columnGutter: 12 });
+    assert.deepEqual(fieldsOf(collapsing), ["columnRatios"]);
+    assert.match(collapsing.errors[0].message, /The ratio 1 leaves column 1/);
+    assert.match(collapsing.errors[0].message, /between margins is 540 pt/);
+
+    const rows = build(LETTER, { type: "modular", rowRatios: "1 1000000000" });
+    assert.deepEqual(fieldsOf(rows), ["rowRatios"]);
+    assert.match(rows.errors[0].message, /Row heights don't fit\. The ratio 1 leaves row 1/);
+});
+
+test("no grid type reports success with a coordinate that isn't a number", () => {
+    const rects = [LETTER, [100, -800, 700, -1600], [0, 20, 30, 0]];
+    const cases = [
+        { type: "columns", columns: 7 },
+        { type: "columns", columnRatios: "1 2 3", columnGutter: 3 },
+        { type: "columns", columnRatios: "1e308 1e308" },
+        { type: "columns", columns: 3, output: "boxes", shadeGutters: true, extendToEdges: true },
+        { type: "modular", columns: 4, rows: 3, rowRatios: "1e308 1e308 1" },
+        { type: "modular", columns: 4, rows: 3, blocks: [{ column: 1, row: 1, columns: 2, rows: 2 }] },
+        { type: "modular", columns: 3, squareModules: true, addBaseline: true },
+        { type: "baseline", baselineSpacing: 7, baselineOffset: 3 },
+        Object.assign({ type: "composition", spiralFocus: "top-left" }, {
+            compThirds: true, compFifths: true, compGolden: true, compDiagonals: true, compCenter: true,
+            compArmature: true, compDynamic: true, compVillard: true, compSpiral: true
+        }),
+        ...core.PATTERNS.map((p) => ({ type: "pattern", pattern: p, patternSize: 6, dotSize: 1 }))
+    ];
+    let built = 0;
+    for (const rect of rects) {
+        for (const overrides of cases) {
+            const label = `${rect} ${JSON.stringify(overrides)}`;
+            const r = build(rect, Object.assign({ marginTop: 1, marginRight: 1, marginBottom: 1, marginLeft: 1 }, overrides));
+            if (!r.ok) {
+                assert.equal(coordinates(r).length, 0, `${label} draws nothing when it fails`);
+                continue;
+            }
+            built++;
+            for (const value of coordinates(r)) {
+                assert.ok(Number.isFinite(value), `${label} emitted ${value}`);
+            }
+        }
+    }
+    assert.ok(built >= 25, `${built} of these grids built`);
+});
+
 test("only fields used by the chosen grid type are validated", () => {
     const r = build(LETTER, { type: "baseline", columns: "abc", rowGutter: -5 });
     assert.equal(r.ok, true);
@@ -430,10 +509,14 @@ test("missing length fields use point defaults converted to the chosen unit", ()
     assert.deepEqual(r.segments, core.buildGrid(LETTER, {}).segments);
 });
 
-test("defaults() returns an independent copy", () => {
+test("defaults() returns an independent copy, arrays included", () => {
     const a = core.defaults();
     a.columns = 99;
     assert.equal(core.defaults().columns, 12);
+
+    assert.notEqual(a.blocks, core.defaults().blocks, "each call gets its own blocks array");
+    a.blocks.push({ column: 1, row: 1, columns: 2, rows: 2 });
+    assert.deepEqual(core.defaults().blocks, [], "pushing into one copy doesn't leak into the next");
 });
 
 // ---------------------------------------------------------- composition
@@ -692,6 +775,68 @@ test("hexagon pattern: whole pointy-top hexagons centered in the area", () => {
     assert.match(big.errors[0].message, /don't fit/);
 });
 
+test("hexagons in a narrow band draw every row, or refuse the size", () => {
+    // 20 pt is wide enough for one straight row but not for the offset rows
+    // between them, which used to be dropped silently.
+    const band = pattern([0, 100, 20, 0], { pattern: "hexagon", patternSize: 10 });
+    assert.equal(band.ok, false, "a band of alternating empty rows is not a hexagon grid");
+    assert.deepEqual(fieldsOf(band), ["patternSize"]);
+    assert.match(band.errors[0].message, /don't fit between the margins/);
+
+    // Wide enough for both, and no row goes missing: 13 rows, 7 of 3 and 6 of 2.
+    const fits = pattern([0, 100, 30, 0], { pattern: "hexagon", patternSize: 5 });
+    assert.equal(fits.ok, true);
+    assert.equal(fits.polygons.length, 33);
+    const rows = new Set(fits.polygons.map((h) => h.points[0][1]));
+    assert.equal(rows.size, 13);
+    assert.deepEqual([Math.max(...rows), Math.min(...rows)], [100, 10]); // 12 steps of 7.5 pt
+});
+
+test("patterns too large for the content area are refused, as hexagons already were", () => {
+    for (const name of ["square", "diagonal", "isometric"]) {
+        const r = pattern(LETTER, { pattern: name, patternSize: 5000 });
+        assert.equal(r.ok, false, `${name} drew only the margin frame`);
+        assert.deepEqual(fieldsOf(r), ["patternSize"]);
+        assert.match(r.errors[0].message, /don't fit between the margins/);
+    }
+    // One cell exactly filling the area is still a grid.
+    const exact = pattern([0, 100, 100, 0], { pattern: "square", patternSize: 100 });
+    assert.equal(exact.ok, true);
+    assert.equal(exact.segments.length, 4);
+});
+
+test("a pattern too dense for the shape limit is reported on the size, not the grid type", () => {
+    const dense = pattern(LETTER, { pattern: "square", patternSize: 0.2 });
+    assert.equal(dense.ok, false);
+    assert.deepEqual(fieldsOf(dense), ["patternSize"]);
+    assert.match(dense.errors[0].message, /7026 lines/);
+    assert.match(dense.errors[0].message, /5000/);
+});
+
+test("extend to edges reaches pattern grids, and is reported as idle where it doesn't", () => {
+    const tight = build(LETTER, { type: "pattern", pattern: "square", patternSize: 100 });
+    const full = build(LETTER, { type: "pattern", pattern: "square", patternSize: 100, extendToEdges: true });
+    assert.equal(tight.ok, true);
+    assert.equal(full.ok, true);
+    // The frame still marks the margins; the pattern itself runs to the artboard.
+    assert.deepEqual(ofKind(full, "margin")[0], { kind: "margin", x1: 36, y1: 756, x2: 576, y2: 756 });
+    assert.equal(ofKind(tight, "pattern").some((s) => s.x1 < 36 || s.y1 > 756), false);
+    const edge = ofKind(full, "pattern").filter((s) => s.x1 === s.x2 && s.x1 === 0);
+    assert.deepEqual(edge, [{ kind: "pattern", x1: 0, y1: 0, x2: 0, y2: 792 }]);
+
+    assert.equal(full.settings.extendToEdgesApplies, true);
+    assert.equal(build(LETTER, {}).settings.extendToEdgesApplies, true);
+    assert.equal(build(LETTER, { type: "baseline" }).settings.extendToEdgesApplies, true);
+
+    // Composition guides are the content rectangle itself, so there is nothing to
+    // extend; the panel is told so rather than left offering a dead switch.
+    const off = composition([0, 300, 600, 0], { compThirds: true, compDiagonals: true, compSpiral: true });
+    const on = composition([0, 300, 600, 0], { compThirds: true, compDiagonals: true, compSpiral: true, extendToEdges: true });
+    assert.equal(off.settings.extendToEdgesApplies, false);
+    assert.deepEqual(on.segments, off.segments);
+    assert.deepEqual(on.curves, off.curves);
+});
+
 test("radial pattern: evenly spaced rings and spokes from the center", () => {
     const r = pattern([0, 200, 200, 0], { pattern: "radial", rings: 2, spokes: 4 });
     assert.equal(r.ok, true);
@@ -880,21 +1025,29 @@ test("rule of fifths divides each side into fifths", () => {
     assert.deepEqual(ofKind(r, "fifths").filter((s) => s.x1 === s.x2).map((s) => s.x1), [100, 200, 300, 400]);
 });
 
-test("harmonic armature: diagonals, four reciprocals, and eight corner-to-midpoint lines", () => {
-    // A 300 x 200 area: reciprocal from the top-left corner ends on the bottom edge at u = h*h/w = 133.3333.
+test("harmonic armature: two diagonals and eight corner-to-midpoint lines, no reciprocals", () => {
+    // A 300 x 200 area: the reciprocal from the top-left corner would end on the
+    // bottom edge at u = h*h/w = 133.3333. It belongs to the dynamic rectangle.
     const r = composition([0, 200, 300, 0], Object.assign({ compArmature: true }, NO_MARGINS));
     assert.equal(r.ok, true);
     const lines = ofKind(r, "armature");
-    assert.equal(lines.length, 14);
+    assert.equal(lines.length, 10);
     const set = segmentSet(lines);
-    assert.ok(set.includes(segmentSet([{ x1: 0, y1: 200, x2: 133.3333, y2: 0 }])[0]), "reciprocal from top-left");
+    assert.ok(!set.includes(segmentSet([{ x1: 0, y1: 200, x2: 133.3333, y2: 0 }])[0]), "no reciprocal in the armature");
+    assert.ok(set.includes(segmentSet([{ x1: 0, y1: 200, x2: 300, y2: 0 }])[0]), "diagonal");
+    assert.ok(set.includes(segmentSet([{ x1: 0, y1: 0, x2: 300, y2: 200 }])[0]), "the other diagonal");
     assert.ok(set.includes(segmentSet([{ x1: 0, y1: 200, x2: 300, y2: 100 }])[0]), "top-left to right midpoint");
     assert.ok(set.includes(segmentSet([{ x1: 300, y1: 0, x2: 150, y2: 200 }])[0]), "bottom-right to top midpoint");
+    // The reciprocals are still drawn for the figure they belong to.
+    const dynamic = composition([0, 200, 300, 0], Object.assign({ compDynamic: true }, NO_MARGINS));
+    assert.ok(segmentSet(ofKind(dynamic, "dynamic")).includes(segmentSet([{ x1: 0, y1: 200, x2: 133.3333, y2: 0 }])[0]));
 });
 
 test("reciprocals are perpendicular to the opposite diagonal", () => {
     const r = composition([0, 200, 300, 0], Object.assign({ compDynamic: true }, NO_MARGINS));
-    const reciprocal = ofKind(r, "dynamic").find((s) => s.x1 === 0 && s.y1 === 200);
+    // From the top-left corner: the diagonal to the far corner, and the reciprocal.
+    const fromTopLeft = ofKind(r, "dynamic").filter((s) => s.x1 === 0 && s.y1 === 200);
+    const reciprocal = fromTopLeft.find((s) => !(s.x2 === 300 && s.y2 === 0));
     const rx = reciprocal.x2 - reciprocal.x1;
     const ry = reciprocal.y2 - reciprocal.y1;
     // The other diagonal runs from (300, 200) to (0, 0).
@@ -937,6 +1090,41 @@ test("square modules make rows as tall as the columns are wide", () => {
     assert.equal(r.tracks.rows.length, 7); // floor((720 + 12) / 92)
     assert.deepEqual(r.tracks.rows[1], { top: 664, bottom: 584 });
     assert.deepEqual(fieldsOf(build(LETTER, { type: "modular", columnRatios: "2 1", squareModules: true })), ["squareModules"]);
+});
+
+test("square modules refuse more rows than the limit allows, and blame the columns", () => {
+    // 100 columns across 540 pt make 5.4 pt modules, which is 133 rows deep.
+    const r = build(LETTER, { type: "modular", columns: 100, columnGutter: 0, rowGutter: 0, squareModules: true });
+    assert.equal(r.ok, false);
+    assert.deepEqual(fieldsOf(r), ["squareModules"]);
+    assert.match(r.errors[0].message, /133 rows, more than the 100 allowed/);
+    assert.match(r.errors[0].message, /fewer columns/);
+    assert.ok(!/fewer rows|Rows must/i.test(r.errors[0].message), "rows are disabled in square mode, so never ask for them");
+
+    // 75 columns land exactly on the limit and still build.
+    const edge = build(LETTER, { type: "modular", columns: 75, columnGutter: 0, rowGutter: 0, squareModules: true });
+    assert.equal(edge.ok, true);
+    assert.equal(edge.settings.rows, 100);
+    assert.equal(edge.tracks.rows.length, 100);
+});
+
+test("the golden spiral keeps its proportion when the area isn't golden", () => {
+    const r = composition([0, 400, 1000, 0], Object.assign({ compSpiral: true, spiralFocus: "bottom-right" }, NO_MARGINS));
+    assert.equal(r.ok, true);
+    // The largest golden rectangle inside 1000 x 400 is 647.2136 x 400, centered.
+    assert.deepEqual(r.metrics.spiral, {
+        left: 176.3932, top: 400, right: 823.6068, bottom: 0, width: 647.2136, height: 400
+    });
+    for (const rect of [[0, 400, 1000, 0], [0, 1000, 400, 0], [0, 600, 600, 0]]) {
+        const spiral = composition(rect, Object.assign({ compSpiral: true, spiralFocus: "top-left" }, NO_MARGINS));
+        const points = spiral.curves[0].points;
+        // Each quarter arc crosses one square, so it spans as far in x as in y.
+        for (let i = 1; i < points.length; i++) {
+            const dx = Math.abs(points[i].anchor[0] - points[i - 1].anchor[0]);
+            const dy = Math.abs(points[i].anchor[1] - points[i - 1].anchor[1]);
+            assert.ok(Math.abs(dx - dy) < 1e-3, `arc ${i} on ${rect} spans ${dx} x ${dy}`);
+        }
+    }
 });
 
 test("angled grids tilt the diagonal pattern", () => {
@@ -1009,4 +1197,77 @@ test("construction options: extend around the artwork, centers, diagonals, and v
     assert.deepEqual(fieldsOf(core.buildConstruction([], LETTER, CON)), ["selection"]);
     assert.deepEqual(fieldsOf(core.buildConstruction([boxPath(1, 2, 3, 1)], LETTER, Object.assign({}, CON, { conKeylineColor: "blue" }))), ["conKeylineColor"]);
     assert.equal(core.buildConstruction([boxPath(1, 2, 3, 1)], LETTER, Object.assign({}, CON, { output: "guides", conKeylineColor: "blue" })).ok, true, "colors ignored for guides");
+});
+
+test("a path without points is a selection problem, not a crash", () => {
+    const r = core.buildConstruction([boxPath(100, 700, 300, 500), { closed: false }], LETTER, CON);
+    assert.equal(r.ok, false);
+    assert.deepEqual(fieldsOf(r), ["selection"]);
+    assert.match(r.errors[0].message, /Select artwork made of paths/);
+    assert.equal(r.segments.length, 0);
+    assert.deepEqual(fieldsOf(core.buildConstruction([null], LETTER, CON)), ["selection"]);
+    assert.deepEqual(fieldsOf(core.buildConstruction([{ closed: true, points: [{ anchor: [0, "x"] }] }], LETTER, CON)), ["selection"]);
+});
+
+test("construction reports its own fields only, never the column grid's", () => {
+    const messy = Object.assign({}, CON, {
+        columns: 0, columnGutter: -5, rows: 0, rowGutter: -5, overlayColumns: 99,
+        marginTop: -10, marginLeft: "wide", columnRatios: "nonsense", rowRatios: "0 0",
+        blocks: "not a list", baselineSpacing: 0, addBaseline: true, squareModules: true, pattern: "weave"
+    });
+    const r = core.buildConstruction([boxPath(100, 700, 300, 500)], LETTER, messy);
+    assert.equal(r.ok, true, fieldsOf(r).join(", "));
+    assert.equal(ofKind(r, "bounds").length, 4);
+
+    // Its own fields are still checked, and only those.
+    const bad = core.buildConstruction([boxPath(100, 700, 300, 500)], LETTER, Object.assign({}, messy, {
+        conPadding: -1, strokeWidth: 0, opacity: 300, lineStyle: "wavy", units: "cm", conCircleColor: "nope",
+        conBounds: false, conKeylines: false, conCircles: false, conCenter: false, conDiagonals: false
+    }));
+    assert.deepEqual(fieldsOf(bad).sort(), ["conCircleColor", "conPadding", "construction", "lineStyle", "opacity", "strokeWidth", "units"]);
+
+    // Whatever the panel is holding, nothing outside this list can be reported.
+    const allowed = ["construction", "selection", "conPadding", "conBoundsColor", "conKeylineColor",
+        "conCircleColor", "output", "strokeWidth", "opacity", "lineStyle", "units", "artboard"];
+    const junk = Object.assign(core.defaults(), CON);
+    for (const key of Object.keys(core.defaults())) {
+        if (key.slice(0, 3) !== "con") {
+            junk[key] = "garbage";
+        }
+    }
+    for (const field of fieldsOf(core.buildConstruction([boxPath(100, 700, 300, 500)], LETTER, junk))) {
+        assert.ok(allowed.includes(field), `${field} has nothing to do with construction lines`);
+    }
+});
+
+test("the construction box uses exact curve extremes, so it can't clip the artwork", () => {
+    // One cubic bulging right: its widest point, x = 169.282032, has no anchor.
+    const bulge = {
+        closed: false,
+        points: [
+            { anchor: [100, 100], left: [100, 100], right: [220, 110] },
+            { anchor: [100, 200], left: [160, 190], right: [100, 200] }
+        ]
+    };
+    const r = core.buildConstruction([bulge], LETTER, Object.assign({}, CON, { conCircles: false }));
+    assert.equal(r.ok, true);
+    assert.ok(Math.abs(r.content.right - 169.282032) < 1e-4, `right edge is ${r.content.right}`);
+    assert.deepEqual([r.content.left, r.content.top, r.content.bottom], [100, 200, 100]);
+    assert.deepEqual(ofKind(r, "bounds").map((s) => [s.x1, s.y1, s.x2, s.y2]), [
+        [100, 200, 169.282, 200],
+        [100, 100, 169.282, 100],
+        [100, 200, 100, 100],
+        [169.282, 200, 169.282, 100]
+    ]);
+    // No key line may fall outside the box that is meant to contain the artwork.
+    const keylines = ofKind(r, "keyline");
+    assert.ok(keylines.length >= 3, `${keylines.length} key lines`);
+    for (const line of keylines) {
+        if (line.x1 === line.x2) {
+            assert.ok(line.x1 >= r.content.left && line.x1 <= r.content.right, `vertical key line at ${line.x1}`);
+        } else {
+            assert.ok(line.y1 >= r.content.bottom && line.y1 <= r.content.top, `horizontal key line at ${line.y1}`);
+        }
+    }
+    assert.ok(xs(keylines.filter((l) => l.x1 === l.x2)).some((x) => Math.abs(x - 169.282) < 1e-3), "a key line on the widest point");
 });

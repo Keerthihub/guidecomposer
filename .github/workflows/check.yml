@@ -4,6 +4,15 @@ on:
   push:
   pull_request:
 
+# Least privilege: nothing here writes to the repository.
+permissions:
+  contents: read
+
+# One run per branch or pull request; a new push cancels the previous run.
+concurrency:
+  group: check-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     name: Tests (${{ matrix.os }})
@@ -25,8 +34,21 @@ jobs:
         run: node scripts/build.js
 
   panel:
-    name: Panel smoke test (headless Chrome)
-    runs-on: ubuntu-latest
+    # The panel is the product: a build that throws on load must never ship.
+    # Run it on all three runner families, because the panel's layout and
+    # storage behaviour are the parts most likely to differ per platform.
+    name: Panel smoke test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            chrome: /usr/bin/google-chrome
+          - os: macos-latest
+            chrome: /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+          - os: windows-latest
+            chrome: C:\Program Files\Google\Chrome\Application\chrome.exe
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -36,11 +58,79 @@ jobs:
       - run: npm ci
       - name: Run the panel in headless Chrome
         env:
-          CHROME_PATH: /usr/bin/google-chrome
+          CHROME_PATH: ${{ matrix.chrome }}
         run: node scripts/ui-smoke.js --screenshots panel-screenshots
       - name: Keep screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: panel-screenshots
+          name: panel-screenshots-${{ matrix.os }}
           path: panel-screenshots
+          retention-days: 14
+          if-no-files-found: warn
+
+  audit:
+    # Advisory only, on purpose: the single dependency (acorn) is a build-time
+    # tool that never reaches a customer's machine, so a new advisory must not
+    # be able to block a release. It is reported here so it is never invisible.
+    name: npm audit (advisory)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Audit dependencies
+        run: npm audit --audit-level=low
+      - name: Audit production dependencies (there should be none)
+        run: npm audit --omit=dev --audit-level=low
+
+  rename-rehearsal:
+    # Proves the claim in README.md that the rename tool has been rehearsed on
+    # a full copy of the project: copy the tree, rename it, then run every
+    # check against the copy. If this job is removed, remove the claim too.
+    name: Rename rehearsal
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Copy the project and rename it
+        run: |
+          set -euo pipefail
+          rehearsal="$RUNNER_TEMP/rehearsal"
+          mkdir -p "$rehearsal"
+          cp -R ./. "$rehearsal"
+          rm -rf "$rehearsal/.git" "$rehearsal/dist"
+          cd "$rehearsal"
+          node scripts/rename.js --name "Gridwright" --id com.example.gridwright
+          # The old extension id must survive nowhere: it is the one string that
+          # would break Clear and strand customers' settings if it were missed.
+          # (scripts/rename.js and its test are excluded by the tool itself.)
+          old=$(node -p "require('./scripts/rename.js').OLD_ID")
+          leftovers=$(grep -rl --exclude-dir=node_modules --exclude-dir=.git -F "$old" . \
+            | grep -v -E "scripts/rename.js|tests/rename.test.js" || true)
+          if [ -n "$leftovers" ]; then
+            echo "The old extension id ($old) survived the rename in:"
+            echo "$leftovers"
+            exit 1
+          fi
+      - name: Full checks on the renamed copy
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/rehearsal"
+          npm run check
+          node scripts/build.js
+      - name: Panel smoke test on the renamed copy
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/rehearsal"
+          node scripts/ui-smoke.js

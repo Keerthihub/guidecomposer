@@ -1,0 +1,95 @@
+name: Bug report
+description: Something in the panel doesn't work, or works wrongly
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting this. Most answers are in
+        [the troubleshooting guide](../blob/main/docs/TROUBLESHOOTING.md) —
+        worth thirty seconds before you fill this in.
+
+        The fastest way to fill in the version fields: open the panel,
+        **More > Copy diagnostics**, and paste the result into the first box.
+        It contains the plugin version, the application and its version, your
+        operating system, the open document's name and size, your current panel
+        settings, and the last error shown — no artwork and no document
+        contents. Delete the document name before posting if it is confidential.
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: Paste the output of More > Copy diagnostics.
+      render: text
+    validations:
+      required: false
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin version
+      description: From the diagnostics, or the Creative Cloud desktop app's plugin list, or the filename you installed.
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: host
+    attributes:
+      label: Application and version
+      description: Help > About. Give the full version number, not just the year.
+      placeholder: "Illustrator 2025, 29.3"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system and build
+      description: >
+        macOS: Apple menu > About This Mac (include Apple Silicon or Intel).
+        Windows: Settings > System > About — copy the Edition, Version and OS build lines.
+      placeholder: "Windows 11 Pro 24H2, build 26100.2894 — or macOS 15.3, Apple Silicon"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: What you did
+      description: Step by step, starting from opening the panel.
+      placeholder: |
+        1. Opened the panel
+        2. Set columns to 12, margins to 36 pt
+        3. Clicked Generate
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead
+      description: Include the exact text of the panel's status line, if there was any, and a screenshot if it is visual.
+    validations:
+      required: true
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: How often does it happen?
+      options:
+        - Every time
+        - Most times
+        - Occasionally
+        - Once, and I can't reproduce it
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I restarted the application and tried again.
+          required: true
+        - label: I have not attached a confidential client file (a small example that shows the same problem is more useful).
+          required: true

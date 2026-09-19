@@ -43,6 +43,12 @@ function ownedGroups(doc) {
 }
 
 // Values created inside the vm sandbox have their own Array prototype.
+// Grid counts for the active artboard; status also reports document-wide
+// stray previews, which these assertions don't care about.
+function counts(grids) {
+    return { preview: grids.preview, generated: grids.generated };
+}
+
 function plain(value) {
     return JSON.parse(JSON.stringify(value));
 }
@@ -82,7 +88,11 @@ test("boot reports a missing dependency instead of throwing", () => {
 
 test("status without a document", () => {
     const { host } = ready(null);
-    assert.deepEqual(host.call("status"), { ok: true, data: { hasDocument: false, host: "illustrator" } });
+    const status = host.call("status");
+    assert.equal(status.ok, true);
+    assert.equal(status.data.hasDocument, false);
+    assert.equal(status.data.host, "illustrator");
+    assert.equal(status.data.version, "0.1.0", "the panel can compare its version with the host's");
 });
 
 test("status describes the active artboard", () => {
@@ -98,7 +108,7 @@ test("status describes the active artboard", () => {
     assert.deepEqual(r.data.artboard, { index: 1, name: "Spread", rect: [700, 792, 1924, 0], width: 1224, height: 792 });
     assert.equal(r.data.artboardCount, 2);
     assert.equal(r.data.colorSpace, "RGB");
-    assert.deepEqual(r.data.grids, { preview: 0, generated: 0 });
+    assert.deepEqual(counts(r.data.grids), { preview: 0, generated: 0 });
 });
 
 test("generate without a document returns NO_DOCUMENT", () => {
@@ -163,7 +173,7 @@ test("generate draws tagged lines into a non-printing Mullion layer", () => {
     assert.equal(r.data.shapes, 26);
     assert.equal(r.data.artboards, 1);
     assert.equal(r.data.metrics.columnWidth, 34);
-    assert.deepEqual(r.data.status.grids, { preview: 0, generated: 1 });
+    assert.deepEqual(counts(r.data.status.grids), { preview: 0, generated: 1 });
 
     const layer = layerNamed(doc, "Mullion grids");
     assert.ok(layer);
@@ -172,7 +182,18 @@ test("generate draws tagged lines into a non-printing Mullion layer", () => {
     assert.equal(doc.activeLayer, userLayer, "the user's active layer is restored");
 
     const [group] = ownedGroups(doc);
-    assert.deepEqual(tagsOf(group), { MullionOwner: OWNER, MullionKind: "final", MullionArtboard: "0", MullionRegion: "artboard:0" });
+    const tags = tagsOf(group);
+    assert.equal(tags.MullionOwner, OWNER);
+    assert.equal(tags.MullionKind, "final");
+    assert.equal(tags.MullionArtboard, "0");
+    assert.equal(tags.MullionRegion, "artboard:0");
+    assert.equal(tags.MullionSchema, "1", "grids record the schema that wrote them");
+    assert.equal(tags.MullionShapes, "26", "grids record how many shapes they were drawn with");
+    // The settings travel with the grid, so the document carries its recipe.
+    const recorded = JSON.parse(tags.MullionSettings);
+    assert.equal(recorded.schema, 1);
+    assert.equal(recorded.settings.type, "columns");
+    assert.equal(recorded.settings.columns, 12);
     assert.equal(group.name, "Column grid, Artboard 1");
     assert.equal(group.opacity, 80);
     assert.equal(group.children.length, 26);
@@ -244,7 +265,7 @@ test("preview replaces only the previous preview and never a generated grid", ()
     host.call("preview", { settings: { ...COLUMNS, columns: 4 } });
     const r = host.call("preview", { settings: { ...COLUMNS, columns: 3 } });
     assert.equal(r.ok, true);
-    assert.deepEqual(r.data.status.grids, { preview: 1, generated: 1 });
+    assert.deepEqual(counts(r.data.status.grids), { preview: 1, generated: 1 });
 
     const groups = ownedGroups(doc);
     assert.equal(groups.length, 2);
@@ -263,7 +284,7 @@ test("preview leaves the layer lock as it was; generate replaces the preview", (
 
     const r = host.call("generate", { settings: COLUMNS });
     assert.equal(r.ok, true);
-    assert.deepEqual(r.data.status.grids, { preview: 0, generated: 1 });
+    assert.deepEqual(counts(r.data.status.grids), { preview: 0, generated: 1 });
 });
 
 test("clearPreview removes previews on every artboard and nothing else", () => {
@@ -373,7 +394,7 @@ test("Clear moves user items out of a Mullion group and keeps their lock and vis
     assert.ok(doc._layers.includes(layer), "layer with rescued art is kept");
 });
 
-test("Clear finds Mullion groups the user moved to another layer, and skips nested ones", () => {
+test("Clear finds Mullion groups the user moved to another layer or grouped with their own artwork", () => {
     const { host, doc } = ready({});
     host.call("generate", { settings: { ...COLUMNS, lockLayer: false } });
     const group = ownedGroups(doc)[0];
@@ -384,7 +405,8 @@ test("Clear finds Mullion groups the user moved to another layer, and skips nest
     place(userLayer, group);
     userLayer.locked = true;
 
-    // A second grid wrapped inside a user group is out of Clear's reach by design.
+    // Pressing Cmd-G with a grid selected puts it inside a user group; it must
+    // still be Mullion's to clear, or the user could never remove it.
     host.call("generate", { settings: { ...COLUMNS, lockLayer: false }, mode: "add" });
     const second = ownedGroups(doc).find((g) => g !== group);
     const mullionLayer = layerNamed(doc, "Mullion grids");
@@ -394,9 +416,10 @@ test("Clear finds Mullion groups the user moved to another layer, and skips nest
 
     const r = host.call("clear");
     assert.equal(r.ok, true);
-    assert.equal(r.data.removed, 1);
+    assert.equal(r.data.removed, 2, "both the moved grid and the grouped one are cleared");
     assert.ok(!userLayer.children.includes(group));
-    assert.ok(wrapper.children.includes(second), "nested grid untouched");
+    assert.ok(!wrapper.children.includes(second), "a grid inside a user group is still cleared");
+    assert.ok(userLayer.children.includes(wrapper), "the user's own group survives");
     assert.equal(userLayer.locked, true, "user layer lock restored");
 });
 
@@ -456,6 +479,141 @@ test("the coordinate system is restored after drawing", () => {
 });
 
 // ---------------------------------------------------------------- targets
+
+// ------------------------------------------- ownership that survives editing
+
+test("a grid belongs to the artboard it sits on, not to an artboard number", () => {
+    const { host, doc } = ready({
+        artboards: [
+            { name: "One", rect: [0, 792, 612, 0] },
+            { name: "Two", rect: [700, 792, 1312, 0] },
+            { name: "Three", rect: [1400, 792, 2012, 0] }
+        ]
+    });
+    host.call("generate", { settings: { ...COLUMNS, lockLayer: false }, target: { mode: "all" } });
+    assert.equal(ownedGroups(doc).length, 3);
+
+    // The user deletes the first artboard: every later artboard shifts down one.
+    doc._artboards.splice(0, 1);
+    doc.artboards.setActiveArtboardIndex(0);
+
+    const r = host.call("clear", { target: { mode: "active" } });
+    assert.equal(r.ok, true);
+    assert.equal(r.data.removed, 1, "exactly one grid is cleared");
+    const left = ownedGroups(doc).map((g) => g.children[0].points[0][0]);
+    assert.ok(!left.some((x) => x >= 700 && x < 1312), "the grid on the current artboard is the one removed");
+    assert.equal(ownedGroups(doc).length, 2);
+});
+
+test("regenerating after the artwork moves replaces its grid instead of stacking a second one", () => {
+    const { host, doc } = ready({});
+    const card = place(doc._layers[0], userPath("card"));
+    card.setEntirePath([[100, 700], [300, 700], [300, 500], [100, 500]]);
+    card.closed = true;
+    card.selected = true;
+    assert.equal(host.call("generate", { settings: { ...CARD, lockLayer: false }, target: { mode: "selection" } }).ok, true);
+    assert.equal(ownedGroups(doc).length, 1);
+
+    // The user nudges the card and generates again.
+    card.setEntirePath([[105, 705], [305, 705], [305, 505], [105, 505]]);
+    const again = host.call("generate", { settings: { ...CARD, lockLayer: false }, target: { mode: "selection" } });
+    assert.equal(again.ok, true);
+    assert.equal(again.data.replaced, 1, "the grid for the same object is replaced");
+    assert.equal(ownedGroups(doc).length, 1, "one grid, not two");
+});
+
+test("a grid the user has edited is kept and handed back, never deleted", () => {
+    const { host, doc } = ready({});
+    host.call("generate", { settings: { ...COLUMNS, lockLayer: false } });
+    const [group] = ownedGroups(doc);
+    // The user deletes two of the grid's own lines.
+    group.children.splice(0, 2);
+
+    const r = host.call("clear");
+    assert.equal(r.ok, true);
+    assert.equal(r.data.removed, 0, "nothing is deleted");
+    assert.equal(r.data.kept, 1, "the edited grid is reported as kept");
+    const survivor = doc._layers.flatMap((l) => l.children).find((c) => c.typename === "GroupItem");
+    assert.ok(survivor, "the edited grid is still in the document");
+    assert.equal(tagsOf(survivor).MullionOwner, undefined, "and is no longer Mullion's to remove");
+    assert.equal(survivor.name, "Edited grid");
+});
+
+// -------------------------------------------------------- preview lifecycle
+
+test("a preview left behind by a crash is swept when the panel next asks for status", () => {
+    const { host, doc } = ready({});
+    host.call("generate", { settings: { ...COLUMNS, lockLayer: false } });
+    host.call("preview", { settings: { ...COLUMNS, columns: 6, lockLayer: false } });
+    assert.equal(ownedGroups(doc).filter((g) => tagsOf(g).MullionKind === "preview").length, 1);
+    assert.equal(ownedGroups(doc).find((g) => tagsOf(g).MullionKind === "final")._hidden, true);
+
+    // Simulate a new session: the panel reloads, or the app was force-quit.
+    host.sandbox.Mullion.previewing = false;
+
+    const status = host.call("status");
+    assert.equal(status.ok, true);
+    assert.equal(status.data.recoveredPreviews, 1, "the stale preview is reported as recovered");
+    assert.equal(ownedGroups(doc).filter((g) => tagsOf(g).MullionKind === "preview").length, 0);
+    assert.equal(ownedGroups(doc).find((g) => tagsOf(g).MullionKind === "final")._hidden, false, "the real grid is visible again");
+});
+
+test("ending a preview puts back a grid layer the user had hidden", () => {
+    const { host, doc } = ready({});
+    host.call("generate", { settings: { ...COLUMNS, lockLayer: false } });
+    const layer = layerNamed(doc, "Mullion grids");
+    layer.visible = false;
+
+    host.call("preview", { settings: { ...COLUMNS, columns: 6, lockLayer: false } });
+    assert.equal(layer.visible, true, "a preview has to be visible to be a preview");
+
+    host.call("clearPreview");
+    assert.equal(layer.visible, false, "the user's choice is restored when it ends");
+});
+
+// --------------------------------------------------------------- resilience
+
+test("a grid that fails to draw leaves the previous grid intact", () => {
+    const { host, doc } = ready({});
+    host.call("generate", { settings: { ...COLUMNS, lockLayer: false } });
+    const before = ownedGroups(doc);
+    assert.equal(before.length, 1);
+    const originalShapes = before[0].children.length;
+
+    const adapter = host.sandbox.Mullion.adapter;
+    const realDraw = adapter.drawGrid;
+    adapter.drawGrid = () => { throw new Error("ran out of memory"); };
+    const r = host.call("generate", { settings: { ...COLUMNS, columns: 6, lockLayer: false } });
+    adapter.drawGrid = realDraw;
+
+    assert.equal(r.ok, false);
+    const after = ownedGroups(doc);
+    assert.equal(after.length, 1, "the old grid is still there");
+    assert.equal(after[0].children.length, originalShapes, "and is untouched");
+});
+
+test("every call runs in document coordinates, whatever the application was left on", () => {
+    const { host, doc } = ready({});
+    host.app.coordinateSystem = host.sandbox.CoordinateSystem.ARTBOARDCOORDINATESYSTEM;
+    const r = host.call("generate", { settings: { ...COLUMNS, lockLayer: false } });
+    assert.equal(r.ok, true);
+    const xs = ownedGroups(doc)[0].children.map((p) => p.points[0][0]);
+    assert.ok(xs.includes(36) && xs.includes(576), "geometry matches document coordinates");
+    assert.equal(host.app.coordinateSystem, host.sandbox.CoordinateSystem.ARTBOARDCOORDINATESYSTEM, "and the user's setting is put back");
+});
+
+test("a document carries the settings that made its grid", () => {
+    const { host } = ready({});
+    assert.equal(host.call("documentGrid").data.found, false, "nothing to report before a grid exists");
+
+    host.call("generate", { settings: { ...COLUMNS, columns: 7, lockLayer: false } });
+    const r = host.call("documentGrid");
+    assert.equal(r.ok, true);
+    assert.equal(r.data.found, true);
+    assert.equal(r.data.schema, 1);
+    assert.equal(r.data.settings.columns, 7, "the panel can offer the settings that drew this grid");
+    assert.equal(r.data.settings.type, "columns");
+});
 
 const THREE_BOARDS = {
     artboards: [
@@ -694,7 +852,7 @@ test("generating again replaces the grid on that artboard instead of stacking", 
     const groups = ownedGroups(doc);
     assert.equal(groups.length, 1, "only the newest grid remains");
     assert.equal(groups[0].name, "Baseline grid, Artboard 1");
-    assert.deepEqual(r.data.status.grids, { preview: 0, generated: 1 });
+    assert.deepEqual(counts(r.data.status.grids), { preview: 0, generated: 1 });
 });
 
 test("add mode stacks grids so types can be combined", () => {

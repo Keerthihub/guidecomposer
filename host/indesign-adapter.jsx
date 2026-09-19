@@ -33,6 +33,12 @@
     var LABEL_PAGE = "MullionArtboard";
     var LABEL_REGION = "MullionRegion";
     var LABEL_HIDDEN = "MullionHiddenByPreview";
+    var LABEL_SCHEMA = "MullionSchema";
+    var LABEL_SETTINGS = "MullionSettings";
+    var LABEL_SHAPES = "MullionShapes";
+    var LABEL_LAYER_HIDDEN = "MullionLayerWasHidden";
+    var SCHEMA = 1;
+    var ORPHAN = -1;
     var BLOCK_OPACITY = 20;
     var MAX_SELECTION = 200;
 
@@ -47,6 +53,8 @@
 
     A.HOST = "indesign";
     A.AREA_NOUN = "page";
+    A.SCHEMA = SCHEMA;
+    A.ORPHAN = ORPHAN;
     A.LAYER_NAME = LAYER_NAME;
 
     // --------------------------------------------------------------- context
@@ -73,13 +81,16 @@
         prefs.measurementUnit = MeasurementUnits.POINTS;
         prefs.enableRedraw = false;
         try {
+            /*
+             * The error must escape doScript, not be caught inside it: catching
+             * it there tells InDesign the script finished, and the half-drawn
+             * work is committed instead of rolled back by ENTIRE_SCRIPT.
+             */
             app.doScript(function () {
-                try {
-                    result = fn();
-                } catch (inner) {
-                    failure = inner;
-                }
+                result = fn();
             }, ScriptLanguage.JAVASCRIPT, [], UndoModes.ENTIRE_SCRIPT, "Mullion: " + label);
+        } catch (err) {
+            failure = err;
         } finally {
             prefs.measurementUnit = previousUnit;
             prefs.enableRedraw = previousRedraw;
@@ -88,6 +99,60 @@
             throw failure;
         }
         return result;
+    };
+
+    /*
+     * Every endpoint runs inside this: points as the script unit, a ruler the
+     * geometry can rely on, and no modal alerts. InDesign reports bounds
+     * relative to the ruler zero point, so a document whose ruler was moved
+     * would otherwise place grids a page-width away.
+     */
+    A.withContext = function (fn) {
+        var prefs = app.scriptPreferences;
+        var previousUnit = prefs.measurementUnit;
+        var previousInteraction = null;
+        var doc = A.activeDocument();
+        var view = null;
+        var previousOrigin = null;
+        var previousZero = null;
+        prefs.measurementUnit = MeasurementUnits.POINTS;
+        try {
+            previousInteraction = prefs.userInteractionLevel;
+            prefs.userInteractionLevel = UserInteractionLevels.NEVER_INTERACT;
+        } catch (e) {
+            previousInteraction = null;
+        }
+        if (doc) {
+            try {
+                view = doc.viewPreferences;
+                previousOrigin = view.rulerOrigin;
+                view.rulerOrigin = RulerOrigin.SPREAD_ORIGIN;
+                previousZero = doc.zeroPoint;
+                doc.zeroPoint = [0, 0];
+            } catch (e2) {
+                view = null;
+            }
+        }
+        try {
+            return fn();
+        } finally {
+            if (view) {
+                try {
+                    doc.zeroPoint = previousZero;
+                    view.rulerOrigin = previousOrigin;
+                } catch (e3) {
+                    // Restoring the ruler is best effort.
+                }
+            }
+            if (previousInteraction !== null) {
+                try {
+                    prefs.userInteractionLevel = previousInteraction;
+                } catch (e4) {
+                    // Same.
+                }
+            }
+            prefs.measurementUnit = previousUnit;
+        }
     };
 
     // Reads with points as the script unit, without creating an undo step.
@@ -145,14 +210,14 @@
         return A.artboardAt(doc, A.activeArtboardIndex(doc));
     };
 
-    function pageIndexAt(doc, x, y) {
+    function pageIndexAt(doc, x, y, fallback) {
         for (var i = 0; i < doc.pages.length; i++) {
             var r = toCoreRect(doc.pages[i].bounds);
             if (x >= r[0] && x <= r[2] && y <= r[1] && y >= r[3]) {
                 return i;
             }
         }
-        return A.activeArtboardIndex(doc);
+        return fallback === undefined ? A.activeArtboardIndex(doc) : fallback;
     }
 
     // -------------------------------------------------------------- labels
@@ -169,6 +234,24 @@
         return label(item, LABEL_OWNER) === M.OWNER_ID;
     }
 
+    /*
+     * Object identity, safely. A reference to something in a document that has
+     * since been closed raises "Object is invalid" on any comparison, and the
+     * panel holds such references between calls (the preview it last drew).
+     */
+    function containsItem(list, item) {
+        for (var i = 0; i < list.length; i++) {
+            try {
+                if (list[i] === item) {
+                    return true;
+                }
+            } catch (e) {
+                // A stale reference is not the item we are looking at.
+            }
+        }
+        return false;
+    }
+
     function contains(list, value) {
         for (var i = 0; i < list.length; i++) {
             if (list[i] === value) {
@@ -178,52 +261,212 @@
         return false;
     }
 
-    // Every labeled grid: groups and single items from all spreads, plus guides.
+    /*
+     * InDesign raises an error when you read a property an object doesn't have,
+     * rather than returning nothing, so every probe goes through here. Text
+     * selections, guides and graphics each lack something the others have.
+     */
+    function probe(item, name) {
+        try {
+            var value = item[name];
+            return value === undefined ? null : value;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function typeName(item) {
+        try {
+            return item.constructor && item.constructor.name ? String(item.constructor.name) : "";
+        } catch (e) {
+            return "";
+        }
+    }
+
+    function boundsOf(item) {
+        var bounds = probe(item, "geometricBounds");
+        return (bounds && bounds.length === 4) ? bounds : null;
+    }
+
+    // Rect helpers for region keys of the form "prefix:left,top,right,bottom".
+    function parseRegionRect(region) {
+        var halves = String(region).split(":");
+        if (halves.length < 2) {
+            return null;
+        }
+        var parts = halves[halves.length - 1].split(",");
+        if (parts.length !== 4) {
+            return null;
+        }
+        var rect = [];
+        for (var i = 0; i < 4; i++) {
+            var n = parseFloat(parts[i]);
+            if (isNaN(n)) {
+                return null;
+            }
+            rect.push(n);
+        }
+        return rect;
+    }
+
+    // Overlapping areas of the same kind are the same area, so artwork nudged by
+    // a point gets its grid replaced rather than a second grid stacked on it.
+    function regionMatches(stored, target) {
+        if (stored === target) {
+            return true;
+        }
+        var a = parseRegionRect(stored);
+        var b = parseRegionRect(target);
+        if (!a || !b || stored.split(":")[0] !== target.split(":")[0]) {
+            return false;
+        }
+        var left = Math.max(a[0], b[0]);
+        var right = Math.min(a[2], b[2]);
+        var top = Math.min(a[1], b[1]);
+        var bottom = Math.max(a[3], b[3]);
+        if (right <= left || top <= bottom) {
+            return false;
+        }
+        var overlap = (right - left) * (top - bottom);
+        var areaA = (a[2] - a[0]) * (a[1] - a[3]);
+        var areaB = (b[2] - b[0]) * (b[1] - b[3]);
+        var smaller = Math.min(areaA, areaB);
+        return smaller > 0 && overlap / smaller >= 0.5;
+    }
+
+    function matchesAnyRegion(stored, regions) {
+        for (var i = 0; i < regions.length; i++) {
+            if (regionMatches(stored, regions[i])) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // One scan per host call.
+    var scan = null;
+
+    A.invalidate = function () {
+        scan = null;
+    };
+
+    function ownedChildCount(item) {
+        var items = probe(item, "pageItems");
+        if (!items) {
+            return -1;
+        }
+        var children;
+        try {
+            children = items.everyItem().getElements();
+        } catch (e) {
+            return -1;
+        }
+        var owned = 0;
+        for (var i = 0; i < children.length; i++) {
+            if (isOwned(children[i])) {
+                owned++;
+            }
+        }
+        return owned;
+    }
+
+    function describeOwned(doc, item) {
+        var region = label(item, LABEL_REGION);
+        var page = parseInt(label(item, LABEL_PAGE), 10);
+        var bounds = boundsOf(item);
+        if (bounds) {
+            var rect = toCoreRect(bounds);
+            page = pageIndexAt(doc, (rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2, ORPHAN);
+        } else if (isNaN(page)) {
+            page = ORPHAN;
+        }
+        var shapes = parseInt(label(item, LABEL_SHAPES), 10);
+        var current = ownedChildCount(item);
+        return {
+            item: item,
+            isGuide: typeName(item) === "Guide",
+            kind: label(item, LABEL_KIND) === "preview" ? "preview" : "final",
+            artboard: page,
+            region: region || ("artboard:" + page),
+            settings: label(item, LABEL_SETTINGS),
+            schema: parseInt(label(item, LABEL_SCHEMA), 10) || 0,
+            // A different count of Mullion's own items means the user has edited
+            // this grid: their work, not ours to delete.
+            edited: !isNaN(shapes) && current >= 0 && current !== shapes,
+            hiddenByPreview: label(item, LABEL_HIDDEN) === "1"
+        };
+    }
+
+    // Grid roots at any depth on the document's own pages. Master spreads are
+    // left alone: a grid there has no page of its own to belong to.
+    function collectOwned(doc, container, depth, found) {
+        var items = probe(container, "pageItems");
+        if (!items) {
+            return;
+        }
+        var list;
+        try {
+            list = items.everyItem().getElements();
+        } catch (e) {
+            return;
+        }
+        for (var i = 0; i < list.length; i++) {
+            var item = list[i];
+            if (isOwned(item) && label(item, LABEL_KIND)) {
+                found.push(describeOwned(doc, item));
+            } else if (depth < 12 && typeName(item) === "Group") {
+                collectOwned(doc, item, depth + 1, found);
+            }
+        }
+    }
+
+    // Every labeled grid: groups and single items on the document's pages, plus guides.
     function ownedEntries(doc, filter) {
-        var found = [];
-        var candidates = [];
-        var i;
         filter = filter || {};
-        var items = doc.pageItems.everyItem().getElements();
-        for (i = 0; i < items.length; i++) {
-            candidates.push(items[i]);
+        var reusable = false;
+        try {
+            reusable = Boolean(scan) && scan.doc === doc;
+        } catch (e) {
+            reusable = false; // The cached document has been closed.
         }
-        for (i = 0; i < doc.pages.length; i++) {
-            var guides = doc.pages[i].guides.everyItem().getElements();
-            for (var g = 0; g < guides.length; g++) {
-                candidates.push(guides[g]);
+        if (!reusable) {
+            var found = [];
+            var i;
+            for (i = 0; i < doc.spreads.length; i++) {
+                collectOwned(doc, doc.spreads[i], 0, found);
             }
+            for (i = 0; i < doc.pages.length; i++) {
+                var guides = doc.pages[i].guides.everyItem().getElements();
+                for (var g = 0; g < guides.length; g++) {
+                    if (isOwned(guides[g]) && label(guides[g], LABEL_KIND)) {
+                        found.push(describeOwned(doc, guides[g]));
+                    }
+                }
+            }
+            scan = { doc: doc, entries: found };
         }
-        for (i = 0; i < candidates.length; i++) {
-            var item = candidates[i];
-            if (!isOwned(item) || !label(item, LABEL_KIND)) {
-                continue; // Owned children of a group carry no kind; only grid roots do.
-            }
-            var kind = label(item, LABEL_KIND) === "preview" ? "preview" : "final";
-            var page = parseInt(label(item, LABEL_PAGE), 10);
-            var region = label(item, LABEL_REGION) || ("artboard:" + page);
-            if (filter.kind !== undefined && filter.kind !== kind) {
+        var out = [];
+        for (var e = 0; e < scan.entries.length; e++) {
+            var entry = scan.entries[e];
+            if (filter.kind !== undefined && filter.kind !== entry.kind) {
                 continue;
             }
-            if (filter.artboards !== undefined && !contains(filter.artboards, page)) {
+            if (filter.artboards !== undefined && !contains(filter.artboards, entry.artboard) &&
+                !(filter.includeOrphans && entry.artboard === ORPHAN)) {
                 continue;
             }
-            if (filter.regions !== undefined && !contains(filter.regions, region)) {
+            if (filter.regions !== undefined && !matchesAnyRegion(entry.region, filter.regions)) {
                 continue;
             }
-            if (filter.regionPrefix !== undefined && region.substr(0, filter.regionPrefix.length) !== filter.regionPrefix) {
+            if (filter.regionPrefix !== undefined && entry.region.substr(0, filter.regionPrefix.length) !== filter.regionPrefix) {
                 continue;
             }
-            found.push({
-                item: item,
-                isGuide: item.constructor && item.constructor.name === "Guide",
-                kind: kind,
-                artboard: page,
-                region: region,
-                hiddenByPreview: label(item, LABEL_HIDDEN) === "1"
-            });
+            if (filter.exclude !== undefined && containsItem(filter.exclude, entry.item)) {
+                continue;
+            }
+            out.push(entry);
         }
-        return found;
+        return out;
     }
 
     A.findOwnedGroups = ownedEntries;
@@ -272,8 +515,11 @@
             }
             var children = item.pageItems.everyItem().getElements();
             var kept = 0;
+            var mine = [];
             for (var i = 0; i < children.length; i++) {
-                if (!isOwned(children[i])) {
+                if (isOwned(children[i])) {
+                    mine.push(children[i]);
+                } else {
                     kept++;
                 }
             }
@@ -281,11 +527,17 @@
                 item.remove();
                 return 0;
             }
-            // Release the group, then delete only Mullion's own items.
-            var released = item.ungroup();
-            for (var r = 0; r < released.length; r++) {
-                if (isOwned(released[r])) {
-                    released[r].remove();
+            /*
+             * Release the group, then delete only Mullion's own items, so the
+             * user's artwork stays. The children are collected first because
+             * ungroup's return value is not relied on.
+             */
+            item.ungroup();
+            for (var r = 0; r < mine.length; r++) {
+                try {
+                    mine[r].remove();
+                } catch (e) {
+                    // Already gone with the group; nothing to do.
                 }
             }
             return kept;
@@ -293,20 +545,52 @@
         return layer ? withEditableLayer(layer, remove) : remove();
     }
 
+    /*
+     * Hands a grid the user has edited back to them: the labels come off, so
+     * Mullion stops treating it as its own and never deletes it.
+     */
+    function releaseEntry(entry) {
+        var item = entry.item;
+        var names = [LABEL_OWNER, LABEL_KIND, LABEL_PAGE, LABEL_REGION, LABEL_HIDDEN, LABEL_SCHEMA, LABEL_SETTINGS, LABEL_SHAPES];
+        for (var i = 0; i < names.length; i++) {
+            try {
+                item.insertLabel(names[i], "");
+            } catch (e) {
+                // A label that cannot be cleared leaves the grid owned; better
+                // that than deleting work the user changed.
+            }
+        }
+        try {
+            item.name = "Edited grid";
+        } catch (e2) {
+            // Guides have no name.
+        }
+        scan = null;
+    }
+
     A.removeOwned = function (doc, filter, options) {
         var entries = ownedEntries(doc, filter);
         var rescued = 0;
+        var removed = 0;
+        var kept = 0;
         var touched = [];
         for (var i = entries.length - 1; i >= 0; i--) {
+            if (entries[i].edited && !(options && options.force)) {
+                releaseEntry(entries[i]);
+                kept++;
+                continue;
+            }
             rescued += removeEntry(entries[i]);
+            removed++;
+            scan = null;
             if (!contains(touched, entries[i].artboard)) {
                 touched.push(entries[i].artboard);
             }
         }
-        if (entries.length && !(options && options.keepLayer)) {
+        if (removed && !(options && options.keepLayer)) {
             removeEmptyManagedLayer(doc);
         }
-        return { removed: entries.length, rescued: rescued, artboards: touched.length };
+        return { removed: removed, rescued: rescued, kept: kept, artboards: touched.length };
     };
 
     function setHidden(entry, hidden) {
@@ -346,6 +630,38 @@
             }
         }
         return restored;
+    };
+
+    /*
+     * Ends previewing in one document: removes preview grids, shows again the
+     * grids they hid, and re-hides the grid layer if the preview had to show it.
+     */
+    A.endPreview = function (doc, keep) {
+        var filter = { kind: "preview" };
+        if (keep && keep.length) {
+            filter.exclude = keep;
+        }
+        var previews = ownedEntries(doc, filter);
+        var layerWasHidden = false;
+        for (var i = 0; i < previews.length; i++) {
+            if (label(previews[i].item, LABEL_LAYER_HIDDEN) === "1") {
+                layerWasHidden = true;
+            }
+        }
+        var removed = A.removeOwned(doc, filter, { keepLayer: true, force: true }).removed;
+        // Grids stay hidden while any preview is still showing in this document.
+        var stillPreviewing = ownedEntries(doc, { kind: "preview" }).length > 0;
+        var restored = stillPreviewing ? 0 : A.restorePreviewHidden(doc);
+        if (layerWasHidden && !stillPreviewing) {
+            var layer = findManagedLayer(doc);
+            if (layer) {
+                layer.visible = false;
+            }
+        }
+        if (removed) {
+            removeEmptyManagedLayer(doc);
+        }
+        return { removed: removed, restored: restored };
     };
 
     // ---------------------------------------------------------------- layers
@@ -388,6 +704,31 @@
         if (layer.pageItems.length === 0 && guides === 0) {
             layer.locked = false;
             layer.remove();
+            removeUnusedSwatches(doc);
+        }
+    }
+
+    /*
+     * Colours are added to the document's swatches so repeated grids share one,
+     * which means they outlive the grids unless they are cleaned up. Every colour
+     * Mullion added is removed once no grid is left to use it.
+     */
+    function removeUnusedSwatches(doc) {
+        var colors;
+        try {
+            colors = doc.colors.everyItem().getElements();
+        } catch (e) {
+            return;
+        }
+        for (var i = colors.length - 1; i >= 0; i--) {
+            var name = probe(colors[i], "name");
+            if (typeof name === "string" && name.substr(0, 8) === "Mullion ") {
+                try {
+                    colors[i].remove();
+                } catch (e2) {
+                    // A swatch still in use by the user's own artwork stays.
+                }
+            }
         }
     }
 
@@ -408,14 +749,25 @@
     A.describe = function (doc) {
         return inPoints(function () {
             var board = A.activeArtboard(doc);
-            var owned = ownedEntries(doc, { artboards: [board.index] });
+            var all = ownedEntries(doc, {});
             var previews = 0;
             var finals = 0;
-            for (var i = 0; i < owned.length; i++) {
-                if (owned[i].kind === "preview") {
-                    previews++;
+            var strayPreviews = 0;
+            var hiddenByPreview = 0;
+            for (var i = 0; i < all.length; i++) {
+                var onPage = all[i].artboard === board.index;
+                if (all[i].kind === "preview") {
+                    strayPreviews++;
+                    if (onPage) {
+                        previews++;
+                    }
                 } else {
-                    finals++;
+                    if (all[i].hiddenByPreview) {
+                        hiddenByPreview++;
+                    }
+                    if (onPage) {
+                        finals++;
+                    }
                 }
             }
             var pages = [];
@@ -442,7 +794,7 @@
                 artboard: board,
                 artboards: pages,
                 selection: { count: selected.length, objects: selection },
-                grids: { preview: previews, generated: finals },
+                grids: { preview: previews, generated: finals, strayPreviews: strayPreviews, hiddenByPreview: hiddenByPreview },
                 gridLayer: layer
                     ? { exists: true, visible: layer.visible, locked: layer.locked }
                     : { exists: false, visible: true, locked: false }
@@ -476,10 +828,14 @@
             }
             for (var i = 0; i < selection.length && out.length < MAX_SELECTION; i++) {
                 var item = selection[i];
-                if (!item || !item.geometricBounds || isInsideOwnedGrid(item)) {
-                    continue; // Text selections have no geometricBounds.
+                // Reading a property an object doesn't have raises an error in
+                // InDesign, and the cursor sitting in text is the commonest
+                // selection there is, so every read is probed.
+                var bounds = item ? boundsOf(item) : null;
+                if (!bounds || isInsideOwnedGrid(item)) {
+                    continue;
                 }
-                var rect = toCoreRect(item.geometricBounds);
+                var rect = toCoreRect(bounds);
                 if (rect[2] - rect[0] <= 0 || rect[1] - rect[3] <= 0) {
                     continue;
                 }
@@ -550,15 +906,23 @@
                     }
                     return;
                 }
-                if (type === "TextFrame" || type === "Text" || type === "InsertionPoint") {
+                if (type === "TextFrame" || type === "Text" || type === "InsertionPoint" ||
+                    type === "Character" || type === "Word" || type === "Paragraph" || type === "Story") {
                     hasText = true;
                     return;
                 }
-                if (!item.paths) {
+                var itemPaths = probe(item, "paths");
+                if (!itemPaths || typeof itemPaths.length !== "number") {
+                    // Anything with text but no outline is a text selection under
+                    // one of InDesign's many names for it; everything else here
+                    // (guides, images, placed graphics) simply has no paths.
+                    if (typeof probe(item, "contents") === "string") {
+                        hasText = true;
+                    }
                     return;
                 }
-                for (i = 0; i < item.paths.length; i++) {
-                    var path = item.paths[i];
+                for (i = 0; i < itemPaths.length; i++) {
+                    var path = itemPaths[i];
                     var list = [];
                     for (var j = 0; j < path.pathPoints.length; j++) {
                         var pp = path.pathPoints[j];
@@ -566,7 +930,7 @@
                     }
                     points += list.length;
                     if (list.length) {
-                        paths.push({ closed: path.pathType === PathType.CLOSED_PATH, points: list });
+                        paths.push({ closed: probe(path, "pathType") === PathType.CLOSED_PATH, points: list });
                     }
                 }
             }
@@ -575,8 +939,9 @@
                     if (isInsideOwnedGrid(selection[s])) {
                         continue;
                     }
-                    if (!firstBounds && selection[s].geometricBounds) {
-                        firstBounds = toCoreRect(selection[s].geometricBounds);
+                    var selectionBounds = boundsOf(selection[s]);
+                    if (!firstBounds && selectionBounds) {
+                        firstBounds = toCoreRect(selectionBounds);
                     }
                     collect(selection[s]);
                 }
@@ -655,12 +1020,28 @@
      * grid) from grid settings, for the target pages.
      */
     A.applyPageMargins = function (doc, indices, settings) {
+        /*
+         * On a facing-pages document, left and right mean inside and outside and
+         * are mirrored on every left-hand page. Writing the same numbers to both
+         * pages of a spread would mirror the layout the panel previewed.
+         */
+        var facing = probe(doc.documentPreferences, "facingPages") === true;
+        var mirrored = 0;
         for (var i = 0; i < indices.length; i++) {
-            var prefs = doc.pages[indices[i]].marginPreferences;
+            var page = doc.pages[indices[i]];
+            var prefs = page.marginPreferences;
+            var leftHand = false;
+            if (facing) {
+                var side = probe(page, "side");
+                leftHand = side !== null && /LEFT/.test(String(side));
+                if (leftHand) {
+                    mirrored++;
+                }
+            }
             prefs.top = settings.marginTop;
             prefs.bottom = settings.marginBottom;
-            prefs.left = settings.marginLeft;
-            prefs.right = settings.marginRight;
+            prefs.left = leftHand ? settings.marginRight : settings.marginLeft;
+            prefs.right = leftHand ? settings.marginLeft : settings.marginRight;
             if (settings.type === "columns" || settings.type === "modular") {
                 prefs.columnCount = settings.columns;
                 prefs.columnGutter = settings.columnGutter;
@@ -669,9 +1050,20 @@
         var baseline = settings.type === "baseline" || settings.addBaseline;
         if (baseline) {
             doc.gridPreferences.baselineDivision = settings.baselineSpacing;
-            doc.gridPreferences.baselineStart = settings.marginTop + settings.baselineOffset;
+            // The baseline grid is measured from the top of the page unless the
+            // document says otherwise, in which case the margin is already counted.
+            var fromMargin = false;
+            try {
+                fromMargin = doc.gridPreferences.baselineGridRelativeOption === BaselineGridRelativeOption.TOP_OF_MARGIN;
+            } catch (e) {
+                fromMargin = false;
+            }
+            doc.gridPreferences.baselineStart = fromMargin
+                ? settings.baselineOffset
+                : settings.marginTop + settings.baselineOffset;
         }
-        return { pages: indices.length, baseline: !!baseline };
+        // The baseline grid belongs to the document, not to the chosen pages.
+        return { pages: indices.length, baseline: !!baseline, facingPages: facing, mirroredPages: mirrored, baselineIsDocumentWide: !!baseline };
     };
 
     // --------------------------------------------------------------- drawing
@@ -690,16 +1082,63 @@
         return doc.colors.add({ name: name, model: ColorModel.PROCESS, space: ColorSpace.RGB, colorValue: hexToRgb(hex) });
     }
 
+    /*
+     * Stock stroke styles and the "None" swatch are named in the interface
+     * language, so they are looked up defensively: a localised build must not
+     * break drawing, and a dashed grid that silently draws solid would be worse
+     * than saying so.
+     */
+    function strokeStyleNamed(doc, names) {
+        for (var i = 0; i < names.length; i++) {
+            var style = doc.strokeStyles.itemByName(names[i]);
+            if (style && style.isValid) {
+                return style;
+            }
+        }
+        return null;
+    }
+
+    function noneSwatch(doc) {
+        var swatch = doc.swatches.itemByName("None");
+        if (swatch && swatch.isValid) {
+            return swatch;
+        }
+        var swatches = probe(doc, "swatches");
+        var list = null;
+        try {
+            list = swatches ? swatches.everyItem().getElements() : null;
+        } catch (e) {
+            list = null;
+        }
+        for (var i = 0; list && i < list.length; i++) {
+            if (probe(list[i], "model") === ColorModel.PROCESS && probe(list[i], "name") === "") {
+                return list[i];
+            }
+        }
+        return null;
+    }
+
     function makeStyle(doc, s) {
         if (s.output === "guides") {
             return { guides: true };
         }
         var main = swatchFor(doc, s.strokeColor);
         var margin = s.marginColorOn ? swatchFor(doc, s.marginColor) : main;
-        var styles = { solid: "Solid", dashed: "Dashed", dotted: "Dotted" };
+        var styleNames = {
+            solid: ["Solid"],
+            dashed: ["Dashed", "Dashed (3 and 2)", "Dashed (4 and 4)"],
+            dotted: ["Dotted", "Dotted (4 and 4)", "Japanese Dots"]
+        };
+        var requested = styleNames[s.lineStyle] || styleNames.solid;
+        var strokeType = strokeStyleNamed(doc, requested);
+        if (!strokeType && s.lineStyle !== "solid") {
+            throw new M.HostError("UNSUPPORTED",
+                "This InDesign doesn't have a " + s.lineStyle + " stroke style Mullion recognises. Choose solid lines, or add a " +
+                s.lineStyle + " stroke style to the document.");
+        }
         return {
             guides: false,
-            none: doc.swatches.itemByName("None"),
+            none: noneSwatch(doc),
             main: main,
             margin: margin,
             colorFor: function (kind) {
@@ -711,7 +1150,7 @@
             gutter: s.shadeGutters ? swatchFor(doc, s.gutterColor) : null,
             gutterOpacity: s.gutterOpacity,
             width: s.strokeWidth,
-            strokeType: doc.strokeStyles.itemByName(styles[s.lineStyle] || "Solid"),
+            strokeType: strokeType || strokeStyleNamed(doc, ["Solid"]),
             roundCaps: s.lineStyle === "dotted"
         };
     }
@@ -826,11 +1265,48 @@
         return guides;
     }
 
-    function tagRoot(item, kind, target) {
-        item.insertLabel(LABEL_OWNER, M.OWNER_ID);
-        item.insertLabel(LABEL_KIND, kind);
-        item.insertLabel(LABEL_PAGE, String(target.index));
-        item.insertLabel(LABEL_REGION, target.region || ("artboard:" + target.index));
+    /*
+     * The settings that made a grid, small enough to live in a label, so a
+     * document carries the recipe for the grid in it and a later release can
+     * migrate what this one wrote.
+     */
+    function settingsLabel(s) {
+        var out = {};
+        for (var key in s) {
+            if (s.hasOwnProperty(key) && typeof s[key] !== "function") {
+                out[key] = s[key];
+            }
+        }
+        var text = "";
+        try {
+            text = JSON.stringify({ schema: SCHEMA, settings: out });
+        } catch (e) {
+            text = "";
+        }
+        return text.length > 4000 ? "" : text;
+    }
+
+    function tagRoot(item, kind, target, settings, shapes) {
+        try {
+            item.insertLabel(LABEL_OWNER, M.OWNER_ID);
+            item.insertLabel(LABEL_KIND, kind);
+            item.insertLabel(LABEL_PAGE, String(target.index));
+            item.insertLabel(LABEL_REGION, target.region || ("artboard:" + target.index));
+            item.insertLabel(LABEL_SCHEMA, String(SCHEMA));
+            if (settings) {
+                item.insertLabel(LABEL_SETTINGS, settingsLabel(settings));
+            }
+            if (shapes !== undefined) {
+                item.insertLabel(LABEL_SHAPES, String(shapes));
+            }
+        } catch (e) {
+            /*
+             * Labels are how Mullion knows what is its own. Something it cannot
+             * label it must not draw, or Clear could never remove it.
+             */
+            throw new M.HostError("UNSUPPORTED",
+                "InDesign would not let Mullion mark this grid as its own, so it was not drawn. Try a different output than guides.");
+        }
     }
 
     A.drawGrid = function (doc, target, grid, kind) {
@@ -841,25 +1317,39 @@
             if (s.output === "guides") {
                 var guides = drawGuides(page, layer, grid);
                 for (var g = 0; g < guides.length; g++) {
-                    tagRoot(guides[g], kind, target);
+                    tagRoot(guides[g], kind, target, g === 0 ? s : null, 0);
                 }
-                return { shapes: guides.length, groupName: "" };
+                // Guides cannot be grouped, so each one is its own grid root and
+                // all of them must be reported as created.
+                return { shapes: guides.length, groupName: "", group: guides.length ? guides[0] : null, groups: guides };
             }
             var items = drawShapes(page, layer, grid, makeStyle(doc, s));
             if (!items.length) {
-                return { shapes: 0, groupName: "" };
+                return { shapes: 0, groupName: "", group: null };
             }
             var root = items.length > 1 ? page.groups.add(items, layer) : items[0];
             root.name = (kind === "preview" ? "Preview: " : "") + GRID_LABELS[s.type] + ", " + target.name;
-            tagRoot(root, kind, target);
+            tagRoot(root, kind, target, s, items.length > 1 ? items.length : 0);
             root.transparencySettings.blendingSettings.opacity = s.opacity;
-            return { shapes: items.length, groupName: root.name };
+            return { shapes: items.length, groupName: root.name, group: root };
         });
-        layer.visible = true;
+        // A preview has to be visible to be a preview, but the user's choice is
+        // remembered so ending the preview can put the layer back.
+        if (!layer.visible) {
+            if (kind === "preview" && created.group) {
+                try {
+                    created.group.insertLabel(LABEL_LAYER_HIDDEN, "1");
+                } catch (e) {
+                    // Nothing to restore if it cannot be recorded.
+                }
+            }
+            layer.visible = true;
+        }
         if (kind === "final") {
             layer.locked = s.lockLayer;
         }
         created.layerName = layer.name;
+        scan = null;
         return created;
     };
 

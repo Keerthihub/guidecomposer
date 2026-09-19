@@ -7,6 +7,9 @@
  *   id, category, name     identity and grouping
  *   settings               fixed layout values (lengths in settings.units, or in
  *                          the user's units when settings.units is absent)
+ *                          Whatever a layout leaves out is reset (see RESET), so
+ *                          applying one always produces the grid its tile shows,
+ *                          whatever the panel was set to before.
  *   relative               optional lengths as fractions of the artboard, so a
  *                          layout suits any page size:
  *                            basis "short": fraction of the artboard's shorter side
@@ -31,6 +34,37 @@
     var VERTICAL_KEYS = { marginTop: true, marginBottom: true, rowGutter: true, baselineSpacing: true, baselineOffset: true };
 
     var CATEGORIES = ["Systems", "Columns", "Modular", "Asymmetric", "Baseline", "Print", "Screen", "Social", "Composition", "Patterns"];
+
+    /*
+     * The grid fields every layout declares, whether it names them or not. A
+     * layout that says nothing about ratios means equal columns, and a layout
+     * that says nothing about margins means none, so leaving the panel's last
+     * values in place would draw a grid no tile ever showed.
+     *
+     * Lengths reset to zero; counts and pattern settings reset to the same
+     * neutral values grid-core defaults to. Appearance is not listed: color,
+     * stroke, and output stay as the user set them.
+     */
+    var RESET = {
+        columns: 12, rows: 8,
+        columnRatios: "", rowRatios: "", blocks: [],
+        columnGutter: 0, rowGutter: 0,
+        marginTop: 0, marginRight: 0, marginBottom: 0, marginLeft: 0,
+        addBaseline: false, baselineSpacing: 12, baselineOffset: 0,
+        overlayColumns: 0, squareModules: false, extendToEdges: false,
+        compThirds: false, compFifths: false, compGolden: false, compDiagonals: false, compCenter: false,
+        compArmature: false, compDynamic: false, compVillard: false, compSpiral: false,
+        spiralFocus: "bottom-right",
+        pattern: "square", patternSize: 24, patternAngle: 45, dotSize: 2, rings: 6, spokes: 12
+    };
+
+    // Settings that carry a length, which tell a layout with sizes of its own
+    // from one that is nothing but proportions.
+    var LENGTH_KEYS = {
+        columnGutter: true, rowGutter: true,
+        marginTop: true, marginRight: true, marginBottom: true, marginLeft: true,
+        baselineSpacing: true, baselineOffset: true, patternSize: true, dotSize: true
+    };
 
     var NO_MARGINS = { marginTop: 0, marginRight: 0, marginBottom: 0, marginLeft: 0 };
     var COMP_OFF = {
@@ -389,15 +423,36 @@
         return r === 0 ? 0 : r;
     }
 
+    function copyList(list) {
+        var out = [];
+        for (var i = 0; i < list.length; i++) {
+            out.push(assign({}, list[i]));
+        }
+        return out;
+    }
+
+    // A fresh set of the values every layout declares by omission.
+    function resetSettings() {
+        var out = {};
+        for (var key in RESET) {
+            if (Object.prototype.hasOwnProperty.call(RESET, key)) {
+                out[key] = key === "blocks" ? [] : RESET[key];
+            }
+        }
+        return out;
+    }
+
     /*
      * Concrete layout settings for an artboard.
      *   rect:  Illustrator artboard rectangle [left, top, right, bottom] in points
      *   units: the user's current units, used when the layout doesn't set its own
-     * Returns a settings object containing only the layout's fields.
+     * Returns every grid field the layout decides: the ones it sets, and the
+     * ones it resets. Appearance is left alone.
      */
     function resolveLayout(layout, rect, units) {
-        var out = assign({}, layout.settings);
+        var out = assign(resetSettings(), layout.settings);
         out.units = layout.settings.units || units || "pt";
+        out.blocks = copyList(out.blocks); // Never hand back the library's own array.
         var rel = layout.relative;
         if (rel) {
             var width = rect[2] - rect[0];
@@ -424,7 +479,21 @@
         return a ? "Made for a " + a.width + " × " + a.height + " " + a.units + " artboard." : "";
     }
 
-    // Short label for a gallery tile.
+    // Does the layout fix any length, or is it pure proportion?
+    function hasFixedLengths(layout) {
+        for (var key in layout.settings) {
+            if (Object.prototype.hasOwnProperty.call(layout.settings, key) && LENGTH_KEYS[key] && layout.settings[key] !== 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /*
+     * Short label for a gallery tile. The three answers say different things and
+     * must not read alike: a size the layout was made for, sizes it keeps on any
+     * page, or no sizes at all.
+     */
     function describeShort(layout) {
         if (layout.artboard) {
             return layout.artboard.width + " × " + layout.artboard.height + " " + layout.artboard.units;
@@ -432,12 +501,17 @@
         if (layout.detail) {
             return layout.detail;
         }
-        return layout.relative ? "Fits any page" : "Any page";
+        if (layout.relative) {
+            return "Scales to any page";
+        }
+        return hasFixedLengths(layout) ? "Fixed sizes, any page" : "Proportions only, any page";
     }
 
     /*
      * Layouts made for an artboard of this shape, best first: exact size, then
-     * same proportions (within 2.5%). Returns up to `limit` layouts.
+     * same proportions (within 2.5%), then the same either way up. A layout made
+     * for a portrait page suits that page turned sideways too, so orientation
+     * narrows the ranking rather than the field. Returns up to `limit` layouts.
      */
     function suggestLayouts(rect, limit) {
         var width = rect[2] - rect[0];
@@ -452,12 +526,24 @@
             if (!size) {
                 continue;
             }
-            var difference = Math.abs(Math.log(ratio / (size.width / size.height)));
-            if (difference > 0.025) {
-                continue;
+            var best = null;
+            for (var turn = 0; turn < 2; turn++) {
+                var w = turn ? size.height : size.width;
+                var h = turn ? size.width : size.height;
+                var difference = Math.abs(Math.log(ratio / (w / h)));
+                if (difference > 0.025) {
+                    continue;
+                }
+                var exact = Math.abs(w - width) <= width * 0.01 && Math.abs(h - height) <= height * 0.01;
+                // Turned layouts rank below ones that already face the right way.
+                var score = (exact ? 0 : 1) + difference + (turn ? 0.5 : 0);
+                if (best === null || score < best) {
+                    best = score;
+                }
             }
-            var exact = Math.abs(size.width - width) <= width * 0.01 && Math.abs(size.height - height) <= height * 0.01;
-            scored.push({ layout: LAYOUTS[i], score: (exact ? 0 : 1) + difference, order: i });
+            if (best !== null) {
+                scored.push({ layout: LAYOUTS[i], score: best, order: i });
+            }
         }
         scored.sort(function (a, b) { return a.score - b.score || a.order - b.order; });
         var out = [];

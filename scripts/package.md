@@ -6,7 +6,7 @@ CEP extensions ship as signed `.zxp` files. Don't package Mullion as `.ccx`; tha
 
 **Choose where to sign.**
 
-- **On GitHub (no local tools).** Push the repository to GitHub, then add two repository secrets under Settings > Secrets and variables > Actions: `ZXP_CERT_BASE64` (on macOS: `base64 -i cert.p12 | pbcopy`) and `ZXP_CERT_PASSWORD`. Run **Signed release** from the Actions tab, or push a tag such as `v0.1.0`. The signed `.zxp` is attached to the run.
+- **On GitHub (no local tools).** Push the repository to GitHub, then add two repository secrets under Settings > Secrets and variables > Actions: `ZXP_CERT_BASE64` (on macOS: `base64 -i cert.p12 | pbcopy`) and `ZXP_CERT_PASSWORD`. Push a tag such as `v0.1.0`, or run **Signed release** from the Actions tab. See [What the release workflow does](#what-the-release-workflow-does) below — a tag publishes a permanent GitHub Release; a manual run only signs.
 - **On your computer.** Download ZXPSignCmd for your OS from Adobe's [CEP-Resources repository](https://github.com/Adobe-CEP/CEP-Resources) (`ZXPSignCMD` folder). On macOS, run `chmod +x ZXPSignCmd` and approve it in System Settings > Privacy & Security if blocked. Adobe's macOS build is Intel-only: on Apple Silicon Macs install Rosetta once with `softwareupdate --install-rosetta --agree-to-license`.
 
 **Create a certificate.** Adobe accepts self-signed certificates for ZXP packages. Store the certificate **outside this repository** and the password in a password manager.
@@ -61,6 +61,44 @@ $plain = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServ
 
 The timestamp (`-tsa`) keeps the signature valid after the certificate expires. If the timestamp server is unreachable, try another RFC 3161 server rather than signing without one.
 
+### What the release workflow does
+
+`.github/workflows/release.yml`, on a pushed `v*` tag:
+
+1. **Refuses a mismatched tag.** `node scripts/release-checks.js --tag <tag>`
+   fails the run unless the tag is `v` + `package.json`'s version, every version
+   in the manifest and the host agrees with it, and `CHANGELOG.md` has notes
+   under a heading for it. Pushing `v0.2.0` on a `0.1.0` commit can no longer
+   produce a `mullion-0.1.0.zxp` under a release called 0.2.0.
+2. **Gates on the real tests.** The unit tests, the production build, **and the
+   headless-Chrome panel smoke test** must pass on Ubuntu, macOS and Windows
+   before anything is signed. A panel that throws on load cannot be signed.
+3. **Pins the signing tool.** `ZXPSignCmd` is downloaded from a specific commit
+   of Adobe's `CEP-Resources` repository, not from `master`, and its SHA-256 is
+   verified before it runs — it shares a job with the certificate and its
+   password. The pin and hash are recorded in the workflow file. If Adobe
+   publishes a new build, the run fails loudly; check the change, then update
+   both values deliberately.
+4. **Signs and timestamps**, verifies the signature, and deletes the certificate
+   file in a `finally` block.
+5. **Publishes a permanent GitHub Release** with the `.zxp`, a `.sha256` file,
+   and release notes taken from the matching `CHANGELOG.md` section plus the
+   checksum and how to verify it.
+
+The workflow artefact is only a hand-off between jobs and expires in 7 days. The
+Release is the permanent copy — it is what lets you hand a customer the previous
+version a year later, which workflow artefacts never could.
+
+To verify a downloaded package by hand:
+
+```sh
+shasum -a 256 mullion-0.1.0.zxp          # macOS/Linux
+```
+
+```powershell
+Get-FileHash mullion-0.1.0.zxp -Algorithm SHA256   # Windows
+```
+
 ## 4. Test the signed package
 
 Test on **clean user accounts** (or virtual machines) on macOS and Windows, with debug mode **off** so the signature is what's being tested.
@@ -91,22 +129,66 @@ Don't promise customers that a `.zxp` installs by double-clicking. Document the 
 
 ```text
 mullion-0.1.0.zip
-├── mullion-0.1.0.zxp
-├── Installation.pdf         tested steps for macOS and Windows
-├── License.txt
+├── mullion-0.1.0.zxp             the signed package
+├── mullion-0.1.0.zxp.sha256      from the GitHub Release, so buyers can verify
+├── Installation.pdf              tested steps for macOS and Windows, with screenshots
+├── LICENSE.txt                   the end-user licence agreement (from LICENSE)
+├── PRIVACY.txt                   from PRIVACY.md
+├── NOTICE.txt                    third-party notices (from NOTICE)
+├── Troubleshooting.pdf           from docs/TROUBLESHOOTING.md
+├── Updating-and-presets.pdf      from docs/UPDATING.md — read before updating
 └── Quick-start-video-link.txt
 ```
 
-**Adobe Creative Cloud Marketplace**. Through [Adobe Developer Distribution](https://developer.adobe.com/developer-distribution/): complete the publisher profile, create a listing, and upload the signed `.zxp`. Add the description, icons, screenshots, support email, help URL, privacy policy (`PRIVACY.md`), and terms (`TERMS.md`). Declare supported Illustrator and OS versions, then submit for review. Paid listings require Adobe's commerce setup. Marketplace listings need larger icon artwork than the 23 × 23 panel icons in `icons/`.
+**How the licence reaches the customer.** It cannot be inside the `.zxp`: the
+build copies only `CSXS/`, `client/`, `host/`, `shared/` and `icons/`, and
+`checkPackageContents` fails the build on anything else, so a `LICENSE` file in
+the package would break the release. The licence therefore reaches the buyer in
+three places, and all three must exist before you sell:
+
+1. **On the listing page, before purchase** — a link to the licence text at a
+   stable public URL, so the buyer can read it before paying. Stores generally
+   require this, and consumer law in several countries does too.
+2. **In the sales zip**, as `LICENSE.txt` above — the copy they keep.
+3. **In the delivery email** from the store, as a link.
+
+Convert the Markdown sources to `.txt` and `.pdf` at release time (any Markdown
+tool will do); do not hand a customer a `.md` file. Check first that every
+`[PLACEHOLDER]` is gone — `docs/LAUNCH-CHECKLIST.md` has the list and the
+one-line `grep` that finds them.
+
+**Adobe Creative Cloud Marketplace**. Through [Adobe Developer Distribution](https://developer.adobe.com/developer-distribution/): complete the publisher profile, create a listing, and upload the signed `.zxp`. Add the description, icons, screenshots, support email, help URL, privacy policy (`PRIVACY.md`), and terms (`TERMS.md`). Declare supported Illustrator and OS versions, then submit for review. Paid listings require Adobe's commerce setup. Marketplace listings need larger icon artwork than the panel icons in `icons/`, plus screenshots — `../docs/LISTING-ARTWORK.md` lists exactly what you must produce by hand, and where the stated sizes come from.
 
 If you sell through both channels, keep separate release records and document how each channel delivers updates.
 
 ## Release checklist
 
-- [ ] Versions updated in package.json, manifest (2 places), host/index.jsx, CHANGELOG.md
-- [ ] `npm run check` and `npm run test:ui` pass
-- [ ] Manual QA checklist complete on macOS and Windows
+Run this for **every** release, not just the first one.
+
+**Before tagging**
+
+- [ ] Versions updated in package.json, manifest (2 places), host/index.jsx, and a dated CHANGELOG.md section — `node scripts/release-checks.js` proves all four agree and that the changelog section exists
+- [ ] `npm run check` and `npm run test:ui` pass locally
+- [ ] Manual QA checklist (README.md) complete on macOS and Windows
 - [ ] `npm run build` succeeds; `dist/mullion/` contains no development files
-- [ ] Signed with the release certificate and a timestamp; `-verify` passes
-- [ ] Signed package tested with debug mode off: install, launch, generate, clear, update, uninstall
-- [ ] Release notes written; package archived with its version number
+- [ ] Anything the release changes about behaviour is reflected in `docs/` — especially `docs/COMPATIBILITY.md` (versions actually tested) and `docs/UPDATING.md` (what survives an update)
+
+**Tag and sign**
+
+- [ ] Tag pushed as `v<version>`, matching package.json exactly (the workflow fails otherwise)
+- [ ] Signed with the release certificate — the same one as every previous release — and a timestamp; `-verify` passes
+- [ ] GitHub Release published with the `.zxp`, its `.sha256`, and the changelog notes
+- [ ] Downloaded the `.zxp` from the Release and confirmed its SHA-256 matches the published one
+
+**Verify what the customer will actually do — on macOS *and* on Windows, with debug mode off**
+
+- [ ] Install, launch, Draw test line, generate each grid type, Clear, restart the app
+- [ ] **Update over the previous version: settings and saved presets must survive.** Save a preset on the old version, install the new `.zxp` over it, restart, and check the preset is still listed. This is the promise `docs/UPDATING.md` makes to customers, and CEP storage is the kind of thing an installer change can quietly break — so it is re-verified every release, on both operating systems, not just once
+- [ ] Export presets, uninstall, reinstall, import: the export/import path still works, and the uninstall still clears storage as documented
+- [ ] Uninstall leaves no panel in the Window menu and no error on next launch
+- [ ] Record the OS builds and app versions used, and update `docs/COMPATIBILITY.md` if they widen what you can claim
+
+**Afterwards**
+
+- [ ] Release notes published; the previous release is still downloadable for customers who need to go back
+- [ ] Sales zip rebuilt with the new `.zxp`, its checksum, and the current licence and documents

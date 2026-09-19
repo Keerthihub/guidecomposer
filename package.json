@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Mullion: a layout-grid panel for Adobe Illustrator (CEP extension).",
-  "license": "UNLICENSED",
+  "license": "SEE LICENSE IN LICENSE",
   "scripts": {
     "test": "node --test \"tests/*.test.js\"",
     "test:ui": "node scripts/ui-smoke.js",
@@ -12,7 +12,8 @@
     "icons": "node scripts/make-icons.js",
     "build": "npm run check && node scripts/build.js",
     "sign:mac": "scripts/sign-zxp.sh",
-    "rename": "node scripts/rename.js"
+    "rename": "node scripts/rename.js",
+    "release:check": "node scripts/release-checks.js"
   },
   "engines": {
     "node": ">=20"

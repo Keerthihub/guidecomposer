@@ -41,6 +41,13 @@ Mix Illustrator versions (2022 through the latest) and screen setups (docked, fl
 3. The first-session tasks (section 4).
 4. The feedback form link (section 5).
 5. How to report a bug (section 6).
+6. `docs/TROUBLESHOOTING.md`, so a tester whose panel doesn't appear can get
+   themselves unstuck instead of dropping out of the beta.
+7. `docs/UPDATING.md` — testers will be sent several builds during the beta, and
+   need to know to export their presets before each one.
+8. The beta terms: that this is a pre-release, that it may lose their presets,
+   and that they should not use it on work they can't afford to redo. If you
+   have a beta licence text, send it; otherwise say this in the email.
 
 **Install on macOS** (Terminal):
 
@@ -90,14 +97,42 @@ Create this in Google Forms, Tally, or similar.
 
 ## 6. Bug report template
 
+Send this to testers as a template they can copy. The first line does most of
+the work: **More > Copy diagnostics** puts the plugin version, the host application
+and version, the operating system, the open document's name and size, the
+current panel settings, and the last error on the clipboard in one click. It
+contains no artwork and no document contents; tell testers they can delete the
+document name if a project is confidential.
+
+> **Diagnostics:** (paste the output of More > Copy diagnostics — if the panel
+> won't open, fill in the next three lines by hand instead)
+> **Plugin version:** (e.g. 0.1.0 — from the diagnostics, from the Creative
+> Cloud desktop app's plugin list, or from the filename you installed)
+> **App and version:** (Help > About — the full number, e.g. "Illustrator 2025,
+> 29.3", not just the year)
+> **Operating system and build:** (macOS: Apple menu > About This Mac, and say
+> Apple Silicon or Intel — e.g. "macOS 15.3, Apple Silicon". Windows: Settings >
+> System > About, copy the Edition, Version and OS build lines — e.g. "Windows
+> 11 Pro 24H2, build 26100.2894")
 > **What I did:** (steps, starting from opening the panel)
 > **What I expected:**
 > **What happened instead:**
 > **Status line text:** (the message at the bottom of the panel)
-> **App and version / operating system:**
+> **Does it happen every time?**
 > **Screenshot or screen recording:**
 
-If the panel won't open, ask for the CEP log (see README, Debugging).
+Why the OS *build* and not just "Windows 11": CEP's embedded Chromium and the
+Creative Cloud plugin installer behave differently across feature updates, and
+"Windows 11" covers several years of them.
+
+The same fields are in `.github/ISSUE_TEMPLATE/bug_report.yml` if you open the
+repository to testers, and in `docs/TROUBLESHOOTING.md` for customers after
+launch.
+
+If the panel won't open, first point testers at `docs/TROUBLESHOOTING.md` — it
+covers the common causes without asking anyone to edit a registry. Only if that
+fails, ask for the CEP log (see README, Debugging), and send them the exact
+commands rather than asking them to find them.
 
 ## 7. Tracking
 

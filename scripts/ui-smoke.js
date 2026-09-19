@@ -6,8 +6,12 @@
  *
  * Fails on any uncaught exception or console error, and checks the main
  * interactions: validation, unit conversion, preview, generate, clear,
- * presets, persistence, and the no-document state. Uses the Chrome DevTools
- * Protocol over Node's built-in WebSocket, so it needs no npm packages.
+ * presets, persistence, and the no-document state. It also covers the states
+ * that are hard to reach by hand and easy to break: the smallest panel the
+ * manifest allows (240 × 320), a host that answers too slowly, storage that
+ * refuses to write, focus when a field is hidden, and an extension updated
+ * underneath the panel. Uses the Chrome DevTools Protocol over Node's built-in
+ * WebSocket, so it needs no npm packages.
  * Set CHROME_PATH if Chrome is not in the default macOS location.
  */
 "use strict";
@@ -134,6 +138,23 @@ async function main() {
         const click = (id) => `document.getElementById(${JSON.stringify(id)}).click()`;
         const mode = (name) => `document.querySelector('input[name="panel-mode"][value=${JSON.stringify(name)}]').click()`;
         const shown = (selector) => `(() => { const el = document.querySelector(${JSON.stringify(selector)}); return Boolean(el) && el.getClientRects().length > 0; })()`;
+
+        // ------------------------------------------ Chromium 88 (Illustrator 2022) compatibility
+        // The panel has to run in CEP 11's Chromium 88, which has none of these.
+        // Comments name these features, so they are stripped before looking.
+        const css = fs.readFileSync(path.join(ROOT, "client", "styles.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+        check(!/:has\(/.test(css) && !/color-mix\(/.test(css) && !/@container/.test(css), "no :has(), color-mix() or container queries in the stylesheet");
+        const supportsBlock = (css.match(/@supports \(accent-color[^{]*\{[\s\S]*?\n\}/) || [""])[0];
+        const accentUses = (css.match(/accent-color/g) || []).length;
+        const guardedUses = (supportsBlock.match(/accent-color/g) || []).length;
+        check(accentUses === guardedUses, "every accent-color is inside an @supports guard (" + guardedUses + " of " + accentUses + ")");
+        check(/\.mode input:checked:focus-visible/.test(css), "the selected mode tab has a focus ring of its own, not accent on accent");
+
+        // The panel compares its own version with the one the host reports, so a
+        // stale PANEL_VERSION would offer a reload on every launch.
+        const pkgVersion = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8")).version;
+        const panelVersion = (fs.readFileSync(path.join(ROOT, "client", "app.js"), "utf8").match(/PANEL_VERSION = "([^"]+)"/) || [])[1];
+        check(panelVersion === pkgVersion, "the panel's version matches package.json (" + panelVersion + " vs " + pkgVersion + ")");
 
         // ---------------------------------------------------------------- default state
         await load("?theme=dark");
@@ -394,7 +415,10 @@ async function main() {
         await evaluate(click("generate"));
         await sleep(300);
         check(/Added a column grid to Artboard 1 \(22 shapes\)/.test(await evaluate(text("status"))), "generate reports result: " + await evaluate(text("status")));
-        check(await evaluate(`document.getElementById("preview-toggle").checked`) === false, "generate turns preview off");
+        check(await evaluate(`document.getElementById("preview-toggle").checked`) === true, "Generate keeps Preview on");
+        await sleep(500);
+        check(await evaluate(`document.getElementById("preview-toggle").checked`) === true, "preview is still on once Generate has finished");
+        check(/Added a column grid to Artboard 1/.test(await evaluate(text("status"))), "the preview resuming after Generate keeps Generate's message: " + await evaluate(text("status")));
         await shoot("dark-generated");
         await evaluate(click("generate"));
         await sleep(300);
@@ -409,6 +433,8 @@ async function main() {
         await evaluate(click("clear"));
         await sleep(300);
         check(/Cleared 2 grids from Artboard 1/.test(await evaluate(text("status"))), "clear reports result: " + await evaluate(text("status")));
+        check(await evaluate(`document.getElementById("preview-toggle").checked`) === false &&
+            /Preview is off/.test(await evaluate(text("status"))), "Clear stops previewing and says so: " + await evaluate(text("status")));
 
         // ---------------------------------------------------------------- presets and persistence
         await evaluate(click("preset-new"));
@@ -439,7 +465,9 @@ async function main() {
         await evaluate(mode("layouts"));
         await sleep(150);
         check(await evaluate(shown("#library")) && !(await evaluate(shown("#settings"))) && !(await evaluate(shown("#controls"))), "Layouts mode replaces the settings area");
-        check(await evaluate(`document.getElementById("generate").disabled`) === true, "Generate waits until a layout is picked and you return to Grid");
+        check(await evaluate(`document.getElementById("generate").disabled`) === true &&
+            await evaluate(`document.getElementById("generate").title`) === "Choose a layout, then switch to Grid to generate it.",
+            "Generate waits until a layout is picked and you return to Grid, and says so");
         const chips = await evaluate(`Array.from(document.querySelectorAll("#library-chips input")).map(i => i.value).join("|")`);
         check(chips === "Systems|Suggested|All|Columns|Modular|Asymmetric|Baseline|Print|Screen|Social|Composition|Patterns", "category chips: " + chips);
         check(await evaluate(`document.querySelector("#library-chips input:checked").value`) === "Systems", "library opens on Systems");
@@ -485,7 +513,9 @@ async function main() {
         check(/Made for a 1440 × 1024 px artboard./.test(await evaluate(text("status"))), "fixed layout names its artboard");
         await evaluate(`(() => { const s = document.getElementById("library-search"); s.value = "letter, 3"; s.dispatchEvent(new Event("input", { bubbles: true })); })()`);
         await evaluate(`document.querySelector('#library-grid .tile[data-layout="letter-3"]').click()`);
-        check(await evaluate(value("units")) === "in" && await evaluate(value("patternSize")) === "0.333" && await evaluate(value("baselineSpacing")) === "0.167", "an inch layout converts the lengths it doesn't set (24 pt -> 0.333 in, 12 pt -> 0.167 in)");
+        check(await evaluate(value("units")) === "in" && await evaluate(value("columnGutter")) === "0.25" && await evaluate(value("marginTop")) === "0.75",
+            "an inch layout brings its own units and lengths (0.25 in gutter, 0.75 in top margin), got " +
+            await evaluate(value("units")) + " " + await evaluate(value("columnGutter")) + " " + await evaluate(value("marginTop")));
         await evaluate(`(() => { const s = document.getElementById("library-search"); s.value = ""; s.dispatchEvent(new Event("input", { bubbles: true })); })()`);
         await evaluate(chip("Patterns"));
         await evaluate(`document.querySelector('#library-grid .tile[data-layout="dots-5mm"]').click()`);
@@ -572,8 +602,10 @@ async function main() {
         await evaluate(mode("layouts"));
         await evaluate(`(() => { const s = document.getElementById("library-search"); s.value = "portrait post"; s.dispatchEvent(new Event("input", { bubbles: true })); })()`);
         await evaluate(`document.querySelector('#library-grid .tile[data-layout="portrait-post"]').click()`);
-        check(await evaluate(`document.querySelector("#status .link-button") && document.querySelector("#status .link-button").textContent`) === "Resize artboard to 1080 × 1350 px", "resize offered for a fixed-size layout");
-        await evaluate(`document.querySelector("#status .link-button").click()`);
+        const offered = await evaluate(`Array.from(document.querySelectorAll("#status .link-button")).map(b => b.textContent).join("|")`);
+        check(offered === "Edit settings|Resize artboard to 1080 × 1350 px", "a second offer is added beside the first, not instead of it: " + offered);
+        check(!/Edit settings/.test(await evaluate(`document.getElementById("status").firstChild.textContent`)), "the message itself never swallows an action's label: " + await evaluate(`document.getElementById("status").firstChild.textContent`));
+        await evaluate(`Array.from(document.querySelectorAll("#status .link-button")).find(b => /^Resize/.test(b.textContent)).click()`);
         await sleep(300);
         check(await evaluate(text("artboard-size")) === "1080 × 1350 px", "one click resizes to the layout's size: " + await evaluate(text("artboard-size")));
         await evaluate(mode("grid"));
@@ -711,11 +743,282 @@ async function main() {
         check(await evaluate(value("columnGutter")) === "22", "Shift+ArrowUp steps by 10");
         await evaluate(setField("columnGutter", "12"));
 
+        // ---------------------------------------------------------------- unit-aware steps
+        const stepOf = (name) => `document.querySelector('[name=${JSON.stringify(name)}]').step`;
+        check(await evaluate(stepOf("columnGutter")) === "1", "lengths step by 1 pt in points");
+        await evaluate(setField("units", "mm"));
+        check(await evaluate(stepOf("columnGutter")) === "0.5" && await evaluate(stepOf("marginTop")) === "0.5", "lengths step by 0.5 mm in millimeters");
+        await evaluate(setField("units", "in"));
+        check(await evaluate(stepOf("columnGutter")) === "0.05" && await evaluate(stepOf("patternSize")) === "0.05", "lengths step by 0.05 in in inches, not a whole inch");
+        const inchGutter = Number(await evaluate(value("columnGutter")));
+        await evaluate(`(() => { const el = document.querySelector('[name="columnGutter"]'); el.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", shiftKey: true, bubbles: true })); })()`);
+        check(Math.abs(Number(await evaluate(value("columnGutter"))) - (inchGutter + 0.5)) < 0.0005,
+            "Shift+ArrowUp moves an inch gutter by 0.5 in (" + inchGutter + " -> " + await evaluate(value("columnGutter")) + ")");
+        check(await evaluate(stepOf("strokeWidth")) === "0.25" && await evaluate(stepOf("dotSize")) === "0.5", "fields measured in points keep their own steps");
+        await evaluate(setField("units", "pt"));
+        await evaluate(click("reset"));
+
+        // ------------------------------------------- errors say why Generate is off, and are announced
+        await evaluate(setField("columns", "0"));
+        check(/whole number from 1 to 100/.test(await evaluate(text("status"))) && await evaluate(`document.getElementById("status").dataset.tone`) === "error",
+            "an inline error that disables Generate is summarized in the status line: " + await evaluate(text("status")));
+        check(await evaluate(`document.getElementById("generate").disabled`) === true &&
+            await evaluate(`document.getElementById("generate").title`) === "Adjust the highlighted settings first.",
+            "Generate is off while that error stands, and says why");
+        await evaluate(setField("columnGutter", "-5"));
+        check(/gutter must be a number/.test(await evaluate(text("field-errors"))),
+            "further inline errors reach a live region: " + await evaluate(text("field-errors")));
+        await evaluate(setField("columnGutter", "12"));
+        await evaluate(setField("columns", "12"));
+        check(await evaluate(text("status")) === "" && await evaluate(text("field-errors")) === "", "both clear when the settings are valid again");
+        check(/^Drawing of .*Artboard 1\.$/.test(await evaluate(text("schematic-title"))), "the drawing's title describes what it shows: " + await evaluate(text("schematic-title")));
+        check(/pointer/.test(await evaluate(text("blocks-summary"))), "the blocks note says marking blocks needs a pointer: " + await evaluate(text("blocks-summary")));
+        check(await evaluate(`getComputedStyle(document.getElementById("status"), "::before").color`) === "rgb(27, 27, 27)" ||
+            await evaluate(`(() => { const s = document.getElementById("status"); s.dataset.tone = "ok"; const c = getComputedStyle(s, "::before").color; delete s.dataset.tone; return c; })()`) === "rgb(27, 27, 27)",
+            "the tone badge draws its glyph in dark ink, not white on mid-tone");
+
+        // -------------------------------------- a drag interrupted by a settings change records nothing
+        await evaluate(setField("type", "modular"));
+        await evaluate(setField("columns", "4"));
+        await evaluate(setField("rows", "4"));
+        const dragInterrupted = (from, to) => `(() => {
+            const svg = document.getElementById("schematic");
+            const ctm = svg.getScreenCTM();
+            const at = ([x, y]) => {
+                const p = svg.createSVGPoint();
+                p.x = x; p.y = y;
+                const s = p.matrixTransform(ctm);
+                return { clientX: s.x, clientY: s.y, button: 0, pointerId: 1, bubbles: true };
+            };
+            svg.dispatchEvent(new PointerEvent("pointerdown", at(${JSON.stringify(from)})));
+            // Anything that rebuilds the grid mid-drag: an edit here, a background status refresh in Illustrator.
+            const el = document.getElementById("settings").elements.namedItem("columnGutter");
+            el.value = "14";
+            el.dispatchEvent(new Event("input", { bubbles: true }));
+            svg.dispatchEvent(new PointerEvent("pointermove", at(${JSON.stringify(to)})));
+            svg.dispatchEvent(new PointerEvent("pointermove", at(${JSON.stringify(to)})));
+            svg.dispatchEvent(new PointerEvent("pointerup", at(${JSON.stringify(to)})));
+        })()`;
+        await evaluate(dragInterrupted(center(0, 0), center(1, 1)));
+        check(!/Marked a/.test(await evaluate(text("status"))), "a drag whose grid changed under it marks nothing: " + await evaluate(text("status")));
+        check(await evaluate(`document.querySelectorAll("#schematic rect.schematic__block").length`) === 0, "no block is drawn from the abandoned drag");
+        check(await evaluate(`document.querySelectorAll("#schematic rect.schematic__draft").length`) === 0, "the draft rectangle is taken off the drawing");
+        check(/Drag across the drawing/.test(await evaluate(text("blocks-summary"))), "no block was recorded");
+        await evaluate(setField("columnGutter", "12"));
+        await evaluate(click("reset"));
+
+        // ---------------------------------------------------------------- storage write failures
+        await evaluate(`(() => { window.__realSet = Storage.prototype.setItem; Storage.prototype.setItem = function () { throw new Error("QuotaExceededError"); }; })()`);
+        await evaluate(setField("columnGutter", "13"));
+        await sleep(450);
+        check(/Panel storage is unavailable/.test(await evaluate(text("status"))), "a settings save that fails is reported: " + await evaluate(text("status")));
+        await evaluate(click("preset-new"));
+        await evaluate(`document.getElementById("preset-name").value = "Nowhere"`);
+        await evaluate(click("preset-save"));
+        check(/Couldn't save the preset/.test(await evaluate(text("status"))), "a preset save that fails is reported: " + await evaluate(text("status")));
+        check(await evaluate(`document.getElementById("preset-save-row").hidden`) === false, "the save row stays open so the preset isn't silently lost");
+        await evaluate(click("preset-cancel"));
+        await evaluate(`window.__mullionTest.importPresetText(window.__mullionTest.presetFileText())`);
+        check(/Panel storage is unavailable|no presets to import/.test(await evaluate(text("status"))), "an import that can't be stored is reported: " + await evaluate(text("status")));
+        await evaluate(`Storage.prototype.setItem = window.__realSet`);
+
+        // ---------------------------------------------------------------- preset file guards
+        const presetFile = (version, count) => JSON.stringify({
+            format: "mullion-presets",
+            version,
+            presets: Array.from({ length: count }, (_, i) => ({ name: "Imported " + i, settings: { columns: 5 } }))
+        });
+        const presetsBefore = await evaluate(`document.getElementById("preset-select").options.length`);
+        await evaluate(`window.__mullionTest.importPresetText(${JSON.stringify(presetFile(2, 1))})`);
+        check(/version 2/.test(await evaluate(text("status"))) && /version 1/.test(await evaluate(text("status"))),
+            "a presets file from an unknown version is refused by version: " + await evaluate(text("status")));
+        check(await evaluate(`document.getElementById("preset-select").options.length`) === presetsBefore, "nothing was imported from it");
+        await evaluate(`window.__mullionTest.importPresetText("x".repeat(600 * 1024))`);
+        check(/too large to import/.test(await evaluate(text("status"))), "an oversized presets file is refused: " + await evaluate(text("status")));
+        await evaluate(`window.__mullionTest.importPresetText(${JSON.stringify(presetFile(1, 250))})`);
+        check(/Imported 200 presets\./.test(await evaluate(text("status"))) && /The file held 250/.test(await evaluate(text("status"))),
+            "import stops at 200 presets and says so: " + await evaluate(text("status")));
+        check(await evaluate(`document.getElementById("preset-select").options.length`) === presetsBefore + 200, "200 presets were added, not 250");
+        await evaluate(`localStorage.removeItem("mullion.presets.v1")`);
+
+        // ---------------------------------------------------------------- undo
+        await load("?theme=dark");
+        await evaluate(click("preset-new"));
+        await evaluate(`document.getElementById("preset-name").value = "Undo me"`);
+        await evaluate(click("preset-save"));
+        await evaluate(click("preset-delete"));
+        check(/Deleted preset “Undo me”/.test(await evaluate(text("status"))) &&
+            await evaluate(`document.querySelector("#status .link-button").textContent`) === "Undo", "deleting a preset offers Undo");
+        await evaluate(`document.querySelector("#status .link-button").click()`);
+        check(await evaluate(`Array.from(document.getElementById("preset-select").options).map(o => o.value).join("|")`) === "|user:Undo me" &&
+            /Restored preset/.test(await evaluate(text("status"))), "Undo brings the preset back: " + await evaluate(text("status")));
+        await evaluate(setField("columns", "7"));
+        await evaluate(click("reset"));
+        check(await evaluate(value("columns")) === "12" && await evaluate(`document.querySelector("#status .link-button").textContent`) === "Undo", "Reset settings offers Undo");
+        await evaluate(`document.querySelector("#status .link-button").click()`);
+        check(await evaluate(value("columns")) === "7" && /Put your settings back/.test(await evaluate(text("status"))), "Undo restores the settings Reset threw away");
+        await evaluate(click("reset"));
+
+        // ---------------------------------------------------------------- focus never lands on the body
+        await evaluate(setField("type", "modular"));
+        await evaluate(`document.querySelector('[name="rows"]').focus()`);
+        await evaluate(setField("type", "columns"));
+        check(await evaluate(`document.activeElement.tagName`) !== "BODY" && await evaluate(`document.activeElement.name`) === "panel-mode",
+            "hiding the field that has focus moves focus to the mode tab, not the body");
+        await evaluate(mode("layouts"));
+        await sleep(200);
+        check(await evaluate(`document.activeElement.id`) === "library-search", "entering Layouts focuses its first control");
+        await evaluate(mode("grid"));
+        await sleep(150);
+        check(await evaluate(`document.activeElement.id`) !== "library-search" && await evaluate(`document.activeElement.name`) === "type",
+            "leaving Layouts moves focus off the hidden search box and into Grid's first control");
+
+        // ---------------------------------------------------------------- the gallery is one tab stop
+        await evaluate(mode("layouts"));
+        await sleep(350);
+        const tabStops = await evaluate(`document.querySelectorAll('#library-grid .tile:not([tabindex="-1"])').length`);
+        check(tabStops === 1 && await evaluate(`document.querySelectorAll("#library-grid .tile").length`) > 10,
+            "the whole tile grid is a single tab stop (" + tabStops + " of " + await evaluate(`document.querySelectorAll("#library-grid .tile").length`) + ")");
+        await evaluate(`document.querySelector('#library-grid .tile[tabindex="0"]').focus()`);
+        const firstTile = await evaluate(`document.activeElement.dataset.layout`);
+        await evaluate(`document.activeElement.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }))`);
+        check(await evaluate(`document.activeElement.classList.contains("tile")`) === true &&
+            await evaluate(`document.activeElement.dataset.layout`) !== firstTile, "arrow keys move between tiles");
+        await evaluate(`document.activeElement.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }))`);
+        check(await evaluate(`document.querySelectorAll('#library-grid .tile[tabindex="0"]').length`) === 1 &&
+            await evaluate(`document.activeElement.getAttribute("tabindex")`) === "0", "only the tile arrow keys landed on stays in the tab order");
+
+        // ------------------------------------------ the gallery repaints in place when the artboard changes
+        await evaluate(chip("Modular"));
+        await sleep(250);
+        await evaluate(`(() => {
+            const grid = document.getElementById("library-grid");
+            grid.querySelectorAll(".tile").forEach((tile, i) => { tile.dataset.probe = String(i); });
+            grid.scrollTop = 30;
+            document.querySelector('#library-grid .tile[data-layout="modular-4x6"]').focus();
+        })()`);
+        const tileCount = await evaluate(`document.querySelectorAll("#library-grid .tile").length`);
+        await evaluate(`(() => { const s = document.getElementById("format-select"); s.value = "a4"; s.dispatchEvent(new Event("change", { bubbles: true })); })()`);
+        await evaluate(click("format-apply"));
+        await sleep(400);
+        check(await evaluate(`document.querySelectorAll("#library-grid .tile[data-probe]").length`) === tileCount,
+            "a changed artboard repaints the tiles rather than rebuilding them");
+        check(await evaluate(`document.getElementById("library-grid").scrollTop`) === 30 &&
+            await evaluate(`document.activeElement.dataset.layout`) === "modular-4x6", "the scroll position and the focused tile survive the repaint");
+        check(await evaluate(`document.querySelectorAll("#library-grid .tile svg rect.schematic__paper").length`) >= 3, "the repainted tiles still have thumbnails");
+        await evaluate(mode("grid"));
+
+        // ---------------------------------------------- a slow host: working state and the in-flight guard
+        await load("?theme=dark");
+        await evaluate(`window.__mullionTest.setHostTimeout(300)`);
+        await evaluate(`window.__mullionTest.stall(1600)`);
+        await evaluate(click("generate"));
+        await sleep(450);
+        check(await evaluate(`document.getElementById("panel").dataset.working`) === "true" &&
+            await evaluate(`document.getElementById("progress").hidden`) === false, "a call that isn't answered quickly shows a working state");
+        await sleep(250);
+        check(/didn't respond to generate/.test(await evaluate(text("status"))), "an abandoned call says so: " + await evaluate(text("status")));
+        check(await evaluate(`document.getElementById("generate").disabled`) === true, "Generate stays unavailable while the host is still running it");
+        await evaluate(`(() => { const b = document.getElementById("generate"); b.disabled = false; b.click(); })()`);
+        await sleep(200);
+        check(/still working on the last request/.test(await evaluate(text("status"))),
+            "a second Generate is refused rather than applied twice: " + await evaluate(text("status")));
+        await sleep(1400);
+        check(/ready again/.test(await evaluate(text("status"))), "the panel recovers when the host finally answers: " + await evaluate(text("status")));
+        check(await evaluate(`document.getElementById("generate").disabled`) === false &&
+            await evaluate(`document.getElementById("progress").hidden`) === true, "Generate and the working state return to normal");
+
+        // ---------------------------------------------------------------- version and diagnostics
+        await load("?theme=dark");
+        check(await evaluate(text("panel-version")) === "0.1.0", "the More section shows the panel's version");
+        await evaluate(`window.__mullionTest.importPresetText("nonsense")`);
+        const diagnostics = await evaluate(`window.__mullionTest.diagnosticsText()`);
+        check(/Mullion panel 0\.1\.0/.test(diagnostics) && /Host: ILST/.test(diagnostics) && /OS: /.test(diagnostics) &&
+            /Document: Mock document/.test(diagnostics) && /Mode: grid/.test(diagnostics) && /Grid: columns/.test(diagnostics) &&
+            /Last error: That file isn't a presets file\./.test(diagnostics),
+            "diagnostics carry panel version, host, OS, document, mode, settings and the last error");
+        await evaluate(click("copy-diagnostics"));
+        await sleep(250);
+        check(/diagnostics/i.test(await evaluate(text("status"))), "Copy diagnostics says what happened: " + await evaluate(text("status")));
+
+        // ------------------------------------------------- an installed update is named, and it sticks
+        await load("?theme=dark&hostversion=0.2.0");
+        check(/Mullion 0\.2\.0 is installed; this panel is still running 0\.1\.0\./.test(await evaluate(text("status"))) &&
+            await evaluate(`document.querySelector("#status .link-button").textContent`) === "Reload panel",
+            "the update prompt names the version: " + await evaluate(text("status")));
+        check(await evaluate(text("panel-version")) === "0.1.0 (installed: 0.2.0)", "the More section shows both versions");
+        await evaluate(`window.dispatchEvent(new Event("focus"))`);
+        await sleep(300);
+        await evaluate(`window.dispatchEvent(new Event("focus"))`);
+        await sleep(300);
+        check(/Mullion 0\.2\.0 is installed/.test(await evaluate(text("status"))) &&
+            Boolean(await evaluate(`document.querySelector("#status .link-button")`)), "the update prompt survives background refreshes");
+        await evaluate(click("toggle-lock"));
+        await sleep(250);
+        check(!/0\.2\.0/.test(await evaluate(text("status"))), "a message of its own covers the prompt: " + await evaluate(text("status")));
+        await evaluate(mode("construct"));
+        await sleep(300);
+        check(/Mullion 0\.2\.0 is installed/.test(await evaluate(text("status"))), "and the prompt comes back when the status line clears");
+        await evaluate(mode("grid"));
+
+        // ------------------------------------- the no-document message is set on the transition only
+        await load("?theme=dark&nodoc");
+        check(/Open or create a document/.test(await evaluate(text("status"))), "the no-document message is said when the document goes away");
+        await evaluate(click("reset"));
+        check(await evaluate(`document.querySelector("#status .link-button").textContent`) === "Undo", "an action is offered with no document open");
+        await evaluate(`window.dispatchEvent(new Event("focus"))`);
+        await sleep(300);
+        await evaluate(`window.dispatchEvent(new Event("focus"))`);
+        await sleep(300);
+        check(/Settings reset to defaults/.test(await evaluate(text("status"))) &&
+            await evaluate(`document.querySelector("#status .link-button") && document.querySelector("#status .link-button").textContent`) === "Undo",
+            "background refreshes no longer re-say it over the message and its action: " + await evaluate(text("status")));
+
+        // ------------------------------------- stored settings and presets keep their unit meaning
+        await load("?theme=dark");
+        await evaluate(`localStorage.setItem("mullion.settings.v1", JSON.stringify({ units: "in" }))`);
+        await evaluate(`localStorage.setItem("mullion.presets.v1", JSON.stringify([{ name: "Inches", settings: { units: "in", columns: 5 } }]))`);
+        // The panel saves its settings as it closes; stop that so the stored
+        // object under test is the one the next load reads.
+        await evaluate(`Storage.prototype.setItem = function () {}`);
+        await load("?theme=dark");
+        check(await evaluate(value("units")) === "in" && await evaluate(value("marginTop")) === "0.5" && await evaluate(value("columnGutter")) === "0.167",
+            "stored settings that name inches convert the point defaults (36 pt -> 0.5 in), instead of reading them as 36 in");
+        check(await evaluate(`document.getElementById("generate").disabled`) === false && await evaluate(text("status")) === "",
+            "so the panel opens with a grid it can draw");
+        await evaluate(setField("units", "pt"));
+        await evaluate(`(() => { const s = document.getElementById("preset-select"); s.value = "user:Inches"; s.dispatchEvent(new Event("change")); })()`);
+        check(await evaluate(value("units")) === "in" && await evaluate(value("marginTop")) === "0.5" && await evaluate(value("columns")) === "5",
+            "a preset that names inches without lengths converts them the same way");
+        await evaluate(`localStorage.clear()`);
+
+        // ---------------------------------------------- the drawing is repainted when it gets its size back
+        await load("?theme=dark");
+        await evaluate(setField("type", "pattern"));
+        await evaluate(setField("pattern", "dots"));
+        const dotRadius = `Number(document.querySelector("#schematic circle").getAttribute("r"))`;
+        const openRadius = await evaluate(dotRadius);
+        await evaluate(click("stage-toggle"));
+        await evaluate(setField("dotSize", "2"));
+        const collapsedRadius = await evaluate(dotRadius);
+        await evaluate(click("stage-toggle"));
+        await sleep(150);
+        const reopenedRadius = await evaluate(dotRadius);
+        check(collapsedRadius === 5, "a drawing painted while collapsed falls back to the 5 pt dot radius (" + collapsedRadius + ")");
+        check(reopenedRadius < 5 && Math.abs(reopenedRadius - openRadius) < 0.01,
+            "expanding the drawing paints it again at the size it really has (" + reopenedRadius + " vs " + openRadius + ")");
+        await send("Emulation.setDeviceMetricsOverride", { width: 320, height: 600, deviceScaleFactor: 2, mobile: false });
+        await sleep(400);
+        check(await evaluate(dotRadius) !== reopenedRadius, "resizing the panel paints the drawing again (" + await evaluate(dotRadius) + ")");
+        await send("Emulation.setDeviceMetricsOverride", { width: 320, height: 1180, deviceScaleFactor: 2, mobile: false });
+        await sleep(300);
+
         // ---------------------------------------------------------------- no document, themes, narrow
         await load("?theme=light&nodoc");
         check(await evaluate(text("artboard-name")) === "No document open", "no-document readout");
         check(/Open or create a document/.test(await evaluate(text("status"))), "no-document guidance");
         check(await evaluate(`document.getElementById("generate").disabled && document.getElementById("clear").disabled && document.getElementById("preview-toggle").disabled && document.getElementById("toggle-lock").disabled`) === true, "actions disabled without a document");
+        check(await evaluate(`document.getElementById("generate").title`) === "Open or create a document to add a grid.", "and Generate says why it is disabled");
         await shoot("light-nodoc");
         await load("?theme=light");
         await shoot("light-columns");
@@ -739,6 +1042,57 @@ async function main() {
         await send("Emulation.setDeviceMetricsOverride", { width: 320, height: 640, deviceScaleFactor: 2, mobile: false });
         await load("?theme=dark");
         await shoot("dark-320x640");
+
+        // ------------------------------------- the smallest panel the manifest allows: 240 × 320
+        // Every control has to be reachable there, so nothing may be clipped and
+        // the settings must scroll under a fixed action bar.
+        const fits = `(() => {
+            const vw = document.documentElement.clientWidth;
+            const vh = document.documentElement.clientHeight;
+            const box = (id) => document.getElementById(id).getBoundingClientRect();
+            const inside = (b) => b.height > 0 && b.width > 0 && b.top >= -0.5 && b.left >= -0.5 && b.bottom <= vh + 0.5 && b.right <= vw + 0.5;
+            const work = document.getElementById("workspace");
+            return {
+                generate: inside(box("generate")),
+                status: inside(box("status")),
+                clear: inside(box("clear")),
+                settingsHeight: work.clientHeight,
+                settingsScrolls: work.scrollHeight > work.clientHeight,
+                collapsed: document.querySelector(".stage").classList.contains("stage--collapsed"),
+                actionsOnScreen: document.querySelector(".actions").getBoundingClientRect().bottom <= vh + 0.5 &&
+                    document.querySelector(".panel").getBoundingClientRect().bottom <= vh + 0.5
+            };
+        })()`;
+        const reachable = `(() => {
+            const vh = document.documentElement.clientHeight;
+            const vw = document.documentElement.clientWidth;
+            document.querySelectorAll("details.section").forEach((d) => { d.open = true; });
+            const work = document.getElementById("workspace");
+            work.scrollTop = work.scrollHeight;
+            const b = document.getElementById("copy-diagnostics").getBoundingClientRect();
+            return b.height > 0 && b.top >= -0.5 && b.bottom <= vh + 0.5 && b.right <= vw + 0.5;
+        })()`;
+        for (const size of [[240, 320], [320, 360]]) {
+            await send("Emulation.setDeviceMetricsOverride", { width: size[0], height: size[1], deviceScaleFactor: 2, mobile: false });
+            await load("?theme=dark");
+            // A message of some kind, so the status line is on screen to measure.
+            await evaluate(setField("columns", "0"));
+            const at = size[0] + " × " + size[1];
+            const state = await evaluate(fits);
+            check(state.generate && state.clear, "Generate and Clear are inside the panel at " + at);
+            check(state.status, "the status line is inside the panel at " + at);
+            check(state.collapsed, "the drawing collapses by itself at " + at);
+            check(state.actionsOnScreen, "the action bar isn't clipped off the bottom at " + at);
+            check(state.settingsHeight >= 44 && state.settingsScrolls,
+                "the settings area is usable and scrolls at " + at + " (" + state.settingsHeight + " px)");
+            await evaluate(setField("columns", "12"));
+            await shoot("dark-" + size[0] + "x" + size[1]);
+            check(await evaluate(reachable), "scrolling reaches the last control in More at " + at);
+        }
+        await send("Emulation.setDeviceMetricsOverride", { width: 320, height: 1180, deviceScaleFactor: 2, mobile: false });
+        await load("?theme=dark");
+        check(await evaluate(`document.querySelector(".stage").classList.contains("stage--collapsed")`) === false,
+            "a tall panel gets the drawing back");
     } finally {
         if (ws) ws.close();
         chrome.kill();

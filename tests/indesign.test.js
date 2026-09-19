@@ -8,7 +8,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { createInDesignHost, Rectangle, TextFrame } = require("./helpers/fake-indesign.js");
+const { createInDesignHost, Rectangle, TextFrame, TextSelection, Group } = require("./helpers/fake-indesign.js");
 
 const OWNER = "com.mullion.panel";
 const COLUMNS = {
@@ -54,7 +54,14 @@ test("generate draws a labeled group of lines in InDesign coordinates, as one un
 
     const [group] = grids(doc);
     assert.equal(group.constructor.name, "Group");
-    assert.deepEqual(group.labels, { MullionOwner: OWNER, MullionKind: "final", MullionArtboard: "0", MullionRegion: "artboard:0" });
+    assert.equal(group.labels.MullionOwner, OWNER);
+    assert.equal(group.labels.MullionKind, "final");
+    assert.equal(group.labels.MullionArtboard, "0");
+    assert.equal(group.labels.MullionRegion, "artboard:0");
+    assert.equal(group.labels.MullionSchema, "1", "grids record the schema that wrote them");
+    assert.equal(group.labels.MullionShapes, "8", "grids record how many items they were drawn with");
+    const recorded = JSON.parse(group.labels.MullionSettings);
+    assert.equal(recorded.settings.type, "columns", "the settings travel with the grid");
     assert.equal(group.name, "Column grid, Page 1");
     assert.equal(group.transparencySettings.blendingSettings.opacity, 80);
     assert.ok(group.children.every((c) => c.labels.MullionOwner === OWNER));
@@ -296,4 +303,128 @@ test("InDesign construction lines read page item paths in page coordinates", () 
     const line = group.children.find((c) => c.constructor.name === "GraphicLine" && c.paths[0]._points[0][0] === 306 && c.paths[0]._points[1][0] === 306);
     assert.deepEqual(plain(line.paths[0]._points), [[306, 0], [306, 792]], "vertical key line through the center, across the page");
     assert.equal(line.strokeColor.name, "Mullion #0000FF");
+});
+
+// ------------------------------------------------- InDesign's own hard cases
+
+test("the cursor sitting in text never breaks a call", () => {
+    const { host, doc } = ready({});
+    // InDesign's most common selection state: an insertion point in a story.
+    doc.selection = [new TextSelection()];
+
+    const status = host.call("status");
+    assert.equal(status.ok, true, status.ok ? "" : status.error.message);
+    assert.equal(status.data.selection.count, 0, "text is not an object a grid can go inside");
+
+    const geometry = host.call("selectionGeometry");
+    assert.equal(geometry.ok, true, geometry.ok ? "" : geometry.error.message);
+    assert.deepEqual(geometry.data.paths, []);
+    assert.equal(geometry.data.hasText, true, "and the panel can say so");
+
+    const align = host.call("alignSelection", { settings: COLUMNS, action: "check" });
+    assert.equal(align.ok, false);
+    assert.equal(align.error.code, "NO_SELECTION", "with guidance, not an unexpected error");
+});
+
+test("facing pages mirror the inside and outside margins", () => {
+    const { host, doc } = ready({ pages: [[0, 0, 792, 612], [0, 648, 792, 1260]] });
+    doc.documentPreferences.facingPages = true;
+    const settings = { ...COLUMNS, marginLeft: 100, marginRight: 50 };
+
+    const r = host.call("applyPageMargins", { settings, target: { mode: "all" } });
+    assert.equal(r.ok, true, r.ok ? "" : r.error.message);
+    assert.equal(r.data.facingPages, true);
+    assert.equal(r.data.mirroredPages, 1);
+
+    const right = doc.pageList[0].marginPreferences;
+    const left = doc.pageList[1].marginPreferences;
+    assert.equal(right.left, 100, "a right-hand page keeps the inside margin on the left");
+    assert.equal(left.left, 50, "a left-hand page mirrors it");
+    assert.equal(left.right, 100);
+});
+
+test("the baseline grid follows the document's own reference point", () => {
+    const { host, doc } = ready({});
+    const settings = { ...COLUMNS, type: "baseline", baselineSpacing: 14, baselineOffset: 4, marginTop: 36 };
+
+    host.call("applyPageMargins", { settings, target: { mode: "active" } });
+    assert.equal(doc.gridPreferences.baselineStart, 40, "measured from the top of the page: margin + offset");
+
+    doc.gridPreferences.baselineGridRelativeOption = "BaselineGridRelativeOption.TOP_OF_MARGIN";
+    host.call("applyPageMargins", { settings, target: { mode: "active" } });
+    assert.equal(doc.gridPreferences.baselineStart, 4, "measured from the margin: the margin is not counted twice");
+});
+
+test("a grid the user grouped with their own artwork is still Mullion's to clear", () => {
+    const { host, doc } = ready({});
+    host.call("generate", { settings: COLUMNS });
+    const [grid] = grids(doc);
+    const page = doc.pageList[0];
+
+    // The user selects the grid with a frame of their own and presses Cmd-G.
+    const frame = page.addItem(new Rectangle(page, doc.layerList[0]), {});
+    frame.geometricBounds = [100, 100, 200, 200];
+    const wrapper = page.groups.add([grid, frame], doc.layerList[0]);
+
+    const r = host.call("clear");
+    assert.equal(r.ok, true, r.ok ? "" : r.error.message);
+    assert.equal(r.data.removed, 1, "the grid inside the user's group is cleared");
+    assert.ok(page.items.includes(wrapper), "the user's group stays");
+    assert.equal(grids(doc).length, 0);
+});
+
+test("a grid the user has edited is handed back, not deleted", () => {
+    const { host, doc } = ready({});
+    host.call("generate", { settings: COLUMNS });
+    const [grid] = grids(doc);
+    // The user deletes one of the grid's own lines.
+    grid.children.splice(0, 1);
+
+    const r = host.call("clear");
+    assert.equal(r.ok, true, r.ok ? "" : r.error.message);
+    assert.equal(r.data.removed, 0);
+    assert.equal(r.data.kept, 1, "reported as kept, not cleared");
+    assert.equal(grid.labels.MullionOwner, "", "and no longer Mullion's");
+});
+
+test("a preview left behind is swept when the panel next asks for status", () => {
+    const { host, doc } = ready({});
+    host.call("generate", { settings: COLUMNS });
+    host.call("preview", { settings: { ...COLUMNS, columns: 6 } });
+    assert.equal(grids(doc).filter((g) => g.labels.MullionKind === "preview").length, 1);
+    assert.equal(grids(doc).find((g) => g.labels.MullionKind === "final").visible, false);
+
+    host.sandbox.Mullion.previewing = false; // a new session, after a crash
+    const status = host.call("status");
+    assert.equal(status.ok, true);
+    assert.equal(status.data.recoveredPreviews, 1);
+    assert.equal(grids(doc).filter((g) => g.labels.MullionKind === "preview").length, 0);
+    assert.equal(grids(doc).find((g) => g.labels.MullionKind === "final").visible, true);
+});
+
+test("a grid that fails to draw is rolled back by InDesign, not committed", () => {
+    const { host, doc } = ready({});
+    host.call("generate", { settings: COLUMNS });
+    const before = grids(doc).length;
+
+    const adapter = host.sandbox.Mullion.adapter;
+    const realDraw = adapter.drawGrid;
+    adapter.drawGrid = () => { throw new Error("ran out of memory"); };
+    const r = host.call("generate", { settings: { ...COLUMNS, columns: 6 } });
+    adapter.drawGrid = realDraw;
+
+    assert.equal(r.ok, false);
+    assert.equal(grids(doc).length, before, "the previous grid is untouched");
+    // The failure has to escape doScript for ENTIRE_SCRIPT to roll the step back.
+    const last = host.app.transactions[host.app.transactions.length - 1];
+    assert.equal(last.undoMode, "UndoModes.ENTIRE_SCRIPT");
+    assert.equal(last.threw, true, "the error was not swallowed inside the transaction");
+});
+
+test("dashed lines are refused when the document has no dashed stroke style", () => {
+    const { host, doc } = ready({});
+    doc.strokeStyles = { itemByName: (n) => (n === "Solid" ? { name: n, isValid: true } : { isValid: false }) };
+    const r = host.call("generate", { settings: { ...COLUMNS, lineStyle: "dashed" } });
+    assert.equal(r.ok, false, "better to say so than to draw solid lines silently");
+    assert.match(r.error.message, /dashed/);
 });

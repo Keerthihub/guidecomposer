@@ -1,0 +1,39 @@
+name: Feature request
+description: Suggest a grid, a control, or a change to how something works
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Requests that describe a real piece of work you were doing get built
+        first — they are the ones where the shape of the solution is obvious.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What were you trying to do?
+      description: The design task, not the feature. "I was laying out a 16-page booklet and…"
+    validations:
+      required: true
+  - type: textarea
+    id: workaround
+    attributes:
+      label: How do you do it today?
+      description: Another tool, by hand, or not at all.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like the panel to do?
+    validations:
+      required: false
+  - type: dropdown
+    id: app
+    attributes:
+      label: Which application?
+      options:
+        - Illustrator
+        - InDesign
+        - Both
+    validations:
+      required: true

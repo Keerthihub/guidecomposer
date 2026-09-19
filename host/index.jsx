@@ -44,6 +44,12 @@ $.global.Mullion = $.global.Mullion || {};
         return JSON.stringify({ ok: true, data: data });
     }
 
+    // The application's own name, for messages the user reads.
+    function appName() {
+        return (M.adapter && M.adapter.HOST === "indesign") ? "InDesign" : "Illustrator";
+    }
+    M.appName = appName;
+
     function fail(err) {
         if (err instanceof HostError) {
             return JSON.stringify({ ok: false, error: { code: err.code, message: err.message, fields: err.fields } });
@@ -54,7 +60,7 @@ $.global.Mullion = $.global.Mullion || {};
         }
         return JSON.stringify({
             ok: false,
-            error: { code: "UNEXPECTED", message: "Illustrator reported an error: " + detail, fields: [] }
+            error: { code: "UNEXPECTED", message: appName() + " reported an error: " + detail, fields: [] }
         });
     }
 
@@ -66,22 +72,33 @@ $.global.Mullion = $.global.Mullion || {};
         try {
             parsed = JSON.parse(decodeURIComponent(String(encoded)));
         } catch (e) {
-            throw new HostError("BAD_PAYLOAD", "The panel sent settings Illustrator could not read. Reload the panel and try again.");
+            throw new HostError("BAD_PAYLOAD", "The panel sent settings " + appName() + " could not read. Reload the panel and try again.");
         }
         if (!parsed || typeof parsed !== "object") {
-            throw new HostError("BAD_PAYLOAD", "The panel sent settings Illustrator could not read. Reload the panel and try again.");
+            throw new HostError("BAD_PAYLOAD", "The panel sent settings " + appName() + " could not read. Reload the panel and try again.");
         }
         return parsed;
     }
 
-    // Wraps an API function with readiness checks, payload decoding and error capture.
+    /*
+     * Wraps an API function with readiness checks, payload decoding and error
+     * capture. Each call runs inside the adapter's context, which pins the
+     * coordinate system the geometry assumes, and starts from a clean view of
+     * the document: anything could have changed between calls.
+     */
     function endpoint(fn) {
         return function (encoded) {
             if (!M.ready) {
                 return '{"ok":false,"error":{"code":"NOT_READY","message":"Mullion is still starting. Try again in a moment.","fields":[]}}';
             }
             try {
-                return respond(fn(decodePayload(encoded)));
+                var payload = decodePayload(encoded);
+                if (M.adapter.invalidate) {
+                    M.adapter.invalidate();
+                }
+                return respond(M.adapter.withContext(function () {
+                    return fn(payload);
+                }));
             } catch (err) {
                 return fail(err);
             }
@@ -89,6 +106,9 @@ $.global.Mullion = $.global.Mullion || {};
     }
 
     M.boot = function (encodedRoot) {
+        // A boot that fails half way must not leave the previous build's state
+        // looking ready, or endpoints would run against a half-replaced global.
+        M.ready = false;
         try {
             var root = decodeURIComponent(String(encodedRoot));
             for (var i = 0; i < DEPENDENCIES.length; i++) {
@@ -103,7 +123,16 @@ $.global.Mullion = $.global.Mullion || {};
             M.root = root;
             M.core = $.global.MullionCore;
             M.ready = true;
-            return respond({ version: M.VERSION });
+            M.previewing = false;
+            M.previewDoc = null;
+            M.previewGroups = [];
+            var hostVersion = "";
+            try {
+                hostVersion = String(app.version);
+            } catch (e) {
+                hostVersion = "";
+            }
+            return respond({ version: M.VERSION, host: M.adapter.HOST, hostVersion: hostVersion, schema: M.adapter.SCHEMA || 1 });
         } catch (err) {
             return '{"ok":false,"error":{"code":"BOOT_FAILED","message":' +
                 quote("Mullion could not start: " + (err && err.message ? err.message : err)) + ',"fields":[]}}';
@@ -221,10 +250,19 @@ $.global.Mullion = $.global.Mullion || {};
         return payload.kind === "construction" ? buildConstructionTarget(doc, payload) : buildForTargets(doc, payload);
     }
 
+    // Draws every built grid and returns the groups created, so a replace can
+    // delete the old grids without touching the ones just drawn.
     function drawAll(doc, built, kind) {
+        var created = [];
         for (var i = 0; i < built.builds.length; i++) {
-            M.adapter.drawGrid(doc, built.builds[i].artboard, built.builds[i].grid, kind);
+            var result = M.adapter.drawGrid(doc, built.builds[i].artboard, built.builds[i].grid, kind);
+            // Guides are drawn as several roots; everything else as one group.
+            var roots = (result && result.groups) ? result.groups : ((result && result.group) ? [result.group] : []);
+            for (var r = 0; r < roots.length; r++) {
+                created.push(roots[r]);
+            }
         }
+        return created;
     }
 
     function summary(doc, built, extra) {
@@ -250,8 +288,7 @@ $.global.Mullion = $.global.Mullion || {};
         var removed = 0;
         var docs = M.adapter.openDocuments();
         for (var i = 0; i < docs.length; i++) {
-            removed += M.adapter.removeOwned(docs[i], { kind: "preview" }).removed;
-            M.adapter.restorePreviewHidden(docs[i]);
+            removed += M.adapter.endPreview(docs[i]).removed;
         }
         return removed;
     }
@@ -282,9 +319,32 @@ $.global.Mullion = $.global.Mullion || {};
         status: endpoint(function () {
             var doc = M.adapter.activeDocument();
             if (!doc) {
-                return { hasDocument: false, host: M.adapter.HOST };
+                return { hasDocument: false, host: M.adapter.HOST, version: M.VERSION };
             }
-            return M.adapter.describe(doc);
+            var described = M.adapter.describe(doc);
+            /*
+             * A preview is temporary, but it is ordinary document content while it
+             * is on screen: a crash, a force quit, or a document saved mid-preview
+             * leaves it behind, with the real grid it replaced still hidden.
+             * Anything in a document this session is not actively previewing into
+             * is stale, including a reopened copy of a file saved mid-preview.
+             */
+            /*
+             * Only the preview groups this session drew are live. Anything else
+             * carrying the preview tag came from somewhere the panel cannot see:
+             * a crash, or a copy of a file saved while a preview was on screen.
+             */
+            var keep = M.previewing ? (M.previewGroups || []) : [];
+            if (described.grids.strayPreviews || described.grids.hiddenByPreview) {
+                var recovered = M.adapter.transaction("Recover preview", function () {
+                    return M.adapter.endPreview(doc, keep).removed;
+                });
+                M.adapter.redraw();
+                described = M.adapter.describe(doc);
+                described.recoveredPreviews = recovered;
+            }
+            described.version = M.VERSION;
+            return described;
         }),
 
         // Replaces all preview grids. When the grid will replace existing grids,
@@ -293,10 +353,12 @@ $.global.Mullion = $.global.Mullion || {};
         preview: endpoint(function (payload) {
             var doc = requireDocument();
             var built = buildFor(doc, payload);
+            M.previewing = true;
+            M.previewDoc = doc;
             var hidden = M.adapter.transaction("Preview grid", function () {
                 removeAllPreviews();
                 var count = replaces(payload) ? M.adapter.hideForPreview(doc, regionsOf(built)) : 0;
-                drawAll(doc, built, "preview");
+                M.previewGroups = drawAll(doc, built, "preview");
                 return count;
             });
             M.adapter.redraw();
@@ -305,6 +367,9 @@ $.global.Mullion = $.global.Mullion || {};
 
         // Removes preview grids from every artboard of every open document.
         clearPreview: endpoint(function () {
+            M.previewing = false;
+            M.previewDoc = null;
+            M.previewGroups = [];
             var removed = M.adapter.activeDocument() ? M.adapter.transaction("Remove preview", removeAllPreviews) : 0;
             var doc = M.adapter.activeDocument();
             if (!doc) {
@@ -321,17 +386,25 @@ $.global.Mullion = $.global.Mullion || {};
         generate: endpoint(function (payload) {
             var doc = requireDocument();
             var built = buildFor(doc, payload);
+            M.previewing = false;
+            M.previewDoc = null;
+            M.previewGroups = [];
+            /*
+             * The new grid is drawn before the old one is removed. Drawing is the
+             * step that can fail (a locked sublayer, an artboard deleted while the
+             * panel was open), and failing after the delete would leave the user
+             * with neither grid.
+             */
             var replaced = M.adapter.transaction("Generate grid", function () {
                 removeAllPreviews();
-                var result = { removed: 0, rescued: 0 };
-                if (replaces(payload)) {
-                    result = M.adapter.removeOwned(doc, { kind: "final", regions: regionsOf(built) }, { keepLayer: true });
+                var created = drawAll(doc, built, "final");
+                if (!replaces(payload)) {
+                    return { removed: 0, rescued: 0, kept: 0 };
                 }
-                drawAll(doc, built, "final");
-                return result;
+                return M.adapter.removeOwned(doc, { kind: "final", regions: regionsOf(built), exclude: created }, { keepLayer: true });
             });
             M.adapter.redraw();
-            return summary(doc, built, { replaced: replaced.removed, rescued: replaced.rescued });
+            return summary(doc, built, { replaced: replaced.removed, rescued: replaced.rescued, kept: replaced.kept });
         }),
 
         // Removes Mullion grids (preview and generated). Artboard targets clear
@@ -349,7 +422,7 @@ $.global.Mullion = $.global.Mullion || {};
                     return M.adapter.removeOwned(doc, { artboards: [active], regionPrefix: "construction:" });
                 });
                 M.adapter.redraw();
-                return summary(doc, null, { removed: cleared.removed, rescued: cleared.rescued, clearedArtboards: cleared.artboards, targetArtboards: 1 });
+                return summary(doc, null, { removed: cleared.removed, rescued: cleared.rescued, kept: cleared.kept, clearedArtboards: cleared.artboards, targetArtboards: 1 });
             }
             var targets = resolveTargets(doc, payload.target);
             if (payload.target && payload.target.mode === "selection") {
@@ -362,6 +435,11 @@ $.global.Mullion = $.global.Mullion || {};
                 for (i = 0; i < targets.length; i++) {
                     filter.artboards.push(targets[i].index);
                 }
+                // Clearing every artboard also sweeps grids stranded by a deleted
+                // artboard; they belong to no artboard and are unreachable otherwise.
+                if (payload.target && payload.target.mode === "all") {
+                    filter.includeOrphans = true;
+                }
             }
             var result = M.adapter.transaction("Clear grids", function () {
                 return M.adapter.removeOwned(doc, filter);
@@ -370,6 +448,8 @@ $.global.Mullion = $.global.Mullion || {};
             return summary(doc, null, {
                 removed: result.removed,
                 rescued: result.rescued,
+                // Grids the user has edited are handed back rather than deleted.
+                kept: result.kept,
                 clearedArtboards: result.artboards,
                 targetArtboards: targets.length
             });
@@ -490,6 +570,32 @@ $.global.Mullion = $.global.Mullion || {};
             return { paths: geometry.paths, hasText: geometry.hasText, truncated: geometry.truncated, artboard: board };
         }),
 
+        /*
+         * The settings that made the grid on the active area, read back from the
+         * grid itself. A document therefore carries the recipe for its own grid:
+         * reopen a file and the panel can offer the settings that drew it.
+         */
+        documentGrid: endpoint(function () {
+            var doc = requireDocument();
+            var active = M.adapter.activeArtboardIndex(doc);
+            var entries = M.adapter.findOwnedGroups(doc, { kind: "final", artboards: [active] });
+            for (var i = 0; i < entries.length; i++) {
+                if (!entries[i].settings) {
+                    continue;
+                }
+                var parsed = null;
+                try {
+                    parsed = JSON.parse(entries[i].settings);
+                } catch (e) {
+                    parsed = null;
+                }
+                if (parsed && parsed.settings) {
+                    return { found: true, schema: parsed.schema || 0, settings: parsed.settings, area: entries[i].region };
+                }
+            }
+            return { found: false };
+        }),
+
         // Reads type size and leading from the selected text, for baseline grids.
         textMetrics: endpoint(function () {
             var doc = requireDocument();
@@ -523,7 +629,14 @@ $.global.Mullion = $.global.Mullion || {};
             var result = M.adapter.transaction("Page margins", function () {
                 return M.adapter.applyPageMargins(doc, indices, s);
             });
-            return { pages: result.pages, baseline: result.baseline, status: M.adapter.describe(doc) };
+            return {
+                pages: result.pages,
+                baseline: result.baseline,
+                facingPages: result.facingPages,
+                mirroredPages: result.mirroredPages,
+                baselineIsDocumentWide: result.baselineIsDocumentWide,
+                status: M.adapter.describe(doc)
+            };
         }),
 
         // Milestone 1 spike, kept as an install diagnostic: one line across the artboard.

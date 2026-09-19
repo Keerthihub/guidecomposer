@@ -51,6 +51,8 @@
     var COMPOSITION_FLAGS = ["compThirds", "compFifths", "compGolden", "compDiagonals", "compCenter",
         "compArmature", "compDynamic", "compVillard", "compSpiral"];
     var CONSTRUCTION_FLAGS = ["conBounds", "conKeylines", "conCircles", "conCenter", "conDiagonals"];
+    // The only panel settings construction lines read besides their own options.
+    var CONSTRUCTION_STYLE_KEYS = ["units", "output", "strokeWidth", "opacity", "lineStyle", "lockLayer"];
 
     // Whole-number fields: [minimum, maximum].
     var COUNT_LIMITS = {
@@ -183,6 +185,35 @@
 
     function isFiniteNumber(value) {
         return typeof value === "number" && !isNaN(value) && isFinite(value);
+    }
+
+    function isArray(value) {
+        return Object.prototype.toString.call(value) === "[object Array]";
+    }
+
+    // Copies arrays and plain objects all the way down, so callers can edit a
+    // copy without reaching back into the original.
+    function copyValue(value) {
+        var out;
+        var i;
+        var key;
+        if (isArray(value)) {
+            out = [];
+            for (i = 0; i < value.length; i++) {
+                out.push(copyValue(value[i]));
+            }
+            return out;
+        }
+        if (value && typeof value === "object") {
+            out = {};
+            for (key in value) {
+                if (hasOwn(value, key)) {
+                    out[key] = copyValue(value[key]);
+                }
+            }
+            return out;
+        }
+        return value;
     }
 
     function stripSpace(text) {
@@ -494,6 +525,10 @@
         }
 
         s.extendToEdges = pick(raw, "extendToEdges") === true;
+        // Composition guides are the content rectangle's own geometry: its
+        // corners, its diagonals, its proportions. There is no line to run past
+        // the margins, so the panel is told the option does nothing here.
+        s.extendToEdgesApplies = s.type !== "composition";
         s.lockLayer = pick(raw, "lockLayer") === true;
 
         s.output = pick(raw, "output");
@@ -651,6 +686,7 @@
      * Returns { ok, size, tracks: [{ start, end }] } measured as distances
      * from the start of the span (always increasing). Callers map distances
      * onto X (left to right) or Y (top to bottom).
+     * On failure, `index` is the track that leaves no room.
      */
     function divideSpan(length, count, gutter, weights) {
         var available = length - gutter * (count - 1);
@@ -663,15 +699,23 @@
         }
         var tracks = [];
         var smallest = Infinity;
+        var narrowest = 0;
         var start = 0;
         for (i = 0; i < count; i++) {
             var size = weights ? available * weights[i] / total : available / count;
-            smallest = Math.min(smallest, size);
+            // Written as a failed comparison rather than Math.min so a NaN size,
+            // which weights far apart enough to overflow produce, wins and is
+            // reported. The first such track is the one named.
+            if (!isNaN(smallest) && !(size >= smallest)) {
+                smallest = size;
+                narrowest = i;
+            }
             tracks.push({ start: start, end: start + size });
             start += size + gutter;
         }
-        if (smallest <= EPSILON) {
-            return { ok: false, size: smallest };
+        // Positive test, so NaN fails here instead of passing for want of a comparison.
+        if (!(smallest > EPSILON)) {
+            return { ok: false, size: smallest, index: narrowest };
         }
         return { ok: true, size: smallest, equal: !weights, tracks: tracks };
     }
@@ -741,15 +785,20 @@
     }
 
     /*
-     * Golden spiral stretched to fill an area.
+     * Golden spiral, in the largest golden rectangle that fits an area.
      *
      * Built in a landscape golden rectangle (width PHI, height 1, v downward)
      * by cutting squares off the left, top, right and bottom in turn and
      * drawing a quarter circle through each square. Portrait areas use the
      * transposed rectangle. The result is flipped so the spiral's focus (where
-     * it converges) lands in the requested quadrant, then scaled to the area.
+     * it converges) lands in the requested quadrant, then placed in the area.
      *
-     * Returns { curve, squares: [segments] } in Illustrator coordinates.
+     * The rectangle keeps its proportion instead of stretching to the area:
+     * scaling x and y apart would leave the squares oblong and the arcs
+     * elliptical, which is no longer a golden spiral. It is centered, and the
+     * rectangle it occupies comes back as `box` so the panel can report it.
+     *
+     * Returns { curve, squares: [segments], box } in Illustrator coordinates.
      */
     function goldenSpiral(area, focus, squareCount) {
         var x = 0;
@@ -803,11 +852,23 @@
         var flipX = (eye[0] < 0.5) !== wantLeft;
         var flipY = (eye[1] < 0.5) !== wantTop;
 
+        // The largest golden rectangle inside the area, centered: width / height
+        // is PHI for a landscape area and 1 / PHI once the figure is transposed.
+        var ratio = portrait ? 1 / PHI : PHI;
+        var boxWidth = area.width;
+        var boxHeight = boxWidth / ratio;
+        if (boxHeight > area.height) {
+            boxHeight = area.height;
+            boxWidth = boxHeight * ratio;
+        }
+        var boxLeft = area.left + (area.width - boxWidth) / 2;
+        var boxTop = area.top - (area.height - boxHeight) / 2;
+
         function place(pt) {
             var n = normalize(pt);
             var nx = flipX ? 1 - n[0] : n[0];
             var ny = flipY ? 1 - n[1] : n[1];
-            return [round(area.left + nx * area.width), round(area.top - ny * area.height)];
+            return [round(boxLeft + nx * boxWidth), round(boxTop - ny * boxHeight)];
         }
 
         var points = [];
@@ -829,7 +890,15 @@
             squares.push(segment("spiral", from[0], from[1], to[0], to[1]));
         }
 
-        return { curve: { kind: "spiral", closed: false, points: points }, squares: squares };
+        return {
+            curve: { kind: "spiral", closed: false, points: points },
+            squares: squares,
+            box: {
+                left: round(boxLeft), top: round(boxTop),
+                right: round(boxLeft + boxWidth), bottom: round(boxTop - boxHeight),
+                width: round(boxWidth), height: round(boxHeight)
+            }
+        };
     }
 
     // A circle as four smooth Bezier points, clockwise from the top.
@@ -851,12 +920,13 @@
     }
 
     /*
-     * A family of parallel lines at angleDeg (0 = horizontal, counterclockwise),
-     * spaced `spacing` apart measured perpendicular to the lines, with one line
-     * through the area's top-left corner, clipped to the area.
-     * Returns { ok, count, segments } where ok is false if the family would exceed `limit`.
+     * How many lines of a family at angleDeg (0 = horizontal, counterclockwise),
+     * spaced `spacing` apart perpendicular to the lines, cross the area, with one
+     * line through its top-left corner. Counting is separate from drawing so a
+     * pattern can be measured against the shape limit before any of it is built.
+     * Returns the direction (u), the normal (n), and the range of line indices.
      */
-    function lineFamily(kind, area, angleDeg, spacing, limit) {
+    function familyRange(area, angleDeg, spacing) {
         var angle = angleDeg * Math.PI / 180;
         var ux = Math.cos(angle);
         var uy = Math.sin(angle);
@@ -871,14 +941,28 @@
             pMin = Math.min(pMin, p);
             pMax = Math.max(pMax, p);
         }
-        var kMin = Math.ceil((pMin - anchor) / spacing - EPSILON);
-        var kMax = Math.floor((pMax - anchor) / spacing + EPSILON);
-        var count = kMax - kMin + 1;
+        var first = Math.ceil((pMin - anchor) / spacing - EPSILON);
+        var last = Math.floor((pMax - anchor) / spacing + EPSILON);
+        return { ux: ux, uy: uy, nx: nx, ny: ny, anchor: anchor, first: first, last: last, count: last - first + 1 };
+    }
+
+    /*
+     * The lines of that family, clipped to the area.
+     * Returns { ok, count, segments } where ok is false if the family would exceed `limit`.
+     */
+    function lineFamily(kind, area, angleDeg, spacing, limit) {
+        var range = familyRange(area, angleDeg, spacing);
+        var ux = range.ux;
+        var uy = range.uy;
+        var nx = range.nx;
+        var ny = range.ny;
+        var anchor = range.anchor;
+        var count = range.count;
         if (count > limit) {
             return { ok: false, count: count, segments: [] };
         }
         var out = [];
-        for (var k = kMin; k <= kMax; k++) {
+        for (var k = range.first; k <= range.last; k++) {
             var offset = anchor + k * spacing;
             var bx = nx * offset;
             var by = ny * offset;
@@ -936,6 +1020,92 @@
         return { ok: false, errors: errors, segments: [], boxes: [], polygons: [], curves: [], dots: [] };
     }
 
+    function pointsFinite(pt) {
+        return !!pt && isFiniteNumber(pt[0]) && isFiniteNumber(pt[1]);
+    }
+
+    /*
+     * Every coordinate a build is about to hand back. A NaN or an infinity here
+     * means the geometry went wrong upstream, and drawing it would leave broken
+     * paths on the page, so builds check this before reporting success.
+     */
+    function allFinite(shapes) {
+        var i, j, k, pts;
+        for (i = 0; i < shapes.segments.length; i++) {
+            var s = shapes.segments[i];
+            if (!isFiniteNumber(s.x1) || !isFiniteNumber(s.y1) || !isFiniteNumber(s.x2) || !isFiniteNumber(s.y2)) {
+                return false;
+            }
+        }
+        for (i = 0; i < shapes.boxes.length; i++) {
+            var b = shapes.boxes[i];
+            if (!isFiniteNumber(b.left) || !isFiniteNumber(b.top) || !isFiniteNumber(b.right) || !isFiniteNumber(b.bottom)) {
+                return false;
+            }
+        }
+        for (i = 0; i < shapes.polygons.length; i++) {
+            pts = shapes.polygons[i].points;
+            for (j = 0; j < pts.length; j++) {
+                if (!pointsFinite(pts[j])) {
+                    return false;
+                }
+            }
+        }
+        for (i = 0; i < shapes.curves.length; i++) {
+            pts = shapes.curves[i].points;
+            for (j = 0; j < pts.length; j++) {
+                var handles = [pts[j].anchor, pts[j].left, pts[j].right];
+                for (k = 0; k < handles.length; k++) {
+                    if (!pointsFinite(handles[k])) {
+                        return false;
+                    }
+                }
+            }
+        }
+        for (i = 0; i < shapes.dots.length; i++) {
+            var d = shapes.dots[i];
+            if (!isFiniteNumber(d.x) || !isFiniteNumber(d.y) || !isFiniteNumber(d.d)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // The field a whole-grid problem belongs to: the one the panel can highlight.
+    function gridField(s) {
+        if (s.type === "pattern") {
+            return s.pattern === "radial" ? "rings" : "patternSize";
+        }
+        if (s.type === "columns" || s.type === "modular") {
+            return "columns";
+        }
+        if (s.type === "baseline") {
+            return "baselineSpacing";
+        }
+        return "type";
+    }
+
+    function brokenGeometry(field) {
+        return {
+            field: field,
+            message: "These settings work out to a position that isn't a number, so nothing was drawn. Change the sizes a little and try again."
+        };
+    }
+
+    /*
+     * Proportions so far apart that one track collapses. The gutter isn't the
+     * culprit here, so the message names the ratio and the track it sizes.
+     */
+    function ratioError(field, ratios, index, noun, span, unit) {
+        var place = isFiniteNumber(index) ? index : 0;
+        return {
+            field: field,
+            message: FIELD_NAMES[field] + " don't fit. The ratio " + ratios[place] + " leaves " + noun + " " + (place + 1) +
+                " with almost no room; the space between margins is " + formatMeasure(span, unit) +
+                ". Use proportions closer together."
+        };
+    }
+
     // Baseline lines between margins, shared by baseline grids and grids with a baseline.
     function addBaselines(s, content, spanLeft, spanRight, unit, segments, errors, metrics) {
         if (s.baselineOffset > content.height + EPSILON) {
@@ -968,17 +1138,25 @@
         };
     }
 
+    // What a pattern's cells are called when they don't fit between the margins.
+    var PATTERN_CELLS = {
+        square: "Squares of ",
+        diagonal: "Diamonds of ",
+        isometric: "Triangles with sides of "
+    };
+
     /*
-     * Pattern grids fill the content area.
+     * Pattern grids fill `area`; the margin frame is drawn around `frameArea`,
+     * which differs only when the pattern runs out to the artboard edges.
      * Pushes shapes into `shapes` and returns an error object or null.
      */
-    function buildPattern(s, area, shapes, metrics, unit) {
+    function buildPattern(s, area, frameArea, shapes, metrics, unit) {
         var size = s.patternSize;
         var limit = LIMITS.maxShapes;
         var i, j, fam;
 
         if (s.pattern !== "dots") {
-            frame(area, shapes.segments);
+            frame(frameArea, shapes.segments);
         }
 
         if (s.pattern === "square" || s.pattern === "diagonal" || s.pattern === "isometric") {
@@ -994,11 +1172,29 @@
                 // Equilateral triangles with sides `size`.
                 families = [[90, size * SQRT3 / 2], [30, size * SQRT3 / 2], [150, size * SQRT3 / 2]];
             }
+            // Measure every family first: a pattern too big for the area draws
+            // nothing but the frame, and one too small blows the shape limit.
+            // Both are the size's doing, so both are reported on the size.
+            var counts = [];
+            var lines = 0;
             for (i = 0; i < families.length; i++) {
-                fam = lineFamily("pattern", area, families[i][0], families[i][1], limit);
-                if (!fam.ok) {
-                    return tooMany("patternSize", fam.count * families.length, "lines");
+                counts.push(familyRange(area, families[i][0], families[i][1]).count);
+                lines += counts[i];
+                if (counts[i] < 2) {
+                    // Fewer than two lines in a family means not one whole cell fits.
+                    return {
+                        field: "patternSize",
+                        message: PATTERN_CELLS[s.pattern] + formatMeasure(size, unit) +
+                            " don't fit between the margins. Use a smaller size."
+                    };
                 }
+            }
+            lines += 4; // The margin frame around them.
+            if (lines > limit) {
+                return tooMany("patternSize", lines, "lines");
+            }
+            for (i = 0; i < families.length; i++) {
+                fam = lineFamily("pattern", area, families[i][0], families[i][1], counts[i]);
                 for (j = 0; j < fam.segments.length; j++) {
                     shapes.segments.push(fam.segments[j]);
                 }
@@ -1030,7 +1226,9 @@
             var rows = area.height + EPSILON >= 2 * size ? Math.floor((area.height - 2 * size) / rowStep + EPSILON) + 1 : 0;
             var evenCount = Math.floor(area.width / w + EPSILON);
             var oddCount = rows > 1 ? Math.floor((area.width - w / 2) / w + EPSILON) : evenCount;
-            if (rows < 1 || evenCount < 1) {
+            // Offset rows start half a hexagon in, so a width that fits only the
+            // even rows would drop every odd one. Refuse rather than draw gaps.
+            if (rows < 1 || evenCount < 1 || oddCount < 1) {
                 return {
                     field: "patternSize",
                     message: "Hexagons with " + formatMeasure(size, unit) + " sides don't fit between the margins. Use a smaller size."
@@ -1154,12 +1352,14 @@
         if (s.type === "columns" || s.type === "modular") {
             var cols = divideSpan(content.width, s.columns, s.columnGutter, s.columnRatios);
             if (!cols.ok) {
-                errors.push({
-                    field: "columnGutter",
-                    message: "Columns don't fit. " + s.columns + " columns with " + formatMeasure(s.columnGutter, unit) +
-                        " gutters need more than " + formatMeasure(s.columnGutter * (s.columns - 1), unit) +
-                        " of width; the space between margins is " + formatMeasure(content.width, unit) + "."
-                });
+                errors.push(s.columnRatios
+                    ? ratioError("columnRatios", s.columnRatios, cols.index, "column", content.width, unit)
+                    : {
+                        field: "columnGutter",
+                        message: "Columns don't fit. " + s.columns + " columns with " + formatMeasure(s.columnGutter, unit) +
+                            " gutters need more than " + formatMeasure(s.columnGutter * (s.columns - 1), unit) +
+                            " of width; the space between margins is " + formatMeasure(content.width, unit) + "."
+                    });
             } else {
                 metrics.columnWidth = cols.equal ? round(cols.size) : null;
                 metrics.columnWidths = [];
@@ -1178,31 +1378,47 @@
 
         if (s.type === "modular") {
             var rows;
+            var squareError = null;
             if (s.squareModules && metrics.columnWidth) {
                 // Rows as tall as the columns are wide, as many as fit from the top margin.
                 var squareCount = Math.floor((content.height + s.rowGutter) / (metrics.columnWidth + s.rowGutter) + EPSILON);
-                var squareTracks = [];
-                for (j = 0; j < squareCount; j++) {
-                    var squareStart = j * (metrics.columnWidth + s.rowGutter);
-                    squareTracks.push({ start: squareStart, end: squareStart + metrics.columnWidth });
+                if (squareCount > COUNT_LIMITS.rows[1]) {
+                    // Square modules take their row count from the column width, so
+                    // the column count is the only thing the user can change here.
+                    squareError = {
+                        field: "squareModules",
+                        message: "Square modules " + formatMeasure(metrics.columnWidth, unit) + " wide make " + squareCount +
+                            " rows, more than the " + COUNT_LIMITS.rows[1] + " allowed. Use fewer columns to make the modules larger."
+                    };
+                    rows = { ok: true, size: metrics.columnWidth, equal: true, tracks: [] };
+                } else {
+                    var squareTracks = [];
+                    for (j = 0; j < squareCount; j++) {
+                        var squareStart = j * (metrics.columnWidth + s.rowGutter);
+                        squareTracks.push({ start: squareStart, end: squareStart + metrics.columnWidth });
+                    }
+                    rows = squareCount >= 1 ? { ok: true, size: metrics.columnWidth, equal: true, tracks: squareTracks } : { ok: false, size: 0 };
+                    s.rows = squareCount;
                 }
-                rows = squareCount >= 1 ? { ok: true, size: metrics.columnWidth, equal: true, tracks: squareTracks } : { ok: false, size: 0 };
-                s.rows = squareCount;
             } else if (s.squareModules) {
                 rows = { ok: false, size: 0 };
             } else {
                 rows = divideSpan(content.height, s.rows, s.rowGutter, s.rowRatios);
             }
-            if (!rows.ok) {
+            if (squareError) {
+                errors.push(squareError);
+            } else if (!rows.ok) {
                 errors.push(s.squareModules ? {
                     field: "squareModules",
                     message: "Square modules need equal columns that fit between the margins at least once."
-                } : {
-                    field: "rowGutter",
-                    message: "Rows don't fit. " + s.rows + " rows with " + formatMeasure(s.rowGutter, unit) +
-                        " gutters need more than " + formatMeasure(s.rowGutter * (s.rows - 1), unit) +
-                        " of height; the space between margins is " + formatMeasure(content.height, unit) + "."
-                });
+                } : (s.rowRatios
+                    ? ratioError("rowRatios", s.rowRatios, rows.index, "row", content.height, unit)
+                    : {
+                        field: "rowGutter",
+                        message: "Rows don't fit. " + s.rows + " rows with " + formatMeasure(s.rowGutter, unit) +
+                            " gutters need more than " + formatMeasure(s.rowGutter * (s.rows - 1), unit) +
+                            " of height; the space between margins is " + formatMeasure(content.height, unit) + "."
+                    }));
             } else {
                 metrics.rowHeight = rows.equal ? round(rows.size) : null;
                 metrics.rowHeights = [];
@@ -1355,11 +1571,18 @@
                     segments.push(segment(kind, l + u1, t - v1, l + u2, t - v2));
                 };
                 if (s.compArmature || s.compDynamic) {
-                    local("armature", 0, 0, cw, ch);
-                    local("armature", cw, 0, 0, ch);
+                    // Both figures are built on the two diagonals.
+                    var both = s.compArmature ? "armature" : "dynamic";
+                    local(both, 0, 0, cw, ch);
+                    local(both, cw, 0, 0, ch);
+                }
+                if (s.compDynamic) {
+                    // Reciprocals belong to the dynamic rectangle, not the armature:
+                    // the classical armature is the two diagonals and the eight
+                    // corner-to-midpoint lines, nothing more.
                     var recips = reciprocals(cw, ch);
                     for (i = 0; i < recips.length; i++) {
-                        local(s.compArmature ? "armature" : "dynamic", recips[i][0], recips[i][1], recips[i][2], recips[i][3]);
+                        local("dynamic", recips[i][0], recips[i][1], recips[i][2], recips[i][3]);
                     }
                 }
                 if (s.compArmature) {
@@ -1400,11 +1623,20 @@
                 for (i = 0; i < spiral.squares.length; i++) {
                     segments.push(spiral.squares[i]);
                 }
+                // The golden rectangle the spiral sits in, so the panel can say
+                // where it is when the area isn't golden itself.
+                metrics.spiral = spiral.box;
             }
         }
 
         if (s.type === "pattern") {
-            var patternError = buildPattern(s, content, shapes, metrics, unit);
+            // Patterns fill the content area, or the whole artboard when extended;
+            // the frame still marks the margins either way.
+            var patternArea = s.extendToEdges ? {
+                left: spanLeft, right: spanRight, top: spanTop, bottom: spanBottom,
+                width: spanRight - spanLeft, height: spanTop - spanBottom
+            } : content;
+            var patternError = buildPattern(s, patternArea, content, shapes, metrics, unit);
             if (patternError) {
                 errors.push(patternError);
             }
@@ -1418,9 +1650,15 @@
         var shapeCount = shapes.segments.length + shapes.boxes.length + shapes.polygons.length + shapes.curves.length + shapes.dots.length;
         if (shapeCount > LIMITS.maxShapes) {
             return failure([{
-                field: "type",
+                field: gridField(s),
                 message: "This grid needs " + shapeCount + " shapes. Reduce the count to stay at or under " + LIMITS.maxShapes + "."
             }]);
+        }
+
+        // Last line of defence: nothing leaves here with a coordinate that isn't
+        // a number, whatever the arithmetic did on the way.
+        if (!allFinite(shapes)) {
+            return failure([brokenGeometry(gridField(s))]);
         }
 
         return {
@@ -1602,10 +1840,21 @@
      * Segment kinds: "bounds", "keyline", "center", "diagonal"; curve kind "circle".
      */
     function buildConstruction(paths, rect, raw) {
-        var styled = normalizeSettings(assignSettings(raw, { type: "columns", columnRatios: "", rowRatios: "", blocks: [], addBaseline: false }));
+        var i, j;
+        // Construction lines borrow the appearance settings and nothing else, so
+        // only those are validated: a column count the panel happens to be
+        // holding has no bearing on lines drawn around a logo.
+        var styleOnly = { type: "columns" };
+        for (i = 0; i < CONSTRUCTION_STYLE_KEYS.length; i++) {
+            if (isProvided(raw, CONSTRUCTION_STYLE_KEYS[i])) {
+                styleOnly[CONSTRUCTION_STYLE_KEYS[i]] = raw[CONSTRUCTION_STYLE_KEYS[i]];
+            }
+        }
+        var styled = normalizeSettings(styleOnly);
         var errors = styled.errors.slice();
         var s = styled.settings;
-        var i, j;
+        // The artwork sets the extent of these lines; there are no margins to run past.
+        s.extendToEdgesApplies = false;
 
         var any = false;
         for (i = 0; i < CONSTRUCTION_FLAGS.length; i++) {
@@ -1647,7 +1896,8 @@
             errors.push({ field: "artboard", message: board.error });
         }
 
-        // Sample every segment for bounds; collect anchors, curve extremes, and arcs.
+        // Measure every segment exactly for the bounds; collect anchors, curve
+        // extremes, and arcs.
         var xs = [];
         var ys = [];
         var arcs = [];
@@ -1656,14 +1906,36 @@
         var minY = Infinity;
         var maxY = -Infinity;
         var pointCount = 0;
+        var unreadable = false;
         function include(pt) {
             minX = Math.min(minX, pt[0]);
             maxX = Math.max(maxX, pt[0]);
             minY = Math.min(minY, pt[1]);
             maxY = Math.max(maxY, pt[1]);
         }
+        function turningPoints(p0, c1, c2, p3, axis) {
+            var ts = axisExtrema(p0, c1, c2, p3, axis);
+            for (var t = 0; t < ts.length; t++) {
+                include(cubicPoint(p0, c1, c2, p3, ts[t]));
+            }
+        }
         for (i = 0; paths && i < paths.length; i++) {
-            var pts = paths[i].points || [];
+            // A path with no points, or with a point that isn't a pair of numbers,
+            // can't be measured. The host sends these when the selection holds
+            // something that isn't artwork, so it is a selection problem, not a crash.
+            var pts = paths[i] ? paths[i].points : null;
+            if (!pts || typeof pts.length !== "number") {
+                unreadable = true;
+                continue;
+            }
+            for (j = 0; j < pts.length; j++) {
+                if (!pts[j] || !pointsFinite(pts[j].anchor)) {
+                    unreadable = true;
+                }
+            }
+            if (unreadable) {
+                continue;
+            }
             pointCount += pts.length;
             var segmentCount = paths[i].closed ? pts.length : pts.length - 1;
             for (j = 0; j < pts.length; j++) {
@@ -1673,19 +1945,20 @@
                 var from = pts[j];
                 var to = pts[(j + 1) % pts.length];
                 var p0 = from.anchor;
-                var c1 = from.right || from.anchor;
-                var c2 = to.left || to.anchor;
+                var c1 = pointsFinite(from.right) ? from.right : from.anchor;
+                var c2 = pointsFinite(to.left) ? to.left : to.anchor;
                 var p3 = to.anchor;
-                for (var step = 1; step < 16; step++) {
-                    include(cubicPoint(p0, c1, c2, p3, step / 16));
-                }
+                // Exactly where the curve turns around, the same points the key
+                // lines use, so the box can never clip the artwork it encloses.
+                turningPoints(p0, c1, c2, p3, 0);
+                turningPoints(p0, c1, c2, p3, 1);
                 var straight = Math.abs(c1[0] - p0[0]) + Math.abs(c1[1] - p0[1]) + Math.abs(c2[0] - p3[0]) + Math.abs(c2[1] - p3[1]) < 1e-6;
                 if (!straight) {
                     arcs.push([p0, c1, c2, p3]);
                 }
             }
         }
-        if (!pointCount || !(maxX - minX > EPSILON || maxY - minY > EPSILON)) {
+        if (unreadable || !pointCount || !(maxX - minX > EPSILON || maxY - minY > EPSILON)) {
             errors.push({ field: "selection", message: "Select artwork made of paths. Convert text to outlines first." });
         }
         if (errors.length) {
@@ -1780,6 +2053,10 @@
         if (shapeCount > LIMITS.maxShapes) {
             return failure([{ field: "selection", message: "That artwork needs " + shapeCount + " construction lines. Select fewer or simpler paths." }]);
         }
+        // Same last line of defence as a grid: no broken coordinates go out.
+        if (!allFinite({ segments: segments, boxes: [], polygons: [], curves: curves, dots: [] })) {
+            return failure([brokenGeometry("selection")]);
+        }
         return {
             ok: true,
             errors: [],
@@ -1797,24 +2074,6 @@
         };
     }
 
-    function assignSettings(raw, overrides) {
-        var out = {};
-        var key;
-        if (raw) {
-            for (key in raw) {
-                if (hasOwn(raw, key)) {
-                    out[key] = raw[key];
-                }
-            }
-        }
-        for (key in overrides) {
-            if (hasOwn(overrides, key)) {
-                out[key] = overrides[key];
-            }
-        }
-        return out;
-    }
-
     /*
      * Dash pattern for a line style, scaled to the stroke width.
      * Returns { dashes: [dash, gap] or [], roundCaps }.
@@ -1830,14 +2089,9 @@
         return { dashes: [], roundCaps: false };
     }
 
+    // A deep copy: the caller gets its own blocks array, not the shared one.
     function copyDefaults() {
-        var out = {};
-        for (var key in DEFAULTS) {
-            if (hasOwn(DEFAULTS, key)) {
-                out[key] = DEFAULTS[key];
-            }
-        }
-        return out;
+        return copyValue(DEFAULTS);
     }
 
     return {

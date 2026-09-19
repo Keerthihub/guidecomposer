@@ -76,11 +76,11 @@ Mullion only ever changes what it created. Grids live on their own non-printing 
 
 **Can I use it for client work?** Yes. The license covers personal and commercial projects.
 
-**Do I get updates?** [Describe your update policy, for example: all 1.x updates are free.]
+**Do I get updates?** [UPDATE_POLICY] (for example: all 1.x updates are free.)
 
 ### Call to action
 
-Get Mullion — [price], one-time purchase.
+Get Mullion — [PRICE], one-time purchase.
 
 ## Pricing
 
@@ -117,18 +117,36 @@ Take these at 2× resolution, in Illustrator's dark and light themes. Use real-l
 | 35–45 s | Scattered objects, Check, then Snap to grid | "Then put your design on the grid." |
 | 45–52 s | Select a logo, Construct, Generate | "See how a logo is built." |
 | 52–57 s | Quick cuts: patterns, dotted lines, InDesign page | "Patterns, styles, and InDesign too." |
-| 57–60 s | Product name and price | "[Name]. Grids for Illustrator and InDesign." |
+| 57–60 s | Product name and price | "[PRODUCT_NAME]. Grids for Illustrator and InDesign." |
 
 Keep the cursor slow and zoomed in; add captions, since most viewers watch muted.
 
+## Before you publish any of this
+
+Every sentence on the sales page is a promise you have to support by email
+afterwards. Two in this file are not yet true:
+
+- **InDesign.** It has never been run in InDesign. Label it beta, or cut it from
+  the listing, until it has. See `docs/COMPATIBILITY.md`.
+- **Version support.** "Illustrator 2022 or later" is what the plugin declares,
+  not what has been tested. Say which versions you have run it in.
+
+Check the rest against README.md → Verification status, which separates what is
+proven from what is remembered, before it becomes marketing copy.
+
 ## Launch checklist
 
-- [ ] Final name chosen and `npm run rename` run
-- [ ] Beta complete; blockers and majors fixed (BETA.md)
-- [ ] Signed package tested on clean macOS and Windows accounts
-- [ ] Installation guide PDF with screenshots for both systems
-- [ ] PRIVACY.md and TERMS.md placeholders filled; terms reviewed by a lawyer
-- [ ] Sales page, screenshots, and demo video ready
-- [ ] Support email set up and tested
-- [ ] Launch posts: Behance, Dribbble, LinkedIn, relevant Reddit communities (check their self-promotion rules), design newsletters
-- [ ] After a few weeks without major issues, submit to the Adobe Creative Cloud Marketplace (scripts/package.md)
+The single, ordered list of everything left — with acceptance criteria, and
+every legal placeholder in one table — is **`docs/LAUNCH-CHECKLIST.md`**. It
+covers the items that used to be listed here (name, beta, signing, clean-machine
+testing, legal, support address, pricing, listing) plus the ones this file never
+mentioned, such as trademark clearance and the certificate.
+
+Marketing-only work not covered there:
+
+- [ ] Launch posts: Behance, Dribbble, LinkedIn, relevant Reddit communities
+      (check their self-promotion rules), design newsletters
+- [ ] Ask beta testers who scored 9–10 for a quote, with permission to use their
+      name (BETA.md, section 8)
+- [ ] Decide whether launch-week pricing is time-limited or sales-limited, and
+      say which on the page

@@ -9,8 +9,12 @@ Mullion draws column, modular, and baseline grids, classic grid systems, composi
 <!-- /placeholder-name-note -->
 
 - Platform: CEP panel extension (Illustrator has no UXP support; one panel serves both apps)
-- Illustrator 2022 (26.0) or later; InDesign 2022 (17.0) or later; macOS and Windows
+- Declared support: Illustrator 2022 (26.0) or later; InDesign 2022 (17.0) or later; macOS and Windows. **The declared range is wider than what has been run** — see [Verification status](#verification-status), and give customers [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) instead of that table.
 - No network access, no accounts, no Node.js inside the panel
+
+This file is for whoever works on the code. Customer-facing documentation lives
+in [docs/](docs/README.md); the remaining work before this can be sold is in
+[docs/LAUNCH-CHECKLIST.md](docs/LAUNCH-CHECKLIST.md).
 
 ## Contents
 
@@ -25,6 +29,7 @@ Mullion draws column, modular, and baseline grids, classic grid systems, composi
 - [Known limitations](#known-limitations)
 - [Packaging and distribution](#packaging-and-distribution)
 - [Renaming](#renaming)
+- [Licence and third-party code](#licence-and-third-party-code)
 
 ## Features
 
@@ -66,15 +71,34 @@ The panel has three modes: **Grid** (grid types as icon buttons and every settin
 
 ## Verification status
 
-| Area | How it was verified |
-| --- | --- |
-| Grid engine | 192 automated tests (exact coordinates, all grid types, validation, snapping) |
-| Illustrator host | Tests against a fake Illustrator DOM, **and** repeated runs in Illustrator 30.8.1 on macOS covering every feature |
-| Undo in Illustrator | Measured in Illustrator 30.8.1: one Undo removes a whole generated grid |
-| InDesign host | Tests against a strict fake InDesign DOM only. **Not yet run in InDesign.** Verify with the QA checklist before selling InDesign support |
-| Panel | Headless Chrome smoke test of every control and all three modes, in all four brightness themes and at 240 px wide |
-| Windows | Not yet tested. CI runs the automated tests on Windows; the panel itself still needs a Windows machine |
-| Signing | Workflow written; signing not yet run (ZXPSignCmd needs Rosetta on Apple Silicon, or use the GitHub workflow) |
+**Internal. Do not put this table, or anything derived from it, in front of a
+customer** — give them [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md), which
+says what is supported in the terms a buyer needs. This table says what has
+actually been *run*, which is a different and smaller thing.
+
+Each row separates evidence anyone can reproduce from this repository
+(re-runnable) from evidence that exists only as the developer's record of having
+done it once (**not reproducible here** — treat it as a claim to re-verify
+whenever the code changes, and never let it drift into marketing copy).
+
+| Area | Evidence in the repository | Rests on the developer's word |
+| --- | --- | --- |
+| Grid engine | `npm test` — exact coordinates, every grid type, validation, snapping. The suite prints its own count when it runs; read it there rather than quoting a number, which goes stale every time a test is added | — |
+| Layout library | `tests/layouts.test.js` builds every one of the 128 layouts (10 categories) — count checked against `shared/layouts.js` | — |
+| Artboard formats | 29 formats in `shared/formats.js`, exercised by the resize tests — count checked against the source | — |
+| Illustrator host | Tests against a fake Illustrator DOM | Repeated runs in Illustrator 30.8.1 on macOS, said to cover every feature. Nothing in this repository records which build, which date, or which features |
+| Undo in Illustrator | — | Measured once in Illustrator 30.8.1: one Undo removed a whole generated grid |
+| InDesign host | Tests against a strict fake InDesign DOM | Nothing. **InDesign has never been run.** Work the QA checklist in a real copy of InDesign before selling InDesign support, or label it beta |
+| Panel | `npm run test:ui` — headless Chrome smoke test of every control and all three modes, in all four brightness themes and at 240 px wide. CI runs it on Ubuntu, macOS **and Windows** runners | Headless Chrome is not CEP's embedded Chromium inside a host app. The panel has never been opened in Illustrator on Windows |
+| Windows | Unit tests, build and panel smoke test all run on a Windows runner in CI | Nothing. No one has installed the panel in Illustrator or InDesign on Windows |
+| Rename tool | `npm run check` plus the **Rename rehearsal** CI job, which copies the whole tree, renames it, and re-runs the ES3 check, the tests, the build and the panel smoke test against the copy | Never run with the real final name (which does not exist yet) |
+| Signing | Workflow written, with the signing tool pinned by commit and verified by SHA-256 | Nothing. **No package has ever been signed**, so no one has installed a signed `.zxp`, and the update and uninstall paths are unobserved |
+| Installation, update, uninstall | — | Nothing. See step 7 of [docs/LAUNCH-CHECKLIST.md](docs/LAUNCH-CHECKLIST.md) |
+
+**Host version ranges.** `CSXS/manifest.xml` declares `ILST [26.0,99.9]` and
+`IDSN [17.0,99.9]`. That is far wider than the single Illustrator version
+anything has been run in, because CEP has no "and later" syntax. Narrow it, or
+be clear in the listing that untested versions are untested.
 
 ## Project layout
 
@@ -94,7 +118,10 @@ shared/formats.js             Standard artboard and page sizes
 tests/                        Node tests: engine, both hosts on fake DOMs, library, release
 scripts/                      ES3 checker, UI smoke test, build, signing, rename, dev install
 .github/workflows/            CI checks and the signed-release workflow
-icons/                        23 x 23 panel icons (generated by scripts/make-icons.js)
+.github/ISSUE_TEMPLATE/       Bug and feature templates (ask for version and OS build)
+icons/                        Panel icons, 23 x 23 plus @2X HiDPI (generated by scripts/make-icons.js)
+docs/                         Customer documentation, and the launch checklist
+LICENSE NOTICE SECURITY.md    End-user licence (template), third-party notices, security policy
 .debug                        Remote debugging ports for development builds only
 ```
 
@@ -110,7 +137,16 @@ npm run test:ui    # headless Chrome smoke test of the panel (needs Google Chrom
 
 `npm run check` must pass before every commit. It verifies that every file the host apps evaluate parses as ES3 and calls no APIs ExtendScript lacks (such as `Array.prototype.forEach`, `Object.keys`, `String.prototype.trim`), and rejects reserved words like `final` as property names.
 
-Pushing to GitHub runs the same checks on macOS, Windows, and Linux, plus the panel smoke test (`.github/workflows/check.yml`).
+Pushing to GitHub (`.github/workflows/check.yml`) runs four jobs:
+
+| Job | What it does |
+| --- | --- |
+| Tests | `npm run check` and a production build on Ubuntu, macOS and Windows |
+| Panel smoke test | `npm run test:ui` in headless Chrome, on all three, with screenshots kept for 14 days |
+| npm audit | Advisory only, and deliberately so: the one development dependency never reaches a customer, so an advisory in it must not block a release. It is reported, never enforced |
+| Rename rehearsal | Copies the tree, renames it, and re-runs everything against the copy (see [Renaming](#renaming)) |
+
+Both workflows declare least-privilege `permissions:` and a `concurrency:` group.
 
 ### Work on the UI in a browser
 
@@ -148,6 +184,8 @@ To pick up code changes, close and reopen the panel; host `.jsx` files reload wh
 ## Debugging
 
 **Panel:** with the panel open, visit `http://localhost:8088` (Illustrator) or `http://localhost:8089` (InDesign) in Chrome for DevTools. Ports come from `.debug`, which is never packaged.
+
+**From a user:** ask for **More > Copy diagnostics** — panel version, installed host version, app and platform, document and artboard, current settings, and the last error, in one paste. `docs/TROUBLESHOOTING.md` is the customer-facing version of this section, and asks for nothing that requires a registry edit.
 
 **Host scripts:** errors come back to the panel's status line as readable messages, such as `Illustrator reported an error: ... (line 42)`. Unexpected raw responses are logged to the DevTools console.
 
@@ -239,6 +277,8 @@ Run on the oldest and newest versions you support, on macOS and Windows. For InD
 - [ ] Panel follows all four UI brightness settings, including after switching while open
 - [ ] Panel resizes and docks cleanly; nothing overflows at its narrowest width
 - [ ] Settings and presets survive closing the panel and restarting the app
+- [ ] **Update in place:** save a preset, install the next version's `.zxp` over this one, restart, and confirm the settings and the preset are still there (run this on macOS **and** Windows every release — it is the claim [docs/UPDATING.md](docs/UPDATING.md) makes to customers)
+- [ ] **Uninstall and reinstall:** confirm presets are gone afterwards, and that an exported preset file imports cleanly — so the warning we give customers is the truth
 
 **Document states**
 - [ ] With no document open: guidance message, actions disabled
@@ -313,9 +353,18 @@ npm run build                                    # checks + dist/<name>/
 ZXPSIGNCMD=... MULLION_CERT=... npm run sign:mac # needs Rosetta on Apple Silicon
 ```
 
-Or sign on GitHub: add your certificate as repository secrets and run **Signed release** (`.github/workflows/release.yml`).
+Or sign on GitHub: add your certificate as repository secrets and push a tag
+(`.github/workflows/release.yml`). The tag must match `package.json`'s version,
+the tests and the panel smoke test must pass on all three platforms first, and
+the result is a permanent GitHub Release carrying the signed `.zxp`, its
+SHA-256, and the release notes taken from the matching `CHANGELOG.md` section.
+Workflow artefacts expire; releases do not, which is what lets you hand a
+customer the previous version.
 
 For beta testing and launch material, see [BETA.md](BETA.md) and [MARKETING.md](MARKETING.md).
+Customer-facing pages (compatibility, troubleshooting, updating) are in
+[docs/](docs/README.md), and everything still left to do before selling is in
+[docs/LAUNCH-CHECKLIST.md](docs/LAUNCH-CHECKLIST.md).
 
 ## Renaming
 
@@ -328,6 +377,36 @@ npm run check && npm run test:ui
 scripts/install-dev-mac.sh --uninstall && scripts/install-dev-mac.sh
 ```
 
-The tool changes everything users can see (manifest id and name, menu, grid layer name, panel text, docs, package names, ownership id) and leaves internal code identifiers alone. It has been rehearsed on a full copy of the project, with all checks passing afterwards.
+The tool changes everything users can see (manifest id and name, menu, grid layer name, panel text, docs, package names, ownership id) and leaves internal code identifiers alone.
 
-After release, don't change the id: Clear recognizes grids by it, so grids made by earlier versions would no longer be cleared.
+It is rehearsed on every push: the **Rename rehearsal** job in
+`.github/workflows/check.yml` copies the whole project to a scratch directory,
+renames it to a stand-in name, and then runs the ES3 check, the unit tests, the
+production build and the panel smoke test against the renamed copy. If that job
+is ever removed, this paragraph stops being true and must be deleted with it.
+
+What the rehearsal does not prove: that the rename works for *your* name and id.
+Run `npm run check && npm run test:ui` yourself afterwards, and reinstall the
+development extension before trusting it.
+
+After release, don't change the id: Clear recognizes grids by it, so grids made by earlier versions would no longer be cleared. The same change also strands the customer's settings and presets, which CEP stores per extension id — see [docs/UPDATING.md](docs/UPDATING.md).
+
+## Licence and third-party code
+
+This is **not** open-source software. It is a paid, proprietary product.
+
+- [LICENSE](LICENSE) — the end-user licence agreement a buyer accepts: personal
+  and commercial use, no redistribution, no warranty. It is a **template with
+  placeholders, not reviewed by a lawyer**; see
+  [docs/LAUNCH-CHECKLIST.md](docs/LAUNCH-CHECKLIST.md), step 3.
+- [NOTICE](NOTICE) — third-party attribution for `client/vendor/CSInterface.js`
+  (Adobe) and `host/vendor/json2.js` (public domain), quoted from the files as
+  shipped. These notices must travel with every copy.
+- [SECURITY.md](SECURITY.md) — how to report a vulnerability, and the properties
+  the automated checks enforce (no network, no Node.js, no injection, no
+  development files in the package).
+
+**The licence cannot go inside the `.zxp`**: the build only permits `CSXS/`,
+`client/`, `host/`, `shared/` and `icons/`, and the release checks reject
+anything else. It reaches the customer in the sales zip and on the listing page
+instead — see [scripts/package.md](scripts/package.md) → Distribute.

@@ -25,15 +25,30 @@
     const STORAGE_PRESETS = "mullion.presets.v1";
     const STORAGE_UI = "mullion.ui.v1";
 
+    // This panel's own version. The host reports the version of the files on
+    // disk, so the two differing means the extension was updated underneath us.
+    const PANEL_VERSION = "0.1.0";
+
     const PREVIEW_DELAY_MS = 200;
     // Redrawing thousands of shapes on every edit stalls Illustrator and fills its
     // undo history, so live preview pauses above this many shapes (Generate still works).
     const PREVIEW_MAX_SHAPES = 1500;
     // A host call that hasn't answered by now is abandoned so the panel stays usable.
     const HOST_TIMEOUT_MS = 90000;
+    // The host keeps running an abandoned call, so anything that would change the
+    // document waits until it answers rather than doing the work twice.
+    const MUTATING_METHODS = { preview: true, generate: true, clear: true, clearPreview: true, setGridLayer: true, resizeArtboards: true, alignSelection: true, applyPageMargins: true, drawTestLine: true };
+    // Show a working state only once a call is slow enough to notice.
+    const WORKING_DELAY_MS = 400;
     const STATUS_THROTTLE_MS = 600;
+    // How long an Undo stays on offer after a destructive change.
+    const UNDO_MS = 8000;
+    // Rebooting the host re-reads its files, so look for a new version sparingly.
+    const UPDATE_CHECK_MS = 300000;
     const STEP_REPEAT_DELAY_MS = 400;
     const STEP_REPEAT_MS = 70;
+    // Below this the drawing cannot share the panel with the controls, so it collapses.
+    const SHORT_PANEL_PX = 470;
     const FALLBACK_RECT = [0, 792, 612, 0]; // US Letter, shown when no document is open
     const MAX_SCHEMATIC_CELLS = 2500;
     const THUMBNAIL_MAX_MARKS = 500; // Dots and hexagons beyond this are thinned in tile thumbnails.
@@ -55,6 +70,9 @@
     const COLOR_FIELDS = ["strokeColor", "marginColor", "gutterColor", "conBoundsColor", "conKeylineColor", "conCircleColor"];
     const CHOICE_FIELDS = ["type", "output", "lineStyle", "conExtend"];
     const SELECT_FIELDS = { units: "pt", spiralFocus: "bottom-right", pattern: "square" };
+    // One arrow-key press should move a length by a useful amount in its own
+    // unit: a fixed step of 1 moves a gutter by a whole inch.
+    const UNIT_STEPS = { pt: 1, px: 1, mm: 0.5, in: 0.05 };
     const GRID_NAMES = { columns: "column grid", modular: "modular grid", baseline: "baseline grid", composition: "set of composition guides", pattern: "pattern" };
     const PATTERN_NAMES = { square: "Square grid", dots: "Dot grid", isometric: "Isometric grid", hexagon: "Hexagons", diagonal: "Diagonal grid", radial: "Radial grid" };
     const PATTERN_SIZE_LABELS = { square: "Cell size", dots: "Spacing", isometric: "Triangle side", hexagon: "Hexagon side", diagonal: "Diamond size" };
@@ -95,9 +113,41 @@
         updateUi(changes) {
             const ui = this.get(STORAGE_UI) || {};
             Object.assign(ui, changes);
-            this.set(STORAGE_UI, ui);
+            return this.set(STORAGE_UI, ui);
         }
     };
+
+    /*
+     * Every write can fail (private mode, a full or blocked store). Silently
+     * losing presets or settings is worse than saying so, but a failing store
+     * fails on every keystroke, so the panel reports it once per streak.
+     */
+    let storageFailed = false;
+
+    // `quiet` is for the writes that happen on every keystroke: they report the
+    // first failure of a streak, not one message per stroke.
+    function storageWrite(key, value, what, quiet) {
+        if (storage.set(key, value)) {
+            storageFailed = false;
+            return true;
+        }
+        if (!quiet || !storageFailed) {
+            say("Couldn't save " + what + ". Panel storage is unavailable, so it will be lost when the panel closes.", "error");
+        }
+        storageFailed = true;
+        return false;
+    }
+
+    function storageWriteUi(changes) {
+        const ok = storage.updateUi(changes);
+        if (!ok && !storageFailed) {
+            storageFailed = true;
+            say("Couldn't save how the panel is set up. Panel storage is unavailable.", "error");
+        } else if (ok) {
+            storageFailed = false;
+        }
+        return ok;
+    }
 
     // ------------------------------------------------------------------ bridges
 
@@ -178,6 +228,18 @@
             kind: "cep",
             call,
             fire,
+            // The version of the host files on disk. Booting evaluates them
+            // again, so a fresh boot reports an extension updated since launch.
+            // This works the same on Windows and macOS: the path comes from CEP,
+            // never from the panel's own URL.
+            async version(options) {
+                const booted = await ((options && options.fresh) || !booting ? boot() : booting);
+                return booted.ok && booted.data ? booted.data.version || null : null;
+            },
+            app() {
+                const env = cs.getHostEnvironment();
+                return env ? { name: env.appName, version: env.appVersion, locale: env.appLocale } : {};
+            },
             on(type, handler) {
                 cs.addEventListener(type, handler);
             },
@@ -455,12 +517,27 @@
             }
         };
 
+        // Development hook: makes the next calls answer slowly, so the panel's
+        // working and timed-out states can be exercised in a browser.
+        let stallMs = 0;
+
         return {
             kind: "mock",
             call(method, payload) {
+                const delay = stallMs || 60;
+                stallMs = 0;
                 return new Promise((resolve) => {
-                    window.setTimeout(() => resolve(handlers[method](payload || {})), 60);
+                    window.setTimeout(() => resolve(handlers[method](payload || {})), delay);
                 });
+            },
+            stall(ms) {
+                stallMs = Number(ms) || 0;
+            },
+            version() {
+                return Promise.resolve(params.get("hostversion") || PANEL_VERSION);
+            },
+            app() {
+                return { name: mockHost === "indesign" ? "IDSN" : "ILST", version: "0.0 (mock)", locale: "en_US" };
             },
             fire() {},
             on() {},
@@ -482,13 +559,16 @@
      * call of the same method, so a burst of preview requests collapses to the
      * latest settings. Replaced and dropped calls resolve with SUPERSEDED.
      */
-    function createQueue(bridge, onBusyChange) {
+    function createQueue(bridge, onBusyChange, onStalledChange) {
         const jobs = [];
         let active = null;
+        let timeoutMs = HOST_TIMEOUT_MS;
+        // A call the panel gave up on, while the host is still running it.
+        let stalled = null; // { method }
         const background = { preview: true, status: true, clearPreview: true, setGridLayer: true, textMetrics: true, selectionGeometry: true };
 
         function isBusy() {
-            return Boolean((active && !background[active.method]) || jobs.some((j) => !background[j.method]));
+            return Boolean(stalled || (active && !background[active.method]) || jobs.some((j) => !background[j.method]));
         }
 
         function pump() {
@@ -503,18 +583,36 @@
             const timeout = new Promise((resolve) => {
                 timer = window.setTimeout(() => resolve({
                     ok: false,
+                    timedOut: true,
                     error: {
                         code: "TIMEOUT",
-                        message: appName() + " didn't respond. If a dialog is open there, close it, then try again.",
+                        message: appName() + " didn't respond to " + job.method + ". If a dialog is open there, close it. " +
+                            "The panel waits for that request to finish before changing the document again.",
                         fields: []
                     }
-                }), HOST_TIMEOUT_MS);
+                }), timeoutMs);
             });
             const call = bridge.call(job.method, job.payload)
                 .catch((err) => ({ ok: false, error: { code: "PANEL_ERROR", message: String((err && err.message) || err), fields: [] } }));
             Promise.race([call, timeout]).then((result) => {
                 window.clearTimeout(timer);
                 active = null;
+                if (result.timedOut) {
+                    /*
+                     * The host is still executing this call. Re-enabling the
+                     * buttons here would let a second Generate run while the
+                     * first is still drawing, which with "Add to existing
+                     * grids" silently doubles the grid. Hold every mutating
+                     * call until the host answers.
+                     */
+                    stalled = { method: job.method };
+                    onStalledChange(stalled);
+                    call.then(() => {
+                        stalled = null;
+                        onStalledChange(null);
+                        pump();
+                    });
+                }
                 job.resolve(result);
                 pump();
             });
@@ -523,6 +621,17 @@
         return {
             enqueue(method, payload, options) {
                 return new Promise((resolve) => {
+                    if (stalled && MUTATING_METHODS[method]) {
+                        resolve({
+                            ok: false,
+                            error: {
+                                code: "HOST_BUSY",
+                                message: appName() + " is still working on the last request. The panel waits for it to finish so the grid isn't drawn twice.",
+                                fields: []
+                            }
+                        });
+                        return;
+                    }
                     if (options && options.coalesce) {
                         const pending = jobs.find((j) => j.method === method);
                         if (pending) {
@@ -545,6 +654,13 @@
                     }
                 }
                 onBusyChange(isBusy());
+            },
+            stalled() {
+                return stalled;
+            },
+            // Development hook, so the timed-out path can be exercised in a browser.
+            setTimeout(ms) {
+                timeoutMs = Number(ms) || HOST_TIMEOUT_MS;
             }
         };
     }
@@ -626,6 +742,11 @@
         stage: document.querySelector(".stage"),
         stageToggle: $("stage-toggle"),
         svg: $("schematic"),
+        svgTitle: $("schematic-title"),
+        progress: $("progress"),
+        fieldErrors: $("field-errors"),
+        panelVersion: $("panel-version"),
+        copyDiagnostics: $("copy-diagnostics"),
         artboardName: $("artboard-name"),
         artboardSize: $("artboard-size"),
         metrics: $("grid-metrics"),
@@ -833,6 +954,15 @@
         document.querySelectorAll("[data-unit]").forEach((node) => {
             node.textContent = currentUnits;
         });
+        // Arrow keys and the stepper buttons move a length by one step of its
+        // own unit: 1 pt, but 0.05 in, so an arrow never jumps a whole inch.
+        const step = UNIT_STEPS[currentUnits] || 1;
+        LENGTH_FIELDS.forEach((name) => {
+            const input = field(name);
+            if (input) {
+                input.step = String(step);
+            }
+        });
     }
 
     // ------------------------------------------------------------------- state
@@ -852,35 +982,162 @@
     let formatSwapped = false;
     let panelMode = "grid";
     let previewDrawn = false; // Whether a live preview may be on the document.
+    let previewQuiet = false; // The next preview resumes after Generate; it says nothing.
     let geometry = null; // Selected artwork paths, for construction lines.
     let geometryKey = "";
 
     const bridge = window.__adobe_cep__ && typeof window.CSInterface === "function" ? createCepBridge() : createMockBridge();
-    const queue = createQueue(bridge, (isBusy) => {
-        busy = isBusy;
-        els.panel.setAttribute("aria-busy", String(isBusy));
-        updateButtons();
-    });
+    const queue = createQueue(bridge, onBusyChange, onStalledChange);
 
     // ------------------------------------------------------------------ status
 
-    // Shows a status message, optionally with one follow-up action button.
-    function say(message, tone, action) {
-        statusIsValidation = false;
-        els.status.textContent = message || "";
-        if (tone) {
-            els.status.dataset.tone = tone;
+    /*
+     * The status line is a small model, not a string in the DOM: re-reading its
+     * textContent would pick up the label of an action button and concatenate
+     * messages. A message can carry several actions, and a notice (an update
+     * prompt) is kept aside so a routine message never destroys it.
+     */
+    let statusState = { message: "", tone: null, actions: [] };
+    let statusNotice = null; // { message, tone, actions }, re-shown when the line clears.
+    let lastErrorMessage = "";
+    let undoTimer = 0;
+
+    function renderStatus() {
+        const shown = statusState.message || !statusNotice ? statusState : statusNotice;
+        els.status.textContent = shown.message || "";
+        if (shown.tone) {
+            els.status.dataset.tone = shown.tone;
         } else {
             delete els.status.dataset.tone;
         }
-        if (action) {
+        shown.actions.forEach((action) => {
             const button = document.createElement("button");
             button.type = "button";
             button.className = "link-button";
             button.textContent = action.label;
             button.addEventListener("click", action.run);
             els.status.appendChild(button);
+        });
+    }
+
+    // Shows a status message with any number of follow-up action buttons.
+    function say(message, tone, actions) {
+        statusIsValidation = false;
+        if (tone === "error" && message) {
+            lastErrorMessage = message; // Kept for the diagnostics a customer sends us.
         }
+        const list = !actions ? [] : Array.isArray(actions) ? actions.filter(Boolean) : [actions];
+        statusState = { message: message || "", tone: tone || null, actions: list };
+        renderStatus();
+    }
+
+    // Adds another action to the message already shown, keeping its text intact.
+    function addStatusAction(action) {
+        if (!action) {
+            return;
+        }
+        statusState.actions = statusState.actions.concat([action]);
+        renderStatus();
+    }
+
+    /*
+     * A notice the panel must not lose: it survives background refreshes and
+     * routine messages, and comes back whenever the status line is cleared.
+     */
+    function sayNotice(message, tone, actions) {
+        statusNotice = { message, tone: tone || null, actions: !actions ? [] : Array.isArray(actions) ? actions : [actions] };
+        say(message, tone, statusNotice.actions);
+    }
+
+    // Offers an Undo for a few seconds after a change that can't be taken back.
+    function offerUndo(message, tone, undo) {
+        window.clearTimeout(undoTimer);
+        const mine = {
+            label: "Undo",
+            run: () => {
+                window.clearTimeout(undoTimer);
+                undo();
+            }
+        };
+        say(message, tone, mine);
+        undoTimer = window.setTimeout(() => {
+            if (statusState.actions.indexOf(mine) !== -1) {
+                statusState.actions = statusState.actions.filter((a) => a !== mine);
+                renderStatus();
+            }
+        }, UNDO_MS);
+    }
+
+    // ------------------------------------------------------------------- focus
+
+    // Somewhere focus can always go: the tab for the mode the panel is in.
+    function focusAnchor() {
+        const tab = els.panel.querySelector('input[name="panel-mode"]:checked');
+        if (tab) {
+            tab.focus({ preventScroll: true });
+        }
+    }
+
+    /*
+     * Hiding the element that holds the keyboard focus drops focus on <body>,
+     * which ends the keyboard path through the panel. Move it somewhere stable
+     * before the element disappears.
+     */
+    function rescueFocus(node) {
+        const active = document.activeElement;
+        if (active && active !== document.body && node.contains(active)) {
+            focusAnchor();
+        }
+    }
+
+    // The first control a mode should hand the keyboard when it opens.
+    function focusMode(mode) {
+        const first = mode === "layouts" ? els.librarySearch
+            : mode === "construct" ? field("conBounds")
+            : els.panel.querySelector('input[name="type"]:checked');
+        if (first) {
+            first.focus({ preventScroll: true });
+        }
+    }
+
+    // ----------------------------------------------------------- working state
+
+    let workingTimer = 0;
+
+    /*
+     * Illustrator can take seconds to draw a large grid. A busy cursor alone
+     * reads as a frozen panel, so any call that isn't answered quickly shows a
+     * progress bar and names what the panel is waiting for.
+     */
+    function setWorking(on) {
+        els.panel.dataset.working = String(on);
+        els.progress.hidden = !on;
+    }
+
+    function onBusyChange(isBusy) {
+        busy = isBusy;
+        els.panel.setAttribute("aria-busy", String(isBusy));
+        if (isBusy) {
+            if (!workingTimer && els.panel.dataset.working !== "true") {
+                workingTimer = window.setTimeout(() => {
+                    workingTimer = 0;
+                    setWorking(true);
+                }, WORKING_DELAY_MS);
+            }
+        } else {
+            window.clearTimeout(workingTimer);
+            workingTimer = 0;
+            setWorking(false);
+        }
+        updateButtons();
+    }
+
+    // The host is still running a call the panel gave up on.
+    function onStalledChange(stalled) {
+        if (!stalled) {
+            say(appName() + " answered. The panel is ready again.");
+        }
+        updateButtons();
     }
 
     function appName() {
@@ -1013,6 +1270,7 @@
         });
 
         const general = [];
+        const inline = [];
         errors.forEach((error) => {
             const names = ERROR_FIELD_GROUPS[error.field] || [error.field];
             let shown = false;
@@ -1036,8 +1294,16 @@
             });
             if (!shown) {
                 general.push(error.message);
+            } else {
+                inline.push(error.message);
             }
         });
+        /*
+         * Inline errors sit next to their field and are never announced. The
+         * status line (a live region) carries the first message; the rest go to
+         * a second live region so a screen reader hears all of them once.
+         */
+        els.fieldErrors.textContent = general.length ? inline.join(" ") : inline.slice(1).join(" ");
         return general;
     }
 
@@ -1077,6 +1343,9 @@
             }
             if (d.baselineFields !== undefined) {
                 visible = visible && (settings.type === "baseline" || ((settings.type === "columns" || settings.type === "modular") && settings.addBaseline === true));
+            }
+            if (!visible && !node.hidden) {
+                rescueFocus(node);
             }
             node.hidden = !visible;
         });
@@ -1268,9 +1537,36 @@
         svg.appendChild(frag);
     }
 
+    // What the drawing last showed, so it can be repainted when its size changes.
+    let lastRender = null;
+
     function renderSchematic(result, rect, extra) {
+        lastRender = { result, rect, extra };
         paintGrid(els.svg, result, rect, Object.assign({ empty: !hostStatus.hasDocument }, extra || {}));
         els.svg.classList.toggle("schematic--editable", panelMode === "grid" && blocksEditable(result));
+    }
+
+    /*
+     * Dot radii and the smallest visible mark are worked out from the drawing's
+     * measured size, so a drawing painted while collapsed (0 × 0) or before a
+     * resize is wrong until it is painted again.
+     */
+    function repaintDrawing() {
+        if (!lastRender || !els.svg.getClientRects().length) {
+            return;
+        }
+        renderSchematic(lastRender.result, lastRender.rect, lastRender.extra);
+    }
+
+    // The drawing is one image to a screen reader: its title says what it shows.
+    function describeSchematic(result) {
+        const where = panelMode === "construct" ? "the selected artwork"
+            : hostStatus.hasDocument ? hostStatus.artboard.name
+            : "an empty " + nouns().one;
+        const what = result && result.ok
+            ? els.metrics.textContent + ", " + els.count.textContent
+            : "settings that don't make a grid yet";
+        els.svgTitle.textContent = "Drawing of " + what + " on " + where + ".";
     }
 
     // ------------------------------------------------------------------ blocks
@@ -1284,9 +1580,11 @@
             return;
         }
         const count = currentBlocks.length;
+        // Blocks are marked by dragging on the drawing. There is no keyboard
+        // path for it, so the summary says so rather than leaving it unsaid.
         els.blocksSummary.textContent = count
-            ? plural(count, "block", "blocks") + " marked. Click a block in the drawing to remove it."
-            : "Drag across the drawing to mark content blocks.";
+            ? plural(count, "block", "blocks") + " marked. Click a block in the drawing to remove it (mouse or pen only)."
+            : "Drag across the drawing with a mouse or pen to mark content blocks. This needs a pointer.";
         els.blocksClear.hidden = count === 0;
     }
 
@@ -1320,8 +1618,8 @@
         return best;
     }
 
-    function cellAt(point) {
-        const result = lastResult;
+    function cellAt(point, from) {
+        const result = from || lastResult;
         if (!blocksEditable(result) || !point) {
             return null;
         }
@@ -1343,9 +1641,16 @@
         let start = null;
         let draft = null;
         let startClient = null;
+        /*
+         * The grid the drag started on. A background refresh (or any edit) can
+         * replace lastResult mid-drag, and a failed build carries no tracks at
+         * all, so the drag is measured against this snapshot and abandoned if
+         * the drawing under the pointer is no longer the one being dragged on.
+         */
+        let dragResult = null;
 
         const draftRect = (cells) => {
-            const result = lastResult;
+            const result = dragResult;
             const block = blockFromCells(cells[0], cells[1]);
             const rect = currentRect();
             const cols = result.tracks.columns;
@@ -1360,13 +1665,26 @@
             return { x: left - rect[0], y: rect[1] - top, width: right - left, height: top - bottom };
         };
 
+        // Ends the drag without marking anything: the grid it started on is gone.
+        const abandon = () => {
+            if (draft && draft.parentNode) {
+                draft.parentNode.removeChild(draft);
+            }
+            start = null;
+            draft = null;
+            dragResult = null;
+        };
+
+        const dragValid = () => Boolean(start && draft && dragResult && dragResult === lastResult);
+
         els.svg.addEventListener("pointerdown", (event) => {
-            const cell = cellAt(pointerToArtboard(event));
+            const cell = cellAt(pointerToArtboard(event), lastResult);
             if (!cell || event.button !== 0) {
                 return;
             }
             event.preventDefault();
             els.svg.setPointerCapture(event.pointerId);
+            dragResult = lastResult;
             start = cell;
             startClient = [event.clientX, event.clientY];
             draft = svgNode("rect", Object.assign({ class: "schematic__draft" }, draftRect([cell, cell])));
@@ -1374,10 +1692,14 @@
         });
 
         els.svg.addEventListener("pointermove", (event) => {
-            if (!start || !draft) {
+            if (!start) {
                 return;
             }
-            const cell = cellAt(pointerToArtboard(event)) || start;
+            if (!dragValid()) {
+                abandon();
+                return;
+            }
+            const cell = cellAt(pointerToArtboard(event), dragResult) || start;
             const r = draftRect([start, cell]);
             Object.keys(r).forEach((key) => draft.setAttribute(key, r[key]));
         });
@@ -1386,8 +1708,12 @@
             if (!start) {
                 return;
             }
+            if (!dragValid()) {
+                abandon();
+                return;
+            }
             const point = pointerToArtboard(event);
-            const end = cellAt(point) || start;
+            const end = cellAt(point, dragResult) || start;
             const moved = Math.hypot(event.clientX - startClient[0], event.clientY - startClient[1]) > 4;
             if (draft && draft.parentNode) {
                 draft.parentNode.removeChild(draft);
@@ -1486,6 +1812,7 @@
         if (!result.ok) {
             els.metrics.textContent = "Adjust the highlighted settings";
             els.count.textContent = "";
+            describeSchematic(result);
             return;
         }
         const m = result.metrics;
@@ -1506,6 +1833,7 @@
         const boards = targetState.ok ? targetState.boards.length : 0;
         els.count.textContent = shapeWords(result) + (boards > 1 ? " × " + boards : "");
         els.count.title = boards > 1 ? "On each of " + boards + " artboards" : "";
+        describeSchematic(result);
     }
 
     function renderAppearanceSummary(settings) {
@@ -1572,8 +1900,16 @@
             general.unshift(targetError);
         }
 
-        if (general.length) {
-            say(general[0], "error");
+        /*
+         * Anything that disables Generate has to say why in the status line:
+         * an inline error under a field the user isn't looking at (or inside a
+         * collapsed section) leaves the button looking broken.
+         */
+        const blocking = general[0] ||
+            (!targetState.ok ? targetState.error : "") ||
+            (!result.ok && result.errors.length ? result.errors[0].message : "");
+        if (blocking) {
+            say(blocking, "error");
             statusIsValidation = true;
         } else if (statusIsValidation) {
             say("");
@@ -1601,8 +1937,9 @@
             : { ok: false, errors: [], segments: [], boxes: [], polygons: [], curves: [], dots: [] };
         lastResult = result;
         const general = showErrors(result.errors);
-        if (general.length) {
-            say(general[0], "error");
+        const blocking = general[0] || (!result.ok && result.errors.length ? result.errors[0].message : "");
+        if (blocking) {
+            say(blocking, "error");
             statusIsValidation = true;
         } else if (statusIsValidation) {
             say("");
@@ -1643,6 +1980,7 @@
             els.metrics.textContent = paths.length ? "Adjust the highlighted settings" : "";
             els.count.textContent = "";
         }
+        describeSchematic(result);
         renderAppearanceSummary(settings);
         updateButtons();
         schedulePersist();
@@ -1708,20 +2046,50 @@
             say("");
         }
         library.open = panelMode === "layouts";
+        // Leaving Layouts hides the search box, which may hold the focus.
+        if (changed && !library.open) {
+            rescueFocus(els.library);
+        }
         if (library.open) {
             renderLibraryChips();
             renderLibraryGrid();
-            if (!silent) {
-                els.librarySearch.focus();
-            }
         } else if (library.observer) {
             library.observer.disconnect();
         }
-        storage.updateUi({ panelMode, libraryCategory: library.category });
+        // Entering a mode hands the keyboard that mode's first control, unless
+        // the mode was changed with the arrow keys: those move between the tabs
+        // themselves, and focus has to stay there to keep moving.
+        if (changed && !silent && !(options && options.keepFocus)) {
+            focusMode(panelMode);
+        }
+        storageWriteUi({ panelMode, libraryCategory: library.category });
         if (panelMode === "construct") {
             refreshGeometry(true);
         }
         update();
+    }
+
+    // Why Generate can't be used right now, in the user's terms.
+    function generateBlockedReason() {
+        if (queue.stalled()) {
+            return appName() + " is still working on the last request.";
+        }
+        if (!hostStatus.hasDocument) {
+            return "Open or create a document to add a grid.";
+        }
+        if (panelMode === "layouts") {
+            return "Choose a layout, then switch to Grid to generate it.";
+        }
+        if (!targetState.ok) {
+            return targetState.error;
+        }
+        if (panelMode === "construct" && !(geometry && geometry.paths && geometry.paths.length)) {
+            return "Select the artwork to draw construction lines for.";
+        }
+        if (!(lastResult && lastResult.ok)) {
+            return "Adjust the highlighted settings first.";
+        }
+        return busy ? appName() + " is working." : "";
     }
 
     function updateButtons() {
@@ -1730,6 +2098,10 @@
         const targetOk = targetState.ok;
         const layer = hasDoc && hostStatus.gridLayer ? hostStatus.gridLayer : { exists: false };
         els.generate.disabled = busy || !hasDoc || !valid || !targetOk || panelMode === "layouts";
+        // A disabled Generate always says why, on the button as well as in the
+        // status line: a button that does nothing and explains nothing reads as
+        // a broken panel.
+        els.generate.title = els.generate.disabled ? generateBlockedReason() : "";
         els.clear.disabled = busy || !hasDoc || !targetOk;
         els.testLine.disabled = busy || !hasDoc;
         els.previewToggle.disabled = !hasDoc;
@@ -1768,24 +2140,36 @@
     function schedulePersist() {
         window.clearTimeout(persistTimer);
         persistTimer = window.setTimeout(() => {
-            storage.set(STORAGE_SETTINGS, cleanSettings(readSettings()));
-            storage.updateUi({ target: readTarget() });
+            if (storageWrite(STORAGE_SETTINGS, cleanSettings(readSettings()), "your settings", true)) {
+                storageWriteUi({ target: readTarget() });
+            }
         }, 300);
     }
+
+    // Whether the panel has seen a document; null until the first status arrives.
+    let hadDocument = null;
 
     function applyStatus(status) {
         if (!status) {
             return;
         }
-        const hadDocument = hostStatus.hasDocument;
+        const changed = status.hasDocument !== hadDocument;
+        hadDocument = status.hasDocument;
         hostStatus = status;
         if (!status.hasDocument) {
             if (els.previewToggle.checked) {
                 setPreview(false, { silent: true });
             }
-            say("Open or create a document to add a grid.");
+            /*
+             * Only on the way into the no-document state. Saying it on every
+             * background refresh would wipe out whatever the status line holds,
+             * including errors, update prompts and offered actions.
+             */
+            if (changed) {
+                say("Open or create a document to add a grid.");
+            }
         } else {
-            if (!hadDocument) {
+            if (changed) {
                 say("");
             }
             // The layer's real lock state wins over the remembered setting.
@@ -1801,36 +2185,41 @@
     }
 
     /*
-     * A panel left open keeps running the code it loaded, even after the
-     * extension's files change (an update, or a development build). Remember
-     * the files' modification times and offer a reload when they move on.
+     * A panel left open keeps running the JavaScript it loaded, even after the
+     * extension's files change (an update, or a development build). The host is
+     * evaluated from disk on every boot, so booting it again and comparing the
+     * version it reports with this panel's names the update exactly. Nothing
+     * here depends on the panel's own URL, so it works the same on Windows,
+     * where location.pathname starts "/C:/".
      */
-    const PANEL_FILES = ["client/app.js", "client/index.html", "client/styles.css", "shared/grid-core.js", "shared/layouts.js", "shared/formats.js", "host/index.jsx"];
-    let loadedStamp = null;
-    let updateOffered = false;
+    let hostVersion = null;
+    let offeredVersion = "";
+    let lastUpdateCheckAt = 0;
 
-    function filesStamp() {
-        const cepFs = window.cep && window.cep.fs;
-        if (!cepFs || typeof cepFs.stat !== "function") {
-            return null;
-        }
-        const root = decodeURIComponent(window.location.pathname).replace(/client\/index\.html$/, "");
-        return PANEL_FILES.map((file) => {
-            const info = cepFs.stat(root + file);
-            return info && info.err === 0 && info.data.mtime ? String(info.data.mtime) : "";
-        }).join("|");
-    }
-
-    // Offers the reload once, and again each time the user comes back to the panel.
-    function checkForUpdate(force) {
-        if ((updateOffered && !force) || loadedStamp === null) {
+    async function checkForUpdate(force) {
+        const now = Date.now();
+        if (!force && now - lastUpdateCheckAt < UPDATE_CHECK_MS) {
             return;
         }
-        const stamp = filesStamp();
-        if (stamp !== null && stamp !== loadedStamp) {
-            updateOffered = true;
-            say("Mullion was updated.", "warning", { label: "Reload panel", run: () => window.location.reload() });
+        lastUpdateCheckAt = now;
+        const version = await bridge.version({ fresh: hostVersion !== null });
+        if (!version) {
+            return;
         }
+        hostVersion = version;
+        showVersion();
+        if (version !== PANEL_VERSION && version !== offeredVersion) {
+            offeredVersion = version;
+            // A notice, so a background refresh or a routine message can't lose it.
+            sayNotice("Mullion " + version + " is installed; this panel is still running " + PANEL_VERSION + ".",
+                "warning", { label: "Reload panel", run: () => window.location.reload() });
+        }
+    }
+
+    function showVersion() {
+        els.panelVersion.textContent = hostVersion && hostVersion !== PANEL_VERSION
+            ? PANEL_VERSION + " (installed: " + hostVersion + ")"
+            : PANEL_VERSION;
     }
 
     async function refreshStatus(force) {
@@ -1839,7 +2228,9 @@
             return;
         }
         lastStatusAt = now;
-        checkForUpdate(force);
+        if (force) {
+            checkForUpdate(false);
+        }
         const result = await queue.enqueue("status", undefined, { coalesce: true });
         if (result.superseded) {
             return;
@@ -1876,6 +2267,7 @@
         }
         const shapes = (lastResult.shapeCount || 0) * Math.max(1, panelMode === "construct" ? 1 : targetState.boards.length);
         if (shapes > PREVIEW_MAX_SHAPES) {
+            previewQuiet = false;
             lastPreviewKey = key;
             queue.drop("preview");
             if (previewDrawn) {
@@ -1902,7 +2294,13 @@
                     : readTarget().mode === "selection"
                     ? plural(response.data.artboards, "object", "objects")
                     : response.data.artboards > 1 ? areaWords(response.data.artboards) : hostStatus.artboard.name;
-                say("Previewing on " + where + ".");
+                // A preview that resumes by itself after Generate must not
+                // overwrite the message that says what Generate did.
+                if (previewQuiet) {
+                    previewQuiet = false;
+                } else {
+                    say("Previewing on " + where + ".");
+                }
             } else {
                 lastPreviewKey = "";
                 sayError(response);
@@ -1921,6 +2319,7 @@
         }
         queue.drop("preview");
         previewDrawn = false;
+        previewQuiet = false;
         if (options && options.skipHost) {
             return;
         }
@@ -1944,15 +2343,23 @@
         const settings = readSettings();
         const target = readTarget();
         const mode = readMode();
-        // Generating replaces the preview on the host, so stop previewing first.
-        if (els.previewToggle.checked) {
-            setPreview(false, { skipHost: true });
-        }
+        /*
+         * Generating replaces the preview on the host, so no preview may be in
+         * flight while it runs. The toggle itself stays on: the user asked for a
+         * live preview, and previewing resumes from the generated grid below.
+         */
+        const previewing = els.previewToggle.checked;
+        window.clearTimeout(previewTimer);
         queue.drop("preview");
+        previewDrawn = false;
+        lastPreviewKey = "";
         const construct = panelMode === "construct";
         const response = await queue.enqueue("generate", construct ? { settings, kind: "construction" } : { settings, target, mode });
         if (response.superseded) {
             return;
+        }
+        if (response.ok && previewing) {
+            previewQuiet = true;
         }
         if (response.ok && construct) {
             hostStatus = response.data.status;
@@ -1990,7 +2397,10 @@
         if (els.clear.disabled) {
             return;
         }
-        if (els.previewToggle.checked) {
+        // Clearing means "take the grids off": a live preview would put one
+        // straight back, so previewing stops here and the message says so.
+        const previewing = els.previewToggle.checked;
+        if (previewing) {
             setPreview(false, { silent: true });
         }
         queue.drop("preview");
@@ -2007,10 +2417,11 @@
         const data = response.data;
         hostStatus = data.status;
         syncLayerButtons();
+        const previewNote = previewing ? " Preview is off; turn it back on to keep previewing." : "";
         if (construct) {
-            say(data.removed
+            say((data.removed
                 ? "Cleared construction lines from " + data.status.artboard.name + "."
-                : "No construction lines to clear on " + data.status.artboard.name + ".", data.removed ? "ok" : undefined);
+                : "No construction lines to clear on " + data.status.artboard.name + ".") + previewNote, data.removed ? "ok" : undefined);
             update();
             return;
         }
@@ -2024,7 +2435,7 @@
             message += " Kept " + plural(data.rescued, "item", "items") + " you had added to a grid; " +
                 (data.rescued === 1 ? "it is" : "they are") + " now directly on the layer.";
         }
-        say(message, data.removed ? "ok" : undefined);
+        say(message + previewNote, data.removed ? "ok" : undefined);
         update();
     }
 
@@ -2175,11 +2586,16 @@
     // ------------------------------------------------------- export / import
 
     const PRESET_FILE_FORMAT = "mullion-presets";
+    const PRESET_FILE_VERSION = 1;
+    // Import is the one place the panel reads a file someone else wrote: bound
+    // what it will take on, so a huge or generated file can't hang the panel.
+    const MAX_IMPORT_BYTES = 512 * 1024;
+    const MAX_IMPORT_PRESETS = 200;
 
     function presetFileText() {
         return JSON.stringify({
             format: PRESET_FILE_FORMAT,
-            version: 1,
+            version: PRESET_FILE_VERSION,
             presets: loadPresets().map((p) => ({ name: p.name, settings: p.settings }))
         }, null, 2);
     }
@@ -2215,6 +2631,10 @@
 
     // Adds presets from a file; names that already exist get a number instead of being overwritten.
     function importPresetText(text) {
+        if (typeof text !== "string" || text.length > MAX_IMPORT_BYTES) {
+            say("That presets file is too large to import (the limit is " + Math.round(MAX_IMPORT_BYTES / 1024) + " KB).", "error");
+            return;
+        }
         let data;
         try {
             data = JSON.parse(text);
@@ -2226,10 +2646,18 @@
             say("That file isn't a presets file.", "error");
             return;
         }
+        // A file version this panel doesn't know may mean the settings are
+        // written differently; importing it anyway would make silent nonsense.
+        if (data.version !== PRESET_FILE_VERSION) {
+            say("This presets file is version " + JSON.stringify(data.version) + "; Mullion " + PANEL_VERSION +
+                " reads version " + PRESET_FILE_VERSION + " files. Update Mullion, or export the presets again from the panel that wrote them.", "error");
+            return;
+        }
         const presets = loadPresets();
         const names = new Set(presets.map((p) => p.name));
+        const offered = data.presets.length;
         let added = 0;
-        data.presets.forEach((entry) => {
+        data.presets.slice(0, MAX_IMPORT_PRESETS).forEach((entry) => {
             if (!entry || typeof entry.name !== "string" || !entry.name.trim() || !entry.settings || typeof entry.settings !== "object") {
                 return;
             }
@@ -2238,13 +2666,17 @@
                 name = entry.name.trim().slice(0, 34) + " (" + n + ")";
             }
             names.add(name);
-            presets.push({ name, settings: cleanSettings(entry.settings), savedAt: new Date().toISOString() });
+            presets.push({ name, settings: settingsFromStored(entry.settings), savedAt: new Date().toISOString() });
             added++;
         });
         presets.sort((a, b) => a.name.localeCompare(b.name));
-        storage.set(STORAGE_PRESETS, presets);
+        if (!storageWrite(STORAGE_PRESETS, presets, "the imported presets")) {
+            renderPresets("");
+            return;
+        }
         renderPresets("");
-        say(added ? "Imported " + plural(added, "preset", "presets") + "." : "The file had no presets to import.", added ? "ok" : undefined);
+        const skipped = offered > MAX_IMPORT_PRESETS ? " The file held " + offered + "; only the first " + MAX_IMPORT_PRESETS + " were imported." : "";
+        say(added ? "Imported " + plural(added, "preset", "presets") + "." + skipped : "The file had no presets to import.", added ? "ok" : undefined);
     }
 
     function importPresets() {
@@ -2336,8 +2768,7 @@
             presets[existing] = entry;
         }
         presets.sort((a, b) => a.name.localeCompare(b.name));
-        if (!storage.set(STORAGE_PRESETS, presets)) {
-            say("Couldn't save the preset. Panel storage is unavailable.", "error");
+        if (!storageWrite(STORAGE_PRESETS, presets, "the preset")) {
             return;
         }
         closePresetSave();
@@ -2365,7 +2796,29 @@
             updateButtons();
             return;
         }
-        applySettings(preset.settings, "Loaded preset \u201c" + name + "\u201d.");
+        applySettings(settingsFromStored(preset.settings), "Loaded preset \u201c" + name + "\u201d.");
+    }
+
+    /*
+     * Settings as they arrive from storage or a preset file. Defaults are in
+     * points, so an object that names a unit without carrying every length (an
+     * old preset, a hand-written file) would otherwise read a 36 pt default
+     * margin as 36 in and open the panel with Generate disabled. Convert the
+     * lengths the object doesn't set, the way settingsInUnits does for layouts.
+     */
+    function settingsFromStored(raw) {
+        const clean = cleanSettings(raw);
+        const units = clean.units;
+        if (!raw || typeof raw !== "object" || units === "pt" || core.UNITS.indexOf(units) === -1) {
+            return clean;
+        }
+        const defaults = core.defaults();
+        LENGTH_FIELDS.forEach((name) => {
+            if (!Object.prototype.hasOwnProperty.call(raw, name)) {
+                clean[name] = Number(formatNumber(core.fromPoints(defaults[name], units)));
+            }
+        });
+        return clean;
     }
 
     /*
@@ -2398,8 +2851,11 @@
         const resolved = layouts.resolveLayout(layout, currentRect(), currentUnits);
         const note = layout.relative ? "Margins are sized for this " + currentAreaLabel() + "." : layouts.describeArtboard(layout);
         applySettings(Object.assign(settingsInUnits(resolved.units), resolved), "Applied \u201c" + layout.name + "\u201d." + (note ? " " + note : ""));
+        // Actions are added to the message, never rebuilt from the status line:
+        // reading it back would swallow the previous button's label.
         if (panelMode === "layouts") {
-            say(els.status.textContent, "ok", { label: "Edit settings", run: () => setMode("grid") });
+            statusState.tone = "ok";
+            addStatusAction({ label: "Edit settings", run: () => setMode("grid") });
         }
         // Offer to resize when a layout made for a size lands on a different artboard.
         const a = layout.artboard;
@@ -2408,7 +2864,7 @@
             const wanted = { width: core.toPoints(a.width, a.units), height: core.toPoints(a.height, a.units) };
             const differs = Math.abs(rect[2] - rect[0] - wanted.width) > 1 || Math.abs(rect[1] - rect[3] - wanted.height) > 1;
             if (differs) {
-                say(els.status.textContent, undefined, {
+                addStatusAction({
                     label: "Resize " + nouns().one + " to " + a.width + " \u00d7 " + a.height + " " + a.units,
                     run: () => resizeTo(a.width, a.height, a.units, layout.name)
                 });
@@ -2418,7 +2874,7 @@
         els.libraryGrid.querySelectorAll(".tile").forEach((tile) => {
             tile.setAttribute("aria-pressed", String(tile.dataset.layout === id));
         });
-        storage.updateUi({ lastLayout: id });
+        storageWriteUi({ lastLayout: id });
     }
 
     // ----------------------------------------------------------------- library
@@ -2485,9 +2941,9 @@
         const result = core.buildGrid(rect, settings);
         paintGrid(svg, result, rect, { thumb: true, icon: true });
         tile.classList.toggle("tile--unfit", !result.ok);
-        if (!result.ok) {
-            tile.querySelector(".tile__meta").textContent = "Doesn't fit this artboard";
-        }
+        // Repainting happens in place, so the meta line goes back to the
+        // layout's own description when the artboard changes to one that fits.
+        tile.querySelector(".tile__meta").textContent = result.ok ? layouts.describeShort(layout) : "Doesn't fit this artboard";
     }
 
     function renderLibraryGrid() {
@@ -2541,12 +2997,18 @@
             const meta = document.createElement("span");
             meta.className = "tile__meta";
             meta.textContent = layouts.describeShort(layout);
+            // The gallery is one tab stop (see setRovingTile): arrow keys move
+            // between tiles, so Tab doesn't have to walk through 128 of them.
+            tile.tabIndex = -1;
             tile.append(art, name, meta);
             item.appendChild(tile);
             fragment.appendChild(item);
         });
         els.libraryGrid.appendChild(fragment);
         els.libraryGrid.scrollTop = 0;
+        // The tab stop starts on the applied layout, if it is in this list.
+        const tiles = Array.from(els.libraryGrid.querySelectorAll(".tile"));
+        setRovingTile(tiles.find((tile) => tile.dataset.layout === library.selected) || tiles[0], false);
         els.libraryGrid.querySelectorAll(".tile").forEach((tile) => {
             if (library.observer) {
                 library.observer.observe(tile);
@@ -2556,12 +3018,70 @@
         });
     }
 
-    // Thumbnails depend on the artboard; redraw them if it changed while the library is open.
+    /*
+     * The gallery holds 128 tiles. As plain buttons they are 128 tab stops
+     * between the search box and the action bar, so the grid keeps a single
+     * tab stop (the tile last used) and arrow keys move within it.
+     */
+    function setRovingTile(tile, focus) {
+        if (!tile) {
+            return;
+        }
+        els.libraryGrid.querySelectorAll(".tile").forEach((other) => {
+            other.tabIndex = other === tile ? 0 : -1;
+        });
+        if (focus) {
+            tile.focus();
+        }
+    }
+
+    // Tiles per row, measured from the laid-out grid rather than assumed.
+    function tilesPerRow(tiles) {
+        const top = tiles[0].offsetTop;
+        let count = 0;
+        while (count < tiles.length && tiles[count].offsetTop === top) {
+            count++;
+        }
+        return Math.max(1, count);
+    }
+
+    function onLibraryGridKeydown(event) {
+        const tile = event.target.closest(".tile");
+        const keys = ["ArrowRight", "ArrowLeft", "ArrowDown", "ArrowUp", "Home", "End"];
+        if (!tile || keys.indexOf(event.key) === -1) {
+            return;
+        }
+        const tiles = Array.from(els.libraryGrid.querySelectorAll(".tile"));
+        const perRow = tilesPerRow(tiles);
+        const from = tiles.indexOf(tile);
+        const steps = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: perRow, ArrowUp: -perRow };
+        const to = event.key === "Home" ? 0
+            : event.key === "End" ? tiles.length - 1
+            : Math.min(tiles.length - 1, Math.max(0, from + steps[event.key]));
+        event.preventDefault();
+        setRovingTile(tiles[to], true);
+    }
+
+    /*
+     * Thumbnails show the active artboard, so they go stale when it changes.
+     * Repaint them where they are: rebuilding the grid on every background
+     * status poll would throw away the scroll position and the focused tile.
+     */
     function refreshLibraryIfStale() {
-        if (library.open && library.renderedFor !== JSON.stringify([currentRect(), currentUnits])) {
+        const key = JSON.stringify([currentRect(), currentUnits]);
+        if (!library.open || library.renderedFor === key) {
+            return;
+        }
+        library.renderedFor = key;
+        const wanted = libraryList().map((l) => l.id).join("|");
+        const tiles = Array.from(els.libraryGrid.querySelectorAll(".tile"));
+        // Suggestions are chosen by artboard shape, so that list can really change.
+        if (wanted !== tiles.map((t) => t.dataset.layout).join("|")) {
             renderLibraryChips();
             renderLibraryGrid();
+            return;
         }
+        tiles.forEach(paintTile);
     }
 
     function deletePreset() {
@@ -2570,9 +3090,21 @@
             return;
         }
         const name = value.slice(5);
-        storage.set(STORAGE_PRESETS, loadPresets().filter((p) => p.name !== name));
+        const before = loadPresets();
+        const deleted = before.find((p) => p.name === name);
+        if (!storageWrite(STORAGE_PRESETS, before.filter((p) => p.name !== name), "the preset list")) {
+            return;
+        }
         renderPresets("");
-        say("Deleted preset “" + name + "”.");
+        // Deleting is one click and can't be taken back: offer it back for a moment.
+        offerUndo("Deleted preset “" + name + "”.", undefined, () => {
+            const presets = loadPresets().filter((p) => p.name !== name).concat(deleted ? [deleted] : []);
+            presets.sort((a, b) => a.name.localeCompare(b.name));
+            if (storageWrite(STORAGE_PRESETS, presets, "the preset list")) {
+                renderPresets("user:" + name);
+                say("Restored preset “" + name + "”.");
+            }
+        });
     }
 
     // ------------------------------------------------------------------ inputs
@@ -2594,7 +3126,7 @@
         marginsLinked = linked;
         els.marginLink.setAttribute("aria-pressed", String(linked));
         els.marginLink.title = linked ? "Margins are linked. Select to set each side separately." : "Use the same margin on all sides";
-        storage.updateUi({ marginsLinked: linked });
+        storageWriteUi({ marginsLinked: linked });
     }
 
     function onControlInput(event) {
@@ -2680,10 +3212,108 @@
         window.addEventListener("blur", stop);
     }
 
-    function setStageCollapsed(collapsed) {
+    // ------------------------------------------------------------ diagnostics
+
+    /*
+     * The only support channel a customer has. Everything here answers a
+     * question we would otherwise have to ask: which build, which app, which
+     * platform, what was on screen, and what went wrong last.
+     */
+    function diagnosticsText() {
+        const app = (bridge.app && bridge.app()) || {};
+        const s = cleanSettings(readSettings());
+        const lengths = ["columnGutter", "rowGutter", "marginTop", "marginRight", "marginBottom", "marginLeft"]
+            .map((name) => name + " " + formatNumber(s[name])).join(", ");
+        return [
+            "Mullion panel " + PANEL_VERSION + (hostVersion && hostVersion !== PANEL_VERSION ? " (installed files: " + hostVersion + ")" : ""),
+            "Host: " + (app.name || "unknown") + " " + (app.version || "") + " (" + (hostStatus.host || "illustrator") + "), bridge " + bridge.kind,
+            "OS: " + (navigator.platform || "unknown") + " — " + navigator.userAgent,
+            "Document: " + (hostStatus.hasDocument
+                ? (hostStatus.documentName || "untitled") + ", " + plural(hostStatus.artboardCount || 0, "artboard", "artboards") +
+                    ", active " + hostStatus.artboard.name + " " + formatNumber(hostStatus.artboard.width) + " × " + formatNumber(hostStatus.artboard.height) + " pt"
+                : "none open"),
+            "Mode: " + panelMode + ", target " + JSON.stringify(readTarget()) + ", " + readMode(),
+            "Grid: " + s.type + (s.type === "pattern" ? "/" + s.pattern : "") + ", output " + s.output + ", " + s.columns + " × " + s.rows +
+                ", units " + s.units + ", " + lengths,
+            "Drawing: " + els.metrics.textContent + (els.count.textContent ? ", " + els.count.textContent : ""),
+            "Last error: " + (lastErrorMessage || "none")
+        ].join("\n");
+    }
+
+    async function copyDiagnostics() {
+        const text = diagnosticsText();
+        let copied = false;
+        try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                await navigator.clipboard.writeText(text);
+                copied = true;
+            }
+        } catch (e) {
+            copied = false;
+        }
+        if (!copied) {
+            // CEP's Chromium can refuse the async clipboard; the old path still works.
+            const area = document.createElement("textarea");
+            area.value = text;
+            area.setAttribute("aria-hidden", "true");
+            area.style.position = "fixed";
+            area.style.opacity = "0";
+            document.body.appendChild(area);
+            area.select();
+            try {
+                copied = document.execCommand("copy");
+            } catch (e) {
+                copied = false;
+            }
+            document.body.removeChild(area);
+        }
+        if (copied) {
+            say("Copied diagnostics to the clipboard. Paste them into your support message.", "ok");
+        } else {
+            say("Couldn't reach the clipboard. The diagnostics are in the panel's console (Help > Debug).", "error");
+            if (window.console) {
+                console.log("[Mullion] diagnostics\n" + text);
+            }
+        }
+    }
+
+    /*
+     * The drawing is the first thing to go when the panel is short: at the
+     * manifest's smallest size (240 × 320) it would leave no room for the
+     * settings, and the action bar would be pushed out of sight.
+     * stageCollapsed is what the user chose; stageTooShort is forced by height.
+     */
+    let stageCollapsed = false;
+    let stageTooShort = false;
+
+    function syncStage() {
+        const collapsed = stageCollapsed || stageTooShort;
         els.stage.classList.toggle("stage--collapsed", collapsed);
         els.stageToggle.setAttribute("aria-expanded", String(!collapsed));
-        els.stageToggle.title = collapsed ? "Show the drawing" : "Hide the drawing";
+        els.stageToggle.disabled = stageTooShort;
+        els.stageToggle.title = stageTooShort ? "The panel is too short to show the drawing"
+            : collapsed ? "Show the drawing" : "Hide the drawing";
+        // A drawing painted while collapsed measured 0 × 0 and fell back to a
+        // 5 pt dot radius, so it is painted again as soon as it has a size.
+        if (!collapsed) {
+            repaintDrawing();
+        }
+    }
+
+    function setStageCollapsed(collapsed) {
+        stageCollapsed = collapsed;
+        syncStage();
+    }
+
+    // Collapses the drawing when the panel is too short to show it, and gives
+    // it back when there is room again.
+    function fitStageToHeight() {
+        const short = window.innerHeight < SHORT_PANEL_PX;
+        if (short === stageTooShort) {
+            return;
+        }
+        stageTooShort = short;
+        syncStage();
     }
 
     function bindEvents() {
@@ -2753,7 +3383,7 @@
         els.pageMargins.addEventListener("click", applyPageMargins);
         els.presetsImport.addEventListener("click", importPresets);
         els.addMode.addEventListener("change", () => {
-            storage.updateUi({ addMode: els.addMode.checked });
+            storageWriteUi({ addMode: els.addMode.checked });
             update();
         });
         els.toggleVisible.addEventListener("click", toggleVisible);
@@ -2768,17 +3398,37 @@
         els.stageToggle.addEventListener("click", () => {
             const collapsed = !els.stage.classList.contains("stage--collapsed");
             setStageCollapsed(collapsed);
-            storage.updateUi({ stageCollapsed: collapsed });
+            storageWriteUi({ stageCollapsed: collapsed });
         });
-        els.appearance.addEventListener("toggle", () => storage.updateUi({ appearanceOpen: els.appearance.open }));
+        els.appearance.addEventListener("toggle", () => storageWriteUi({ appearanceOpen: els.appearance.open }));
+
+        // The drawing's dot sizes come from its measured size, and how much room
+        // the panel has for it changes with every drag of the panel's edge.
+        let resizeTimer = 0;
+        window.addEventListener("resize", () => {
+            window.clearTimeout(resizeTimer);
+            resizeTimer = window.setTimeout(() => {
+                fitStageToHeight();
+                repaintDrawing();
+            }, 120);
+        });
 
         els.previewToggle.addEventListener("change", () => setPreview(els.previewToggle.checked));
         els.generate.addEventListener("click", generate);
         els.clear.addEventListener("click", clear);
         els.testLine.addEventListener("click", drawTestLine);
 
+        // Arrow keys move between the mode tabs, which changes the mode as they
+        // go: a mode entered that way keeps focus on the tabs.
+        let modeChangedByKey = false;
         els.panel.querySelectorAll('input[name="panel-mode"]').forEach((input) => {
-            input.addEventListener("change", () => setMode(input.value));
+            input.addEventListener("keydown", () => {
+                modeChangedByKey = true;
+            });
+            input.addEventListener("change", () => {
+                setMode(input.value, { keepFocus: modeChangedByKey });
+                modeChangedByKey = false;
+            });
         });
         document.querySelectorAll(".quick-color").forEach((chip) => {
             chip.addEventListener("click", () => {
@@ -2800,7 +3450,15 @@
         els.libraryGrid.addEventListener("click", (event) => {
             const tile = event.target.closest(".tile");
             if (tile) {
+                setRovingTile(tile, false);
                 applyLayout(tile.dataset.layout);
+            }
+        });
+        els.libraryGrid.addEventListener("keydown", onLibraryGridKeydown);
+        els.libraryGrid.addEventListener("focusin", (event) => {
+            const tile = event.target.closest(".tile");
+            if (tile) {
+                setRovingTile(tile, false);
             }
         });
         els.library.addEventListener("keydown", (event) => {
@@ -2832,13 +3490,25 @@
         els.presetDelete.addEventListener("click", deletePreset);
         els.reset.addEventListener("click", () => {
             const locked = field("lockLayer").checked;
+            // Resetting throws away everything in the form, so keep a copy and
+            // offer it back for a few seconds.
+            const before = cleanSettings(readSettings());
+            const linked = marginsLinked;
             writeSettings(core.defaults());
             field("lockLayer").checked = locked;
             syncLockButton();
             setMarginsLinked(true);
             update();
-            say("Settings reset to defaults.");
+            offerUndo("Settings reset to defaults.", undefined, () => {
+                writeSettings(before);
+                field("lockLayer").checked = locked;
+                syncLockButton();
+                setMarginsLinked(linked);
+                update();
+                say("Put your settings back.");
+            });
         });
+        els.copyDiagnostics.addEventListener("click", copyDiagnostics);
 
         // Cmd/Ctrl + Enter generates from anywhere in the panel.
         document.addEventListener("keydown", (event) => {
@@ -2884,13 +3554,15 @@
             return;
         }
         applyTheme(bridge.skin());
-        writeSettings(storage.get(STORAGE_SETTINGS) || core.defaults());
+        writeSettings(settingsFromStored(storage.get(STORAGE_SETTINGS) || core.defaults()));
 
         const ui = storage.get(STORAGE_UI) || {};
         const margins = MARGIN_FIELDS.map((name) => field(name).value);
         const marginsMatch = margins.every((value) => value === margins[0]);
         setMarginsLinked(typeof ui.marginsLinked === "boolean" ? ui.marginsLinked && marginsMatch : marginsMatch);
-        setStageCollapsed(ui.stageCollapsed === true);
+        stageCollapsed = ui.stageCollapsed === true;
+        fitStageToHeight();
+        syncStage();
         els.appearance.open = ui.appearanceOpen !== false;
         els.addMode.checked = ui.addMode === true;
         library.category = typeof ui.libraryCategory === "string" ? ui.libraryCategory : "";
@@ -2904,14 +3576,20 @@
         renderFormats();
         applyNouns();
         syncLayerButtons();
-        loadedStamp = filesStamp();
+        showVersion();
         bindEvents();
         setMode(PANEL_MODES.indexOf(ui.panelMode) !== -1 ? ui.panelMode : "grid", { silent: true });
-        refreshStatus(true);
+        refreshStatus(true); // Reads the document, and looks for a newer installed version.
         if (bridge.kind === "mock") {
             document.documentElement.dataset.host = "mock";
             // Browser-only hooks for the smoke test; never present inside Illustrator.
-            window.__mullionTest = { importPresetText, presetFileText };
+            window.__mullionTest = {
+                importPresetText,
+                presetFileText,
+                diagnosticsText,
+                stall: (ms) => bridge.stall(ms),
+                setHostTimeout: (ms) => queue.setTimeout(ms)
+            };
         }
     }
 

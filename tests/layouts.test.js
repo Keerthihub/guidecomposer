@@ -126,11 +126,70 @@ test("suggestions match the artboard's shape, exact sizes first", () => {
     assert.equal(suggestLayouts(SIZES.letter, 2).length, 2);
 });
 
-test("descriptions", () => {
+test("descriptions tell a layout that scales apart from one that keeps its sizes", () => {
     assert.equal(describeArtboard(find("web-1440")), "Made for a 1440 × 1024 px artboard.");
     assert.equal(describeArtboard(find("columns-3")), "");
     assert.equal(describeShort(find("web-1440")), "1440 × 1024 px");
     assert.equal(describeShort(find("modular-4x6")), "24 modules");
-    assert.equal(describeShort(find("columns-3")), "Fits any page");
+    assert.equal(describeShort(find("columns-3")), "Scales to any page");
+    // These three used to be "Fits any page" and "Any page": three characters
+    // apart, opposite meanings.
+    assert.equal(describeShort(find("swiss-12")), "Fixed sizes, any page");
+    assert.equal(describeShort(find("isometric-24")), "Fixed sizes, any page");
+    assert.equal(describeShort(find("photo-thirds")), "Proportions only, any page");
+    for (const layout of LAYOUTS.filter((l) => !l.artboard && !l.detail)) {
+        const label = describeShort(layout);
+        assert.equal(label === "Scales to any page", !!layout.relative, `${layout.id}: ${label}`);
+    }
     assert.equal(find("nope"), null);
+});
+
+test("suggestions know an artboard turned sideways is the same page", () => {
+    const portrait = suggestLayouts(SIZES.letter).map((l) => l.id);
+    const landscape = suggestLayouts([0, 612, 792, 0]).map((l) => l.id);
+    assert.ok(portrait.length >= 6);
+    assert.deepEqual(landscape.slice().sort(), portrait.slice().sort(), "the same layouts, either way up");
+
+    // A layout facing the right way still outranks the same layout turned.
+    const wide = suggestLayouts(SIZES.widescreen).map((l) => l.id);
+    assert.deepEqual(wide.slice(0, 2).sort(), ["desktop-1920", "slide-16x9"]);
+    assert.ok(wide.indexOf("story-safe") > 1, "the 1080 × 1920 story ranks below the 1920 × 1080 screens");
+    assert.deepEqual(suggestLayouts([0, 100, 700, 0]), [], "still nothing for a 7:1 strip");
+});
+
+// A panel that has been used: every grid field set to something a layout must clear.
+const MESSY = {
+    columns: 7, rows: 9, columnRatios: "2 1 1", rowRatios: "3 1",
+    blocks: [{ column: 1, row: 1, columns: 2, rows: 2 }],
+    columnGutter: 31, rowGutter: 29, marginTop: 41, marginRight: 43, marginBottom: 47, marginLeft: 53,
+    addBaseline: true, baselineSpacing: 21, baselineOffset: 7, overlayColumns: 5, squareModules: true,
+    extendToEdges: true, compThirds: true, compFifths: true, compGolden: true, compDiagonals: true,
+    compCenter: true, compArmature: true, compDynamic: true, compVillard: true, compSpiral: true,
+    spiralFocus: "top-left", pattern: "hexagon", patternSize: 41, patternAngle: 71, dotSize: 4, rings: 3, spokes: 5
+};
+
+test("a layout applied over another layout's settings draws exactly its own tile", () => {
+    for (const layout of LAYOUTS) {
+        const rect = layout.artboard ? rectFor(layout) : SIZES.letter;
+        const tile = core.buildGrid(rect, Object.assign(core.defaults(), { units: "pt" }, resolveLayout(layout, rect, "pt")));
+        const applied = core.buildGrid(rect, Object.assign(core.defaults(), { units: "pt" }, MESSY, resolveLayout(layout, rect, "pt")));
+        assert.equal(tile.ok, true, `${layout.id} tile: ${messages(tile)}`);
+        assert.equal(applied.ok, true, `${layout.id} applied: ${messages(applied)}`);
+        assert.deepEqual(applied.segments, tile.segments, `${layout.id} lines`);
+        assert.deepEqual(applied.boxes, tile.boxes, `${layout.id} boxes`);
+        assert.deepEqual(applied.polygons, tile.polygons, `${layout.id} polygons`);
+        assert.deepEqual(applied.curves, tile.curves, `${layout.id} curves`);
+        assert.deepEqual(applied.dots, tile.dots, `${layout.id} dots`);
+        assert.deepEqual(applied.metrics, tile.metrics, `${layout.id} metrics`);
+    }
+});
+
+test("layouts hand back their own copy of a block list", () => {
+    const layout = find("system-hierarchical");
+    const blocks = resolveLayout(layout, SIZES.letter, "pt").blocks;
+    assert.equal(blocks.length, 3);
+    blocks.push({ column: 1, row: 1, columns: 1, rows: 1 });
+    blocks[0].columns = 99;
+    assert.equal(resolveLayout(layout, SIZES.letter, "pt").blocks.length, 3);
+    assert.equal(layout.settings.blocks[0].columns, 4);
 });

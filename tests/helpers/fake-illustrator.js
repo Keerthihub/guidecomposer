@@ -33,7 +33,11 @@ const ENUMS = {
     ImageColorSpace: { RGB: "ImageColorSpace.RGB", CMYK: "ImageColorSpace.CMYK" },
     PointType: { SMOOTH: "PointType.SMOOTH", CORNER: "PointType.CORNER" },
     StrokeCap: { BUTTENDCAP: "StrokeCap.BUTTENDCAP", ROUNDENDCAP: "StrokeCap.ROUNDENDCAP", PROJECTINGENDCAP: "StrokeCap.PROJECTINGENDCAP" },
-    ColorConvertPurpose: { defaultpurpose: "ColorConvertPurpose.defaultpurpose" }
+    ColorConvertPurpose: { defaultpurpose: "ColorConvertPurpose.defaultpurpose" },
+    UserInteractionLevel: {
+        DISPLAYALERTS: "UserInteractionLevel.DISPLAYALERTS",
+        DONTDISPLAYALERTS: "UserInteractionLevel.DONTDISPLAYALERTS"
+    }
 };
 
 class LockedError extends Error {
@@ -49,10 +53,18 @@ function collection(items, add) {
 }
 
 class Tag {
-    constructor() {
+    constructor(owner) {
         this.typename = "Tag";
         this.name = "";
         this.value = "";
+        this._owner = owner || null;
+    }
+
+    remove() {
+        if (!this._owner) return;
+        const list = this._owner._tags;
+        const index = list.indexOf(this);
+        if (index !== -1) list.splice(index, 1);
     }
 }
 
@@ -84,7 +96,7 @@ class PageItem {
 
     get tags() {
         return collection(this._tags, () => {
-            const t = new Tag();
+            const t = new Tag(this);
             this._tags.push(t);
             return t;
         });
@@ -212,6 +224,18 @@ class GroupItem extends PageItem {
         return list;
     }
     get groupItems() { return collection(this.children.filter((c) => c.typename === "GroupItem"), () => addChild(this, new GroupItem())); }
+
+    // Like Illustrator: a group's bounds are the union of what it contains.
+    get geometricBounds() {
+        const parts = this.children.map((c) => c.geometricBounds).filter(Boolean);
+        if (!parts.length) return super.geometricBounds;
+        return [
+            Math.min(...parts.map((b) => b[0])),
+            Math.max(...parts.map((b) => b[1])),
+            Math.max(...parts.map((b) => b[2])),
+            Math.min(...parts.map((b) => b[3]))
+        ];
+    }
 }
 
 class Layer {
@@ -338,6 +362,8 @@ class Document {
     get artboards() {
         const list = collection(this._artboards);
         list.getActiveArtboardIndex = () => this.activeArtboardIndex;
+        list.setActiveArtboardIndex = (index) => { this.activeArtboardIndex = index; };
+        list.remove = (index) => { this._artboards.splice(index, 1); };
         return list;
     }
 
@@ -359,6 +385,7 @@ function createHost() {
         name: "Adobe Illustrator",
         _documents: [],
         coordinateSystem: ENUMS.CoordinateSystem.DOCUMENTCOORDINATESYSTEM,
+        userInteractionLevel: ENUMS.UserInteractionLevel.DISPLAYALERTS,
         redrawCount: 0,
         get documents() { return collection(this._documents); },
         get activeDocument() { return this._documents[0]; },

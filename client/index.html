@@ -58,6 +58,10 @@
     <label class="mode"><input type="radio" name="panel-mode" value="construct"><span class="mode__face"><svg class="icon"><use href="#i-construct"/></svg>Construct</span></label>
   </nav>
 
+  <!-- The controls and the settings form scroll together, so every control is
+       reachable on a short panel while the action bar stays put. -->
+  <div class="workspace" id="workspace" data-mode="grid construct">
+
   <div class="controls" id="controls" data-mode="grid">
     <div class="types" role="radiogroup" aria-label="Grid type">
       <label class="type"><input type="radio" name="type" value="columns" form="settings" checked><span class="type__face"><svg class="type__icon"><use href="#t-columns"/></svg><span class="type__label">Columns</span></span></label>
@@ -504,9 +508,15 @@
         <button type="button" class="button button--quiet" id="reset">Reset settings to defaults</button>
         <button type="button" class="button button--quiet" id="test-line">Draw test line</button>
         <p class="note">The test line checks that Mullion can draw in this document. Clear removes it.</p>
+        <div class="about">
+          <p class="note">Mullion <span id="panel-version">—</span></p>
+          <button type="button" class="button button--quiet" id="copy-diagnostics" title="Copy version, document and error details for a support message">Copy diagnostics</button>
+        </div>
       </div>
     </details>
   </form>
+
+  </div>
 
   <section class="library" id="library" aria-label="Layouts" data-mode="layouts">
     <div class="library__head">
@@ -551,6 +561,10 @@
     </div>
 
     <p class="status" id="status" role="status" aria-live="polite"></p>
+    <!-- Inline field errors sit next to their field and are never spoken; this
+         carries the ones the status line doesn't. -->
+    <p class="visually-hidden" id="field-errors" role="status" aria-live="polite"></p>
+    <div class="progress" id="progress" hidden aria-hidden="true"><span class="progress__bar"></span></div>
   </footer>
 </div>
 

@@ -113,6 +113,46 @@ function checkManifest(root = ROOT) {
     return problems;
 }
 
+/*
+ * Returns the CHANGELOG.md section for a version, without its heading:
+ * everything between "## [1.2.3] - ..." and the next "## " heading.
+ * Returns "" when there is no such section.
+ */
+function changelogSection(version, root = ROOT) {
+    const changelog = read(root, "CHANGELOG.md");
+    const escaped = version.replace(/\./g, "\\.");
+    const heading = new RegExp("^## \\[?" + escaped + "\\]?.*$", "m");
+    const start = changelog.match(heading);
+    if (!start) {
+        return "";
+    }
+    const after = changelog.slice(start.index + start[0].length);
+    const next = after.search(/^## /m);
+    return (next === -1 ? after : after.slice(0, next)).trim();
+}
+
+/*
+ * Checks that a pushed git tag names the version this commit actually builds.
+ * Without this, pushing v0.2.0 on a 0.1.0 commit silently produces a package
+ * called <name>-0.1.0.zxp under a release called 0.2.0.
+ * An empty tag (a manual workflow run) is accepted; the other checks still run.
+ */
+function checkTag(tag, root = ROOT) {
+    const problems = [...checkVersions(root), ...checkManifest(root)];
+    const pkg = JSON.parse(read(root, "package.json"));
+    if (tag) {
+        if (!/^v\d+\.\d+\.\d+$/.test(tag)) {
+            problems.push(`tag "${tag}" is not vMAJOR.MINOR.PATCH`);
+        } else if (tag.slice(1) !== pkg.version) {
+            problems.push(`tag "${tag}" does not match package.json version "${pkg.version}" — retag the commit that carries ${pkg.version}, or bump the version and tag again`);
+        }
+    }
+    if (!changelogSection(pkg.version, root)) {
+        problems.push(`CHANGELOG.md has no notes under a "## [${pkg.version}]" heading; release notes are published from it`);
+    }
+    return problems;
+}
+
 function listFiles(dir, base = dir) {
     return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
         const full = path.join(dir, entry.name);
@@ -138,6 +178,37 @@ function checkPackageContents(dir) {
     return problems;
 }
 
+/*
+ * Command line, used by .github/workflows/release.yml:
+ *   node scripts/release-checks.js               report version and manifest problems
+ *   node scripts/release-checks.js --tag v1.2.3  as above, plus tag/version agreement
+ *   node scripts/release-checks.js --notes 1.2.3 print that CHANGELOG section
+ */
+if (require.main === module) {
+    const args = process.argv.slice(2);
+    const read_ = (flag) => {
+        const i = args.indexOf(flag);
+        return i !== -1 ? args[i + 1] : undefined;
+    };
+    if (args.includes("--notes")) {
+        const version = read_("--notes") || JSON.parse(read(ROOT, "package.json")).version;
+        const notes = changelogSection(version);
+        if (!notes) {
+            console.error(`CHANGELOG.md has no section for ${version}.`);
+            process.exit(1);
+        }
+        process.stdout.write(notes + "\n");
+    } else {
+        const problems = checkTag(args.includes("--tag") ? read_("--tag") || "" : "");
+        if (problems.length) {
+            console.error("Release checks failed:");
+            problems.forEach((p) => console.error("  " + p));
+            process.exit(1);
+        }
+        console.log("Release checks passed.");
+    }
+}
+
 module.exports = {
     ROOT,
     BUNDLE_ID,
@@ -146,5 +217,7 @@ module.exports = {
     checkVersions,
     checkManifest,
     checkPackageContents,
+    changelogSection,
+    checkTag,
     listFiles
 };

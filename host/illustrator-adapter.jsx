@@ -5,8 +5,12 @@
  * shared/grid-core.js into PathItems and manages what Mullion owns.
  *
  * Ownership model
- *   - Every grid is one GroupItem carrying three tags: owner, kind
- *     ("preview" or "final") and artboard index.
+ *   - Every grid is one GroupItem carrying tags: owner, kind ("preview" or
+ *     "final"), the area it was drawn for, the settings that made it, and a
+ *     schema version so later releases can migrate what this one wrote.
+ *   - Which artboard a grid belongs to is worked out from where the grid sits,
+ *     not from a stored index, because artboard indices shift when the user
+ *     adds, deletes or reorders artboards.
  *   - Every path Mullion draws carries the owner id in its note.
  *   - Only groups whose owner tag equals M.OWNER_ID are ever removed. Layer
  *     names are used to find a place to draw, never to decide what to delete.
@@ -29,6 +33,11 @@
     var TAG_ARTBOARD = "MullionArtboard";
     var TAG_HIDDEN = "MullionHiddenByPreview";
     var TAG_REGION = "MullionRegion";
+    var TAG_SCHEMA = "MullionSchema";
+    var TAG_SETTINGS = "MullionSettings";
+    var TAG_SHAPES = "MullionShapes";
+    var TAG_LAYER_HIDDEN = "MullionLayerWasHidden";
+    var SCHEMA = 1;
     var BLOCK_OPACITY = 20;
     var MAX_SELECTION = 200;
 
@@ -42,6 +51,7 @@
     };
 
     A.HOST = "illustrator";
+    A.SCHEMA = SCHEMA;
     A.AREA_NOUN = "artboard";
     A.LAYER_NAME = LAYER_NAME;
     A.TAG_OWNER = TAG_OWNER;
@@ -57,6 +67,39 @@
     // Illustrator already records each script run as one undo step.
     A.transaction = function (label, fn) {
         return fn();
+    };
+
+    /*
+     * Every endpoint runs inside this. app.coordinateSystem is application-wide
+     * and any other script can leave it on artboard coordinates, where Y runs the
+     * other way: reading bounds in that state would place grids, construction
+     * lines and snapped objects hundreds of points from where they belong.
+     * Alerts are suppressed for the same reason a headless script suppresses
+     * them: a modal dialog raised as a side effect would park the call forever.
+     */
+    A.withContext = function (fn) {
+        var previousCoordinates = app.coordinateSystem;
+        var previousInteraction = app.userInteractionLevel;
+        if (previousCoordinates !== CoordinateSystem.DOCUMENTCOORDINATESYSTEM) {
+            app.coordinateSystem = CoordinateSystem.DOCUMENTCOORDINATESYSTEM;
+        }
+        try {
+            app.userInteractionLevel = UserInteractionLevel.DONTDISPLAYALERTS;
+        } catch (e) {
+            // Older builds may not expose it; carry on without suppression.
+        }
+        try {
+            return fn();
+        } finally {
+            try {
+                app.userInteractionLevel = previousInteraction;
+            } catch (e2) {
+                // Restoring is best effort.
+            }
+            if (app.coordinateSystem !== previousCoordinates) {
+                app.coordinateSystem = previousCoordinates;
+            }
+        }
     };
 
     A.applyPageMargins = function () {
@@ -95,27 +138,46 @@
         return A.artboardAt(doc, doc.artboards.getActiveArtboardIndex());
     };
 
-    // The artboard containing a point, or the active artboard when none does.
-    function artboardIndexAt(doc, x, y) {
+    /*
+     * The artboard containing a point. Callers that place new work pass the
+     * active artboard as the fallback; ownership passes ORPHAN, because a grid
+     * left behind by a deleted artboard belongs to no artboard at all and must
+     * not be mistaken for the grid on the artboard that took its number.
+     */
+    var ORPHAN = -1;
+    A.ORPHAN = ORPHAN;
+
+    function artboardIndexAt(doc, x, y, fallback) {
         for (var i = 0; i < doc.artboards.length; i++) {
             var r = doc.artboards[i].artboardRect;
             if (x >= r[0] && x <= r[2] && y <= r[1] && y >= r[3]) {
                 return i;
             }
         }
-        return doc.artboards.getActiveArtboardIndex();
+        return fallback === undefined ? doc.artboards.getActiveArtboardIndex() : fallback;
     }
 
     A.describe = function (doc) {
         var board = A.activeArtboard(doc);
-        var owned = A.findOwnedGroups(doc, { artboards: [board.index] });
+        var all = A.findOwnedGroups(doc, {});
         var previews = 0;
         var finals = 0;
-        for (var i = 0; i < owned.length; i++) {
-            if (owned[i].kind === "preview") {
-                previews++;
+        var strayPreviews = 0;
+        var hiddenByPreview = 0;
+        for (var i = 0; i < all.length; i++) {
+            var onBoard = all[i].artboard === board.index;
+            if (all[i].kind === "preview") {
+                strayPreviews++;
+                if (onBoard) {
+                    previews++;
+                }
             } else {
-                finals++;
+                if (all[i].hiddenByPreview) {
+                    hiddenByPreview++;
+                }
+                if (onBoard) {
+                    finals++;
+                }
             }
         }
         var artboards = [];
@@ -144,7 +206,7 @@
             artboardCount: doc.artboards.length,
             artboard: board,
             artboards: artboards,
-            grids: { preview: previews, generated: finals },
+            grids: { preview: previews, generated: finals, strayPreviews: strayPreviews, hiddenByPreview: hiddenByPreview },
             gridLayer: layer
                 ? { exists: true, visible: layer.visible, locked: layer.locked }
                 : { exists: false, visible: true, locked: false }
@@ -225,6 +287,24 @@
         return item.typename === "PathItem" && item.note === M.OWNER_ID;
     }
 
+    /*
+     * Object identity, safely. A reference to something in a document that has
+     * since been closed raises "Object is invalid" on any comparison, and the
+     * panel holds such references between calls (the preview it last drew).
+     */
+    function containsItem(list, item) {
+        for (var i = 0; i < list.length; i++) {
+            try {
+                if (list[i] === item) {
+                    return true;
+                }
+            } catch (e) {
+                // A stale reference is not the item we are looking at.
+            }
+        }
+        return false;
+    }
+
     function contains(list, value) {
         for (var i = 0; i < list.length; i++) {
             if (list[i] === value) {
@@ -234,45 +314,185 @@
         return false;
     }
 
+    // Rect helpers for region keys of the form "prefix:left,top,right,bottom".
+    function parseRegionRect(region) {
+        var halves = String(region).split(":");
+        if (halves.length < 2) {
+            return null;
+        }
+        var parts = halves[halves.length - 1].split(",");
+        if (parts.length !== 4) {
+            return null;
+        }
+        var rect = [];
+        for (var i = 0; i < 4; i++) {
+            var n = parseFloat(parts[i]);
+            if (isNaN(n)) {
+                return null;
+            }
+            rect.push(n);
+        }
+        return rect;
+    }
+
     /*
-     * Returns owned grid groups placed directly in top-level layers:
-     * [{ group, layer, kind, artboard }].
-     * Optional filter: { kind: "preview" | "final", artboards: [indices], regions: [keys] }.
+     * True when a stored region names the same area as a target region.
+     * Object and construction regions are keyed by the artwork's bounds, so an
+     * exact comparison would treat artwork nudged by a point as a new area and
+     * stack a second grid on top of the first. Overlapping areas of the same
+     * kind are therefore the same area.
      */
-    A.findOwnedGroups = function (doc, filter) {
-        var found = [];
-        filter = filter || {};
-        for (var l = 0; l < doc.layers.length; l++) {
-            var layer = doc.layers[l];
-            var groups = layer.groupItems;
-            for (var g = 0; g < groups.length; g++) {
-                var group = groups[g];
-                if (group.parent.typename !== "Layer") {
-                    continue;
-                }
-                var tags = readTags(group);
-                if (tags[TAG_OWNER] !== M.OWNER_ID) {
-                    continue;
-                }
-                var kind = tags[TAG_KIND] === "preview" ? "preview" : "final";
-                var artboard = parseInt(tags[TAG_ARTBOARD], 10);
-                if (filter.kind !== undefined && filter.kind !== kind) {
-                    continue;
-                }
-                if (filter.artboards !== undefined && !contains(filter.artboards, artboard)) {
-                    continue;
-                }
-                var region = tags[TAG_REGION] || ("artboard:" + artboard);
-                if (filter.regions !== undefined && !contains(filter.regions, region)) {
-                    continue;
-                }
-                if (filter.regionPrefix !== undefined && region.substr(0, filter.regionPrefix.length) !== filter.regionPrefix) {
-                    continue;
-                }
-                found.push({ group: group, layer: layer, kind: kind, artboard: artboard, region: region, hiddenByPreview: tags[TAG_HIDDEN] === "1" });
+    function regionMatches(stored, target) {
+        if (stored === target) {
+            return true;
+        }
+        var a = parseRegionRect(stored);
+        var b = parseRegionRect(target);
+        if (!a || !b || stored.split(":")[0] !== target.split(":")[0]) {
+            return false;
+        }
+        var left = Math.max(a[0], b[0]);
+        var right = Math.min(a[2], b[2]);
+        var top = Math.min(a[1], b[1]);
+        var bottom = Math.max(a[3], b[3]);
+        if (right <= left || top <= bottom) {
+            return false;
+        }
+        var overlap = (right - left) * (top - bottom);
+        var areaA = (a[2] - a[0]) * (a[1] - a[3]);
+        var areaB = (b[2] - b[0]) * (b[1] - b[3]);
+        var smaller = Math.min(areaA, areaB);
+        return smaller > 0 && overlap / smaller >= 0.5;
+    }
+
+    function matchesAnyRegion(stored, regions) {
+        for (var i = 0; i < regions.length; i++) {
+            if (regionMatches(stored, regions[i])) {
+                return true;
             }
         }
-        return found;
+        return false;
+    }
+
+    // One scan per host call: several steps of a single call ask for owned groups.
+    var scan = null;
+
+    A.invalidate = function () {
+        scan = null;
+    };
+
+    // Groups Mullion owns, at any depth, with the layer that has to be unlocked
+    // to edit them. Nested groups count: a user who presses Cmd-G with a grid
+    // selected must still be able to clear it.
+    function collectOwned(doc, container, layer, depth, found) {
+        var groups = container.groupItems;
+        for (var g = 0; g < groups.length; g++) {
+            var group = groups[g];
+            // Some collections include nested groups; recursion handles those,
+            // so only direct children are taken here.
+            if (group.parent !== container) {
+                continue;
+            }
+            var tags = readTags(group);
+            if (tags[TAG_OWNER] === M.OWNER_ID) {
+                found.push(describeOwned(doc, group, layer, tags));
+            } else if (depth < 12) {
+                collectOwned(doc, group, layer, depth + 1, found);
+            }
+        }
+    }
+
+    function collectLayers(doc, layer, found) {
+        collectOwned(doc, layer, layer, 0, found);
+        for (var i = 0; i < layer.layers.length; i++) {
+            collectLayers(doc, layer.layers[i], found);
+        }
+    }
+
+    function describeOwned(doc, group, layer, tags) {
+        var region = tags[TAG_REGION] || "";
+        var kind = tags[TAG_KIND] === "preview" ? "preview" : "final";
+        var bounds = null;
+        try {
+            bounds = group.geometricBounds;
+        } catch (e) {
+            bounds = null;
+        }
+        // Where the grid actually sits decides which artboard it belongs to.
+        var artboard = bounds
+            ? artboardIndexAt(doc, (bounds[0] + bounds[2]) / 2, (bounds[1] + bounds[3]) / 2, ORPHAN)
+            : parseInt(tags[TAG_ARTBOARD], 10);
+        var shapes = parseInt(tags[TAG_SHAPES], 10);
+        // Count only the paths Mullion drew: artwork the user dragged into the
+        // group is rescued on removal and must not read as an edit.
+        var current = -1;
+        try {
+            current = 0;
+            var items = group.pathItems;
+            for (var p = 0; p < items.length; p++) {
+                if (items[p].note === M.OWNER_ID) {
+                    current++;
+                }
+            }
+        } catch (e2) {
+            current = -1;
+        }
+        return {
+            group: group,
+            layer: layer,
+            kind: kind,
+            artboard: isNaN(artboard) ? 0 : artboard,
+            region: region || ("artboard:" + artboard),
+            settings: tags[TAG_SETTINGS] || "",
+            schema: parseInt(tags[TAG_SCHEMA], 10) || 0,
+            // A shape count that no longer matches means the user has added or
+            // deleted lines in this grid: their work, not ours to delete.
+            edited: !isNaN(shapes) && current >= 0 && current !== shapes,
+            hiddenByPreview: tags[TAG_HIDDEN] === "1"
+        };
+    }
+
+    /*
+     * Returns owned grid groups: [{ group, layer, kind, artboard, region, edited }].
+     * Optional filter: { kind, artboards: [indices], regions: [keys], regionPrefix, exclude: [groups] }.
+     */
+    A.findOwnedGroups = function (doc, filter) {
+        filter = filter || {};
+        var reusable = false;
+        try {
+            reusable = Boolean(scan) && scan.doc === doc;
+        } catch (e) {
+            reusable = false; // The cached document has been closed.
+        }
+        if (!reusable) {
+            var found = [];
+            for (var l = 0; l < doc.layers.length; l++) {
+                collectLayers(doc, doc.layers[l], found);
+            }
+            scan = { doc: doc, entries: found };
+        }
+        var out = [];
+        for (var i = 0; i < scan.entries.length; i++) {
+            var entry = scan.entries[i];
+            if (filter.kind !== undefined && filter.kind !== entry.kind) {
+                continue;
+            }
+            if (filter.artboards !== undefined && !contains(filter.artboards, entry.artboard) &&
+                !(filter.includeOrphans && entry.artboard === ORPHAN)) {
+                continue;
+            }
+            if (filter.regions !== undefined && !matchesAnyRegion(entry.region, filter.regions)) {
+                continue;
+            }
+            if (filter.regionPrefix !== undefined && entry.region.substr(0, filter.regionPrefix.length) !== filter.regionPrefix) {
+                continue;
+            }
+            if (filter.exclude !== undefined && containsItem(filter.exclude, entry.group)) {
+                continue;
+            }
+            out.push(entry);
+        }
+        return out;
     };
 
     // Moves a non-Mullion item out of an owned group, preserving its state.
@@ -314,31 +534,67 @@
                 rescue(foreign[f], group);
             }
             group.remove();
+            scan = null;
             return foreign.length;
         });
     }
 
     /*
-     * Removes owned groups matching filter { kind, artboards }.
+     * Hands a grid the user has edited back to them: the tags come off, so
+     * Mullion stops treating it as its own and never deletes it.
+     */
+    function releaseOwnedGroup(entry) {
+        withEditableLayer(entry.layer, function () {
+            var group = entry.group;
+            var wasLocked = group.locked;
+            if (wasLocked) {
+                group.locked = false;
+            }
+            for (var i = group.tags.length - 1; i >= 0; i--) {
+                var name = group.tags[i].name;
+                if (name === TAG_OWNER || name === TAG_KIND || name === TAG_ARTBOARD || name === TAG_REGION ||
+                    name === TAG_SCHEMA || name === TAG_SETTINGS || name === TAG_SHAPES || name === TAG_HIDDEN) {
+                    group.tags[i].remove();
+                }
+            }
+            group.name = "Edited grid";
+            if (wasLocked) {
+                group.locked = true;
+            }
+            scan = null;
+        });
+    }
+
+    /*
+     * Removes owned groups matching filter.
      * options.keepLayer leaves an emptied Mullion layer in place (used when a
-     * grid is about to be redrawn into it).
-     * Returns { removed, rescued, artboards } where artboards counts distinct artboards touched.
+     * grid is about to be redrawn into it); options.force deletes even grids the
+     * user has edited.
+     * Returns { removed, rescued, kept, artboards }.
      */
     A.removeOwned = function (doc, filter, options) {
         var entries = A.findOwnedGroups(doc, filter);
         var rescued = 0;
+        var removed = 0;
+        var kept = 0;
         var touched = [];
         // Remove from the end so earlier references stay valid.
         for (var i = entries.length - 1; i >= 0; i--) {
+            if (entries[i].edited && !(options && options.force)) {
+                releaseOwnedGroup(entries[i]);
+                kept++;
+                continue;
+            }
             rescued += removeOwnedGroup(entries[i]);
+            removed++;
             if (!contains(touched, entries[i].artboard)) {
                 touched.push(entries[i].artboard);
             }
         }
-        if (entries.length && !(options && options.keepLayer)) {
+        if (removed && !(options && options.keepLayer)) {
             removeEmptyManagedLayer(doc);
         }
-        return { removed: entries.length, rescued: rescued, artboards: touched.length };
+        return { removed: removed, rescued: rescued, kept: kept, artboards: touched.length };
     };
 
     // Sets an owned group's hidden state, working around its lock and its layer's lock.
@@ -364,23 +620,59 @@
         for (var i = 0; i < entries.length; i++) {
             if (!entries[i].group.hidden) {
                 setGroupHidden(entries[i], true);
+                entries[i].hiddenByPreview = true;
                 hidden++;
             }
         }
         return hidden;
     };
 
-    // Shows again every generated grid a preview hid. Grids the user hid are left alone.
+    // Shows again every generated grid a preview hid. Grids the user hid
+    // themselves are left alone.
     A.restorePreviewHidden = function (doc) {
         var entries = A.findOwnedGroups(doc, { kind: "final" });
         var restored = 0;
         for (var i = 0; i < entries.length; i++) {
             if (entries[i].hiddenByPreview) {
                 setGroupHidden(entries[i], false);
+                entries[i].hiddenByPreview = false;
                 restored++;
             }
         }
         return restored;
+    };
+
+    /*
+     * Ends previewing in one document: removes preview grids, shows again the
+     * grids they hid, and re-hides the grid layer if the preview had to show it.
+     * Returns { removed, restored }.
+     */
+    A.endPreview = function (doc, keep) {
+        var filter = { kind: "preview" };
+        if (keep && keep.length) {
+            filter.exclude = keep;
+        }
+        var previews = A.findOwnedGroups(doc, filter);
+        var layerWasHidden = false;
+        for (var i = 0; i < previews.length; i++) {
+            if (readTags(previews[i].group)[TAG_LAYER_HIDDEN] === "1") {
+                layerWasHidden = true;
+            }
+        }
+        var removed = A.removeOwned(doc, filter, { keepLayer: true, force: true }).removed;
+        // Grids stay hidden while any preview is still showing in this document.
+        var stillPreviewing = A.findOwnedGroups(doc, { kind: "preview" }).length > 0;
+        var restored = stillPreviewing ? 0 : A.restorePreviewHidden(doc);
+        if (layerWasHidden && !stillPreviewing) {
+            var layer = findManagedLayer(doc);
+            if (layer) {
+                layer.visible = false;
+            }
+        }
+        if (removed) {
+            removeEmptyManagedLayer(doc);
+        }
+        return { removed: removed, restored: restored };
     };
 
     // ------------------------------------------------------------- selection
@@ -729,6 +1021,26 @@
         };
     }
 
+    /*
+     * The settings that made a grid, small enough to live in a tag: the fields a
+     * later session would need to redraw or adjust it.
+     */
+    function settingsTag(s) {
+        var out = {};
+        for (var key in s) {
+            if (s.hasOwnProperty(key) && typeof s[key] !== "function") {
+                out[key] = s[key];
+            }
+        }
+        var text = "";
+        try {
+            text = JSON.stringify({ schema: SCHEMA, settings: out });
+        } catch (e) {
+            text = "";
+        }
+        return text.length > 4000 ? "" : text;
+    }
+
     // Creates one owned path from anchor points and applies the style for its kind.
     function addPath(group, anchors, closed, kind, style) {
         var path = group.pathItems.add();
@@ -809,6 +1121,10 @@
                 addTag(group, TAG_KIND, kind);
                 addTag(group, TAG_ARTBOARD, artboard.index);
                 addTag(group, TAG_REGION, artboard.region || ("artboard:" + artboard.index));
+                addTag(group, TAG_SCHEMA, SCHEMA);
+                // The settings travel with the grid, so a document carries the
+                // recipe for the grid in it, and a later release can migrate it.
+                addTag(group, TAG_SETTINGS, settingsTag(s));
 
                 var style = makeStyle(doc, s);
                 var list = function (name) { return grid[name] || []; };
@@ -846,16 +1162,23 @@
                 if (!style.guides) {
                     group.opacity = s.opacity;
                 }
-                return {
-                    shapes: segments.length + boxes.length + polygons.length + curves.length + dots.length,
-                    groupName: group.name
-                };
+                var drawn = group.pathItems.length;
+                addTag(group, TAG_SHAPES, drawn);
+                return { shapes: drawn, groupName: group.name, group: group };
             });
-            layer.visible = true;
+            // A preview has to be visible to be a preview, but the user's choice
+            // is remembered so ending the preview can put the layer back.
+            if (!layer.visible) {
+                if (kind === "preview") {
+                    setTag(created.group, TAG_LAYER_HIDDEN, "1");
+                }
+                layer.visible = true;
+            }
             if (kind === "final") {
                 layer.locked = s.lockLayer;
             }
             created.layerName = layer.name;
+            scan = null;
             return created;
         });
     };
