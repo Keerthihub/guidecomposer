@@ -823,6 +823,7 @@
         patternSizeLabel: $("pattern-size-label"),
         appearance: $("appearance"),
         appearanceSummary: $("appearance-summary"),
+        outputNote: $("output-note"),
         controls: $("controls"),
         library: $("library"),
         constructCard: $("construct-card"),
@@ -2026,7 +2027,20 @@
         describeSchematic(result);
     }
 
+    /*
+     * Three words on a segmented control do not explain themselves. This says
+     * what the choice actually does to the document, in the terms a designer
+     * thinks in: something you can style, something that snaps, or filled
+     * shapes.
+     */
+    const OUTPUT_NOTES = {
+        lines: "Real artwork on its own non-printing layer. Style it with the color and width below.",
+        guides: "Illustrator guides: your artwork snaps to them and they never print. Their colour comes from Illustrator's preferences, not from here.",
+        boxes: "One filled box per module instead of lines, handy as a background to place things on."
+    };
+
     function renderAppearanceSummary(settings) {
+        els.outputNote.textContent = OUTPUT_NOTES[settings.output] || "";
         const names = { lines: "Lines", guides: "Guides", boxes: "Boxes" };
         let text = names[settings.output] || "";
         if (settings.output !== "guides") {
@@ -3262,18 +3276,41 @@
             : currentRect();
         const resolved = layouts.resolveLayout(layout, rect, currentUnits);
         const settings = Object.assign(settingsInUnits(resolved.units), resolved);
-        if (settings.output === "boxes" && !BOX_TYPES[settings.type]) {
-            settings.output = "lines";
+        /*
+         * A tile is an icon of the layout, not a rehearsal of your appearance
+         * settings: drawn as boxes or guides it would show faint fills or
+         * nothing at all, which is how a gallery of 128 layouts ends up looking
+         * empty. Every tile is drawn as lines.
+         */
+        settings.output = "lines";
+        settings.lineStyle = "solid";
+        settings.shadeGutters = false;
+        let result = core.buildGrid(rect, settings);
+        let drawnOn = rect;
+        if (!result.ok) {
+            /*
+             * The layout cannot fit this page, but a blank tile says nothing
+             * about what it is. Draw it on the page it was made for (or a
+             * default page) so it can still be recognised; the line underneath
+             * says it will not fit here.
+             */
+            const natural = fixedSize
+                ? rect
+                : [0, core.toPoints(11, "in"), core.toPoints(8.5, "in"), 0];
+            const naturalSettings = Object.assign(settingsInUnits(resolved.units), layouts.resolveLayout(layout, natural, currentUnits));
+            const fallback = core.buildGrid(natural, naturalSettings);
+            if (fallback.ok) {
+                result = fallback;
+                drawnOn = natural;
+            }
         }
-        if (settings.output === "guides" && settings.type === "pattern" && settings.pattern === "dots") {
-            settings.output = "lines";
-        }
-        const result = core.buildGrid(rect, settings);
-        paintGrid(svg, result, rect, { thumb: true, icon: true });
-        tile.classList.toggle("tile--unfit", !result.ok);
+        paintGrid(svg, result, drawnOn, { thumb: true, icon: true });
+        tile.classList.toggle("tile--unfit", drawnOn !== rect || !result.ok);
         // Repainting happens in place, so the meta line goes back to the
         // layout's own description when the artboard changes to one that fits.
-        tile.querySelector(".tile__meta").textContent = result.ok ? describeTile(layout) : "Doesn't fit this " + nouns().one;
+        tile.querySelector(".tile__meta").textContent = drawnOn === rect && result.ok
+            ? describeTile(layout)
+            : "Doesn't fit this " + nouns().one;
     }
 
     function renderLibraryGrid() {
@@ -3565,11 +3602,26 @@
             window.clearInterval(repeat);
         };
         document.querySelectorAll(".stepper__button").forEach((button) => {
+            let steppedByPointer = false;
+            /*
+             * The host takes the first click when the panel is not focused, and
+             * a swallowed pointerdown would mean a button that does nothing.
+             * The click that follows steps instead, and a click that follows a
+             * pointer press this button already handled is ignored.
+             */
+            button.addEventListener("click", () => {
+                if (steppedByPointer) {
+                    steppedByPointer = false;
+                    return;
+                }
+                stepField(button.dataset.field, Number(button.dataset.step), 1);
+            });
             button.addEventListener("pointerdown", (event) => {
                 if (event.button !== 0) {
                     return;
                 }
                 event.preventDefault();
+                steppedByPointer = true;
                 const run = () => stepField(button.dataset.field, Number(button.dataset.step), event.shiftKey ? 10 : 1);
                 run();
                 stop();

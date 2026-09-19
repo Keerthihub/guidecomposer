@@ -218,6 +218,13 @@ async function main() {
         check(await evaluate(`(() => { const el = document.querySelector('#settings [name=columnRatios]'); return el.selectionStart === el.selectionEnd; })()`) === true,
             "a field you type a list into keeps the caret where you put it");
 
+        // The three output choices say what they do to the document.
+        check(/non-printing layer/.test(await evaluate(text("output-note"))), "Lines explains itself: " + await evaluate(text("output-note")));
+        await evaluate(setField("output", "guides"));
+        await sleep(150);
+        check(/snaps? to them and they never print/.test(await evaluate(text("output-note"))), "Guides explains itself: " + await evaluate(text("output-note")));
+        await evaluate(setField("output", "lines"));
+
         // ---------------------------------------------------------------- steppers
         const press = (selector) => `(() => {
             const b = document.querySelector(${JSON.stringify(selector)});
@@ -563,6 +570,21 @@ async function main() {
         }))`);
         check(tileViews.filter((t) => t.zoomed).length >= 4, "dense patterns show a legible piece of the page: " + tileViews.map((t) => t.name + (t.zoomed ? " (piece)" : " (whole page)")).join(", "));
         check(tileViews.every((t) => t.marks <= 600), "and no tile draws more marks than it can show: " + Math.max(...tileViews.map((t) => t.marks)));
+        // A tile is an icon of the layout: it must look the same whatever the
+        // panel's own appearance settings are.
+        await evaluate(mode("grid"));
+        await evaluate(setField("type", "columns"));
+        await evaluate(setField("output", "boxes"));
+        await evaluate(mode("layouts"));
+        await evaluate(chip("Columns"));
+        await sleep(700);
+        const asBoxes = await evaluate(`Array.from(document.querySelectorAll("#library-grid .tile")).slice(0, 4).map((t) => t.querySelectorAll("svg line").length)`);
+        check(asBoxes.every((n) => n > 0), "tiles still draw the grid as lines while the panel is set to Boxes: " + asBoxes.join(", "));
+        await evaluate(mode("grid"));
+        await evaluate(setField("output", "lines"));
+        await evaluate(mode("layouts"));
+        await evaluate(chip("Patterns"));
+        await sleep(600);
         check(/Fits this artboard|Made for /.test(await evaluate(`document.querySelector("#library-grid .tile .tile__meta").textContent`)), "each tile says whether it fits this page: " + await evaluate(`document.querySelector("#library-grid .tile .tile__meta").textContent`));
         await evaluate(`document.querySelector('#library-grid .tile[data-layout="dots-5mm"]').click()`);
         check(await evaluate(value("type")) === "pattern" && await evaluate(value("pattern")) === "dots", "pattern layout applies");

@@ -400,11 +400,13 @@
         <span class="section__meta" id="appearance-summary"></span>
       </summary>
       <div class="section__body">
-        <div class="segmented segmented--three" role="radiogroup" aria-label="Output">
-          <label class="segmented__option"><input type="radio" name="output" value="lines" checked><span>Lines</span></label>
-          <label class="segmented__option" data-hide-for-pattern="dots"><input type="radio" name="output" value="guides"><span>Guides</span></label>
-          <label class="segmented__option" data-for="columns modular" data-grid-only><input type="radio" name="output" value="boxes"><span>Boxes</span></label>
+        <span class="field__label" id="output-label">Draw the grid as</span>
+        <div class="segmented segmented--three" role="radiogroup" aria-labelledby="output-label">
+          <label class="segmented__option" title="Drawn artwork you can see, style and print"><input type="radio" name="output" value="lines" checked><span>Lines</span></label>
+          <label class="segmented__option" data-hide-for-pattern="dots" title="Illustrator guides: they snap and never print"><input type="radio" name="output" value="guides"><span>Guides</span></label>
+          <label class="segmented__option" data-for="columns modular" data-grid-only title="One filled box per module instead of lines"><input type="radio" name="output" value="boxes"><span>Boxes</span></label>
         </div>
+        <p class="note" id="output-note"></p>
 
         <div class="stroke" data-hide-for-output="guides">
           <label class="field field--color" data-grid-only>
@@ -472,7 +474,7 @@
         <p class="field__error" id="err-strokeColor" data-error-for="strokeColor" data-hide-for-output="guides"></p>
         <p class="field__error" id="err-strokeWidth" data-error-for="strokeWidth" data-hide-for-output="guides"></p>
         <p class="field__error" id="err-opacity" data-error-for="opacity" data-hide-for-output="guides"></p>
-        <p class="note" data-for-output="guides">Guides use the guide color set in Illustrator's preferences.</p>
+
         <input type="checkbox" name="lockLayer" hidden>
       </div>
     </details>
