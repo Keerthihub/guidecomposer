@@ -49,6 +49,10 @@ Mix Illustrator versions (2022 through the latest) and screen setups (docked, fl
    and that they should not use it on work they can't afford to redo. If you
    have a beta licence text, send it; otherwise say this in the email.
 
+Give Windows testers the focused one-hour checklist in
+`docs/WINDOWS-QA.md`; its result is the evidence needed to close the Windows
+release blocker.
+
 **Install on macOS** (Terminal):
 
 ```sh

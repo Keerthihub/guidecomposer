@@ -8,6 +8,7 @@ safe to publish as-is (they ask for no registry edits and no terminal commands):
 | [COMPATIBILITY.md](COMPATIBILITY.md) | Before installing: which applications, versions and systems are supported |
 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | The panel is missing, blank, or showing a message; also how to find your version and report a bug |
 | [UPDATING.md](UPDATING.md) | Before updating, reinstalling, or moving to a new computer — what survives and what doesn't |
+| [WINDOWS-QA.md](WINDOWS-QA.md) | One-hour signed-build checklist for a Windows Illustrator beta tester |
 
 **For the publisher** — the remaining work and how to do it:
 

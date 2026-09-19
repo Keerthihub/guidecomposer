@@ -167,6 +167,10 @@ For **each** of macOS and Windows:
       screen and a standard one, in the light and dark interface.
 - [ ] Uninstall cleanly: no panel left in the menu, no error on next launch.
 
+For a borrowed Windows computer or remote beta tester, send
+`docs/WINDOWS-QA.md`; it contains the same release-critical checks in a
+one-hour hand-off format and states exactly what evidence to return.
+
 **Done when:** you have done all of the above on both operating systems, and
 noted the exact OS builds and application versions — they go into
 `docs/COMPATIBILITY.md` and the store listing.
