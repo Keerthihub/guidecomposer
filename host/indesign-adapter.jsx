@@ -373,11 +373,21 @@
     function describeOwned(doc, item) {
         var region = label(item, LABEL_REGION);
         var page = parseInt(label(item, LABEL_PAGE), 10);
-        var bounds = boundsOf(item);
-        if (bounds) {
-            var rect = toCoreRect(bounds);
-            page = pageIndexAt(doc, (rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2, ORPHAN);
-        } else if (isNaN(page)) {
+        /*
+         * Which page a grid belongs to comes from the item's own page, not from
+         * a stored number (page numbers shift the moment a page is inserted) and
+         * not from geometry: unlike Illustrator's artboards, InDesign pages do
+         * not share one coordinate space, so two pages can report the same
+         * bounds. An item on the pasteboard has no page and belongs to none.
+         */
+        var parent = probe(item, "parentPage");
+        if (parent) {
+            var offset = probe(parent, "documentOffset");
+            page = typeof offset === "number" ? offset : page;
+        }
+        // Without a page to ask, the number the grid was drawn with is the best
+        // answer there is; better a stale number than losing the grid entirely.
+        if (isNaN(page)) {
             page = ORPHAN;
         }
         var shapes = parseInt(label(item, LABEL_SHAPES), 10);

@@ -9,7 +9,7 @@
 # fails, so a release can depend on it.
 #
 # macOS only: it drives Illustrator with AppleScript. On Windows, run each
-# scripts/qa/*.jsx from File > Scripts after setting the same two paths.
+# scripts/qa/illustrator/*.jsx from File > Scripts after setting the same two paths.
 set -u
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -26,7 +26,7 @@ echo "  extension: $ROOT"
 echo "  results:   $OUT"
 echo
 
-for part in "$ROOT"/scripts/qa/*.jsx; do
+for part in "$ROOT"/scripts/qa/illustrator/*.jsx; do
     name="$(basename "$part" .jsx)"
     rm -f "$OUT/$name.json"
     printf "%-14s " "$name"

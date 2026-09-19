@@ -2643,7 +2643,10 @@
             if (choice.err || !choice.data) {
                 return;
             }
-            const written = cepFs.writeFile(choice.data, text);
+            // The dialog hands back exactly what was typed, so a name without an
+            // extension would be saved as a file Import can't offer to open.
+            const target = /\.json$/i.test(choice.data) ? choice.data : choice.data + ".json";
+            const written = cepFs.writeFile(target, text);
             if (written.err) {
                 say("Couldn't write the presets file. Choose a folder you can save to.", "error");
                 return;

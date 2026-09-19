@@ -100,7 +100,8 @@ First release candidate.
 
 ### Development
 
-- `scripts/qa/run-illustrator-qa.sh` runs 72 checks in a real Illustrator and fails the run if any of them do, so the host can be verified the same way every release.
+- `npm run qa:illustrator` runs 84 checks in a real Illustrator and fails the run if any of them do, so the host can be verified the same way every release. It includes a 20,000-item document, where status takes 5 ms and a preview tick 216 ms.
+- `npm run qa:indesign` runs the same kind of check in a real InDesign, covering what InDesign does differently. The script is dry-run against the fake InDesign DOM by the test suite, so it fails in InDesign only where InDesign really differs.
 
 - ES3 checker for host scripts, an automated test suite covering the grid
   engine, both host adapters against fake DOMs, the layout library and the

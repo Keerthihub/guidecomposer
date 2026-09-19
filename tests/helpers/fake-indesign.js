@@ -13,6 +13,7 @@
  */
 
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const vm = require("node:vm");
 
@@ -25,6 +26,7 @@ const ENUMS = {
     LocationOptions: { AT_BEGINNING: "LocationOptions.AT_BEGINNING", AT_END: "LocationOptions.AT_END" },
     HorizontalOrVertical: { HORIZONTAL: "HorizontalOrVertical.HORIZONTAL", VERTICAL: "HorizontalOrVertical.VERTICAL" },
     ColorModel: { PROCESS: "ColorModel.PROCESS" },
+    SaveOptions: { NO: "SaveOptions.NO", YES: "SaveOptions.YES", ASK: "SaveOptions.ASK" },
     ColorSpace: { RGB: "ColorSpace.RGB", CMYK: "ColorSpace.CMYK" },
     EndCap: { BUTT_END_CAP: "EndCap.BUTT_END_CAP", ROUND_END_CAP: "EndCap.ROUND_END_CAP" },
     PathType: { OPEN_PATH: "PathType.OPEN_PATH", CLOSED_PATH: "PathType.CLOSED_PATH" },
@@ -105,6 +107,11 @@ class PageItemBase extends Labeled {
 
     remove() {
         this.assertEditable();
+        // An item inside a group leaves the group, as in InDesign.
+        if (this.parent && this.parent !== this.page && Array.isArray(this.parent.children)) {
+            const index = this.parent.children.indexOf(this);
+            if (index !== -1) this.parent.children.splice(index, 1);
+        }
         this.page.detach(this);
         this.removed = true;
     }
@@ -153,11 +160,25 @@ class Polygon extends PageItemBase {
 }
 class Oval extends PageItemBase {}
 
+class InsertionPointRef {
+    constructor(frame) {
+        this.frame = frame;
+        this.contents = "";
+    }
+    get geometricBounds() { throw new Error("Object does not support the property or method 'geometricBounds'"); }
+    get paths() { throw new Error("Object does not support the property or method 'paths'"); }
+    extractLabel() { throw new Error("Object does not support the property or method 'extractLabel'"); }
+}
+
 class TextFrame extends PageItemBase {
     constructor(page, layer, { pointSize = 10, leading = 12, autoLeading = 120, font = "Minion Pro" } = {}) {
         super(page, layer);
         this.texts = [new Text({ pointSize, leading, autoLeading, font })];
+        this.contents = "";
+        this._insertionPoints = [new InsertionPointRef(this)];
     }
+
+    get insertionPoints() { return collection(this._insertionPoints); }
 }
 
 class Text {
@@ -209,6 +230,7 @@ class Guide extends Labeled {
         this.fitToPage = props.fitToPage === true;
         this.locked = false;
     }
+    get parentPage() { return this.page; }   // as in InDesign: a guide knows its page
     get location() { return toUnits(this._location); }
     remove() {
         if (this.itemLayer && this.itemLayer.locked) throw new LockedError("The layer is locked");
@@ -338,15 +360,43 @@ class Document {
             baselineStart: 36,
             baselineGridRelativeOption: ENUMS.BaselineGridRelativeOption.TOP_OF_PAGE
         };
-        this.documentPreferences = { facingPages: false };
+        this.documentPreferences = { facingPages: false, pageWidth: "612pt", pageHeight: "792pt" };
+        this._undoStack = [];
+        // Master spreads exist so tests can prove Mullion leaves them alone.
+        this.masterSpreadList = [{ pages: collection([new Page(this, 0, [0, 0, 792, 612])]) }];
         this.swatches = { itemByName: (n) => (n === "None" ? { name: "None", isValid: true } : { isValid: false }) };
         // A document's view settings: Mullion pins these while it reads geometry.
         this.viewPreferences = { rulerOrigin: "RulerOrigin.PAGE_ORIGIN" };
         this.zeroPoint = [0, 0];
-        this.strokeStyles = { itemByName: (n) => (["Solid", "Dashed", "Dotted"].includes(n) ? { name: n, isValid: true } : { isValid: false }) };
+        this.strokeStyleList = ["Solid", "Dashed", "Dotted"].map((name) => ({ name, isValid: true }));
+        this.strokeStyles = {
+            itemByName: (n) => this.strokeStyleList.find((st) => st.name === n) || { isValid: false },
+            everyItem: () => ({ getElements: () => this.strokeStyleList.slice() })
+        };
     }
 
-    get pages() { return collection(this.pageList); }
+    get pages() {
+        const list = collection(this.pageList);
+        list.add = (location) => {
+            const page = new Page(this, this.pageList.length, [0, 0, 792, 612]);
+            if (location === ENUMS.LocationOptions.AT_BEGINNING) {
+                this.pageList.unshift(page);
+            } else {
+                this.pageList.push(page);
+            }
+            // InDesign renumbers every page after an insertion.
+            this.pageList.forEach((p, i) => { p.documentOffset = i; p.name = String(i + 1); });
+            return page;
+        };
+        return list;
+    }
+
+    get masterSpreads() { return collection(this.masterSpreadList); }
+
+    // What the tests use to check a transaction can be undone.
+    recordUndoPoint() {
+        this._undoStack.push(this.pageList.map((page) => page.items.slice()));
+    }
 
     get layers() {
         return collection(this.layerList, {
@@ -362,14 +412,21 @@ class Document {
     }
 
     get colors() {
-        return collection(this.colorList, {
+        const self = this;
+        const list = collection(this.colorList, {
             itemByName: (n) => this.colorList.find((c) => c.name === n) || { isValid: false },
             add: (props) => {
                 const color = Object.assign({ isValid: true }, props);
+                color.remove = () => {
+                    const i = self.colorList.indexOf(color);
+                    if (i !== -1) self.colorList.splice(i, 1);
+                };
                 this.colorList.push(color);
                 return color;
             }
         });
+        list.everyItem = () => ({ getElements: () => this.colorList.slice() });
+        return list;
     }
 
     get pageItems() { return collection(this.pageList.flatMap((p) => p.items)); }
@@ -384,6 +441,13 @@ class Document {
 
     get selection() { return this.selectionList.slice(); }
     set selection(value) { this.selectionList = value ? [].concat(value) : []; }
+
+    close() {
+        const docs = currentApp._documents;
+        const index = docs.indexOf(this);
+        if (index !== -1) docs.splice(index, 1);
+        currentApp._activePage = docs.length ? docs[0].pageList[0] : null;
+    }
 }
 
 function createInDesignHost() {
@@ -397,12 +461,37 @@ function createInDesignHost() {
             enableRedraw: true,
             userInteractionLevel: ENUMS.UserInteractionLevels.INTERACT_WITH_ALL
         },
-        get documents() { return collection(this._documents); },
+        get documents() {
+            const list = collection(this._documents);
+            list.add = () => {
+                const doc = new Document({ name: "Untitled-" + (this._documents.length + 1) });
+                this._documents.unshift(doc);
+                this._activePage = doc.pageList[0];
+                return doc;
+            };
+            return list;
+        },
         get activeDocument() { return this._documents[0]; },
-        activeWindow: { get activePage() { return currentApp._activePage; } },
+        activeWindow: {
+            get activePage() { return currentApp._activePage; },
+            set activePage(page) { currentApp._activePage = page; }
+        },
+        // Undo is modelled only as far as Mullion relies on it: the last
+        // transaction's changes are reversed by restoring what it recorded.
+        undo() {
+            const doc = this.activeDocument;
+            if (!doc || !doc._undoStack.length) return;
+            const snapshot = doc._undoStack.pop();
+            doc.pageList.forEach((page, i) => { page.items = snapshot[i].slice(); });
+        },
         doScript(fn, language, args, undoMode, name) {
             const record = { name, undoMode, language, threw: false };
             this.transactions.push(record);
+            // ENTIRE_SCRIPT makes the whole run one undo step; the fake records
+            // what the document looked like so app.undo() can restore it.
+            if (this.activeDocument && undoMode === ENUMS.UndoModes.ENTIRE_SCRIPT) {
+                this.activeDocument.recordUndoPoint();
+            }
             try {
                 return fn();
             } catch (err) {
@@ -429,12 +518,18 @@ function createInDesignHost() {
     const sandbox = {};
     const context = vm.createContext(sandbox);
     class File {
-        constructor(p) { this.fsName = p; }
+        constructor(p) { this.fsName = typeof p === "string" ? p : String(p); this._buffer = ""; }
         get exists() { return fs.existsSync(this.fsName); }
+        open(mode) { this._buffer = ""; this._mode = mode; return true; }
+        write(text) { this._buffer += text; return true; }
+        close() { if (this._mode === "w") fs.writeFileSync(this.fsName, this._buffer); return true; }
+        remove() { if (this.exists) fs.unlinkSync(this.fsName); return true; }
     }
+    const Folder = { temp: { fsName: os.tmpdir() } };
     Object.assign(sandbox, ENUMS, {
         app,
         File,
+        Folder,
         $: {
             global: sandbox,
             evalFile(file) {

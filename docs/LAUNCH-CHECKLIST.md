@@ -211,7 +211,22 @@ noted the exact OS builds and application versions — they go into
 The InDesign adapter is tested only against a simulated InDesign. It has never
 run in InDesign.
 
-- [ ] Run the InDesign half of the QA checklist in a real copy of InDesign, or
+There is one command for this. Open InDesign, then:
+
+```sh
+npm run qa:indesign
+```
+
+It creates its own documents, runs 31 checks covering everything InDesign does
+differently — the cursor sitting in text, localised stroke names, facing-page
+margins, the baseline grid's reference point, inserting a page under an existing
+grid, master pages, guides, rollback, and a 200-page document — closes what it
+opened, and prints a pass or fail for each. The same 31 checks already pass
+against a simulated InDesign, so a failure here means InDesign genuinely differs
+from what the adapter expects: exactly what you need to know.
+
+- [ ] Run `npm run qa:indesign` in a real copy of InDesign and fix what it
+      reports, on macOS and on Windows, or
 - [ ] Label InDesign support **beta** in the listing and the licence, or
 - [ ] Remove InDesign from the listing, and narrow the manifest's `IDSN` host
       range accordingly.
