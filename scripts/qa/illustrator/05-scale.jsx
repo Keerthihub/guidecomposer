@@ -90,8 +90,20 @@
     // Status runs whenever the pointer enters the panel, so it has the tightest budget.
     budget("status on a 20,000-item document", function () { return call("status"); }, 100);
     budget("status again (cached scan)", function () { return call("status"); }, 100);
-    budget("a preview tick", function () { return call("preview", { settings: COLS, target: { mode: "active" } }); }, 400);
-    budget("a second preview tick", function () { return call("preview", { settings: { type: "columns", columns: 8, columnGutter: 12, marginTop: 36, marginRight: 36, marginBottom: 36, marginLeft: 36, units: "pt" }, target: { mode: "active" } }); }, 400);
+    /*
+     * The first preview in an area searches the document; the ones after it, as
+     * you type, must not. Those are the ones that decide whether the panel feels
+     * alive, so they get the strict budget.
+     */
+    budget("the first preview in an area", function () { return call("preview", { settings: COLS, target: { mode: "active" } }); }, 700);
+    var burst = 0;
+    for (var t = 0; t < 5; t++) {
+        var started = (new Date()).getTime();
+        call("preview", { settings: { type: "columns", columns: 8 + t, columnGutter: 12, marginTop: 36, marginRight: 36, marginBottom: 36, marginLeft: 36, units: "pt" }, target: { mode: "active" } });
+        burst += (new Date()).getTime() - started;
+    }
+    var each = Math.round(burst / 5);
+    record("each preview while typing stays under 60 ms", each <= 60, each + " ms each, over 5 in a row");
     budget("generate", function () { return call("generate", { settings: COLS, target: { mode: "active" } }); }, 1000);
     budget("generate again (replacing)", function () { return call("generate", { settings: COLS, target: { mode: "active" } }); }, 1000);
     budget("clear", function () { return call("clear", { target: { mode: "active" } }); }, 1000);

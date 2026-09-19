@@ -422,21 +422,6 @@
         var artboard = bounds
             ? artboardIndexAt(doc, (bounds[0] + bounds[2]) / 2, (bounds[1] + bounds[3]) / 2, ORPHAN)
             : parseInt(tags[TAG_ARTBOARD], 10);
-        var shapes = parseInt(tags[TAG_SHAPES], 10);
-        // Count only the paths Mullion drew: artwork the user dragged into the
-        // group is rescued on removal and must not read as an edit.
-        var current = -1;
-        try {
-            current = 0;
-            var items = group.pathItems;
-            for (var p = 0; p < items.length; p++) {
-                if (items[p].note === M.OWNER_ID) {
-                    current++;
-                }
-            }
-        } catch (e2) {
-            current = -1;
-        }
         return {
             group: group,
             layer: layer,
@@ -445,9 +430,7 @@
             region: region || ("artboard:" + artboard),
             settings: tags[TAG_SETTINGS] || "",
             schema: parseInt(tags[TAG_SCHEMA], 10) || 0,
-            // A shape count that no longer matches means the user has added or
-            // deleted lines in this grid: their work, not ours to delete.
-            edited: !isNaN(shapes) && current >= 0 && current !== shapes,
+            shapes: parseInt(tags[TAG_SHAPES], 10),
             hiddenByPreview: tags[TAG_HIDDEN] === "1"
         };
     }
@@ -540,6 +523,40 @@
     }
 
     /*
+     * Whether the user has added or deleted lines in a grid: their work, not
+     * ours to delete. Counting the paths in a grid is the most expensive thing
+     * in a scan, so it happens only when something is about to be removed, and
+     * only once per grid.
+     */
+    function isEdited(entry) {
+        if (entry.editedChecked) {
+            return entry.edited === true;
+        }
+        entry.editedChecked = true;
+        entry.edited = false;
+        if (isNaN(entry.shapes)) {
+            return false;
+        }
+        // Count only the paths Mullion drew: artwork the user dragged into the
+        // group is rescued on removal and must not read as an edit.
+        try {
+            var drawn = 0;
+            var items = entry.group.pathItems;
+            for (var p = 0; p < items.length; p++) {
+                if (items[p].note === M.OWNER_ID) {
+                    drawn++;
+                }
+            }
+            entry.edited = drawn !== entry.shapes;
+        } catch (e) {
+            entry.edited = false; // Unreadable: treat it as ours, as before.
+        }
+        return entry.edited;
+    }
+
+    A.isEdited = isEdited;
+
+    /*
      * Hands a grid the user has edited back to them: the tags come off, so
      * Mullion stops treating it as its own and never deletes it.
      */
@@ -580,7 +597,7 @@
         var touched = [];
         // Remove from the end so earlier references stay valid.
         for (var i = entries.length - 1; i >= 0; i--) {
-            if (entries[i].edited && !(options && options.force)) {
+            if (!(options && options.force) && isEdited(entries[i])) {
                 releaseOwnedGroup(entries[i]);
                 kept++;
                 continue;
@@ -613,15 +630,53 @@
         });
     }
 
+    /*
+     * Removes grids this session drew, by reference. A live preview redraws on
+     * every keystroke, and scanning the document each time costs far more than
+     * the drawing does, so the preview keeps hold of what it made.
+     */
+    A.removeGroups = function (groups) {
+        var removed = 0;
+        for (var i = 0; i < groups.length; i++) {
+            try {
+                removeOwnedGroup({ group: groups[i], layer: groups[i].layer });
+                removed++;
+            } catch (e) {
+                // Already gone (undone, or deleted by hand): nothing to remove.
+            }
+        }
+        if (removed) {
+            scan = null;
+        }
+        return removed;
+    };
+
+    // Shows grids a preview hid, by reference.
+    A.showGroups = function (entries) {
+        var shown = 0;
+        for (var i = 0; i < entries.length; i++) {
+            try {
+                setGroupHidden(entries[i], false);
+                entries[i].hiddenByPreview = false;
+                shown++;
+            } catch (e) {
+                // The grid is gone; there is nothing to show.
+            }
+        }
+        return shown;
+    };
+
     // Hides generated grids in the given regions while a replacing preview is shown.
+    // Returns the grids it hid, so the preview can show them again without
+    // searching the document for them.
     A.hideForPreview = function (doc, regions) {
         var entries = A.findOwnedGroups(doc, { kind: "final", regions: regions });
-        var hidden = 0;
+        var hidden = [];
         for (var i = 0; i < entries.length; i++) {
             if (!entries[i].group.hidden) {
                 setGroupHidden(entries[i], true);
                 entries[i].hiddenByPreview = true;
-                hidden++;
+                hidden.push(entries[i]);
             }
         }
         return hidden;
@@ -647,7 +702,7 @@
      * grids they hid, and re-hides the grid layer if the preview had to show it.
      * Returns { removed, restored }.
      */
-    A.endPreview = function (doc, keep) {
+    A.endPreview = function (doc, keep, options) {
         var filter = { kind: "preview" };
         if (keep && keep.length) {
             filter.exclude = keep;
@@ -669,7 +724,12 @@
                 layer.visible = false;
             }
         }
-        if (removed) {
+        /*
+         * The layer stays unless the caller says otherwise. Deleting it and
+         * making it again costs far more than everything else a preview does,
+         * and a preview redraws on every keystroke.
+         */
+        if (removed && !(options && options.keepLayer)) {
             removeEmptyManagedLayer(doc);
         }
         return { removed: removed, restored: restored };

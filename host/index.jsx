@@ -126,6 +126,7 @@ $.global.Mullion = $.global.Mullion || {};
             M.previewing = false;
             M.previewDoc = null;
             M.previewGroups = [];
+            M.preview = null;
             var hostVersion = "";
             try {
                 hostVersion = String(app.version);
@@ -325,13 +326,58 @@ $.global.Mullion = $.global.Mullion || {};
     // Removes preview grids from every open document, and shows again any grids
     // those previews hid, so switching documents while previewing never strands
     // a preview or a hidden grid. Returns the number of previews removed.
-    function removeAllPreviews() {
+    /*
+     * options.keepLayer leaves the grid layer in place, which is what a preview
+     * wants: it is about to draw into it again, and making the layer again on
+     * every keystroke is the slowest thing the host does.
+     */
+    /*
+     * Ends the preview this session is running, without searching the document:
+     * it knows what it drew and what it hid. Anything older is left to the sweep
+     * in clearPreview, or to the recovery in status.
+     */
+    /*
+     * Ends the preview this session is running, wherever it is, without
+     * searching any document: it knows what it drew and what it hid. That is
+     * what makes previewing cheap enough to redraw on every keystroke.
+     * Anything older is swept by clearPreview, or recovered in status.
+     */
+    function endLivePreview() {
+        if (!M.preview) {
+            return 0;
+        }
+        var removed = M.adapter.removeGroups(M.preview.groups);
+        M.adapter.showGroups(M.preview.hidden);
+        M.preview = null;
+        M.previewGroups = [];
+        return removed;
+    }
+
+    function removeAllPreviews(options) {
         var removed = 0;
         var docs = M.adapter.openDocuments();
+        // The live preview, if any, is part of what this removes.
+        var keep = (options && options.keepLive && M.preview) ? M.preview.groups : null;
         for (var i = 0; i < docs.length; i++) {
-            removed += M.adapter.endPreview(docs[i]).removed;
+            removed += M.adapter.endPreview(docs[i], keep, options).removed;
+        }
+        if (!keep) {
+            M.preview = null;
         }
         return removed;
+    }
+
+    // Two lists of areas naming the same places, in the same order.
+    function sameRegions(a, b) {
+        if (!a || !b || a.length !== b.length) {
+            return false;
+        }
+        for (var i = 0; i < a.length; i++) {
+            if (a[i] !== b[i]) {
+                return false;
+            }
+        }
+        return true;
     }
 
     function regionsOf(built) {
@@ -394,13 +440,37 @@ $.global.Mullion = $.global.Mullion || {};
         preview: endpoint(function (payload) {
             var doc = requireDocument();
             var built = buildFor(doc, payload);
+            var regions = regionsOf(built);
+            var replacing = replaces(payload);
+            /*
+             * A preview redraws on every keystroke. Searching the document each
+             * time costs far more than the drawing does, so while the preview
+             * stays in the same document, covering the same areas, it removes
+             * exactly what it drew last time and leaves the rest alone.
+             */
+            var live = M.preview && M.preview.doc === doc &&
+                M.preview.replacing === replacing && sameRegions(M.preview.regions, regions);
             M.previewing = true;
             M.previewDoc = doc;
             var hidden = M.adapter.transaction("Preview grid", function () {
-                removeAllPreviews();
-                var count = replaces(payload) ? M.adapter.hideForPreview(doc, regionsOf(built)) : 0;
-                M.previewGroups = drawAll(doc, built, "preview");
-                return count;
+                if (live) {
+                    M.adapter.removeGroups(M.preview.groups);
+                } else {
+                    // A preview somewhere else ends by reference; this document
+                    // is swept in case an older session left something in it.
+                    endLivePreview();
+                    M.adapter.endPreview(doc, null, { keepLayer: true });
+                    M.preview = {
+                        doc: doc,
+                        regions: regions,
+                        replacing: replacing,
+                        groups: [],
+                        hidden: replacing ? M.adapter.hideForPreview(doc, regions) : []
+                    };
+                }
+                M.preview.groups = drawAll(doc, built, "preview");
+                M.previewGroups = M.preview.groups;
+                return M.preview.hidden.length;
             });
             M.adapter.redraw();
             return summary(doc, built, { hidden: hidden });
@@ -411,7 +481,9 @@ $.global.Mullion = $.global.Mullion || {};
             M.previewing = false;
             M.previewDoc = null;
             M.previewGroups = [];
-            var removed = M.adapter.activeDocument() ? M.adapter.transaction("Remove preview", removeAllPreviews) : 0;
+            var removed = M.adapter.activeDocument()
+                ? M.adapter.transaction("Remove preview", function () { return removeAllPreviews(); })
+                : 0;
             var doc = M.adapter.activeDocument();
             if (!doc) {
                 return { hasDocument: false, removed: removed };
@@ -430,6 +502,7 @@ $.global.Mullion = $.global.Mullion || {};
             M.previewing = false;
             M.previewDoc = null;
             M.previewGroups = [];
+            M.preview = null;
             /*
              * The new grid is drawn before the old one is removed. Drawing is the
              * step that can fail (a locked sublayer, an artboard deleted while the
@@ -437,7 +510,8 @@ $.global.Mullion = $.global.Mullion || {};
              * with neither grid.
              */
             var replaced = M.adapter.transaction("Generate grid", function () {
-                removeAllPreviews();
+                endLivePreview();
+                M.adapter.endPreview(doc, null, { keepLayer: true });
                 var created = drawAll(doc, built, "final");
                 if (!replaces(payload)) {
                     return { removed: 0, rescued: 0, kept: 0 };

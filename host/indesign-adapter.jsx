@@ -390,8 +390,6 @@
         if (isNaN(page)) {
             page = ORPHAN;
         }
-        var shapes = parseInt(label(item, LABEL_SHAPES), 10);
-        var current = ownedChildCount(item);
         return {
             item: item,
             isGuide: typeName(item) === "Guide",
@@ -400,9 +398,7 @@
             region: region || ("artboard:" + page),
             settings: label(item, LABEL_SETTINGS),
             schema: parseInt(label(item, LABEL_SCHEMA), 10) || 0,
-            // A different count of Mullion's own items means the user has edited
-            // this grid: their work, not ours to delete.
-            edited: !isNaN(shapes) && current >= 0 && current !== shapes,
+            shapes: parseInt(label(item, LABEL_SHAPES), 10),
             hiddenByPreview: label(item, LABEL_HIDDEN) === "1"
         };
     }
@@ -556,6 +552,27 @@
     }
 
     /*
+     * Whether the user has added or deleted items in a grid: their work, not
+     * ours to delete. Counting a grid's items is the most expensive thing in a
+     * scan, so it happens only when something is about to be removed.
+     */
+    function isEdited(entry) {
+        if (entry.editedChecked) {
+            return entry.edited === true;
+        }
+        entry.editedChecked = true;
+        entry.edited = false;
+        if (isNaN(entry.shapes)) {
+            return false;
+        }
+        var current = ownedChildCount(entry.item);
+        entry.edited = current >= 0 && current !== entry.shapes;
+        return entry.edited;
+    }
+
+    A.isEdited = isEdited;
+
+    /*
      * Hands a grid the user has edited back to them: the labels come off, so
      * Mullion stops treating it as its own and never deletes it.
      */
@@ -585,7 +602,7 @@
         var kept = 0;
         var touched = [];
         for (var i = entries.length - 1; i >= 0; i--) {
-            if (entries[i].edited && !(options && options.force)) {
+            if (!(options && options.force) && isEdited(entries[i])) {
                 releaseEntry(entries[i]);
                 kept++;
                 continue;
@@ -620,12 +637,50 @@
         return true;
     }
 
+    /*
+     * Removes grids this session drew, by reference. A live preview redraws on
+     * every keystroke, and scanning the document each time costs far more than
+     * the drawing does, so the preview keeps hold of what it made.
+     */
+    A.removeGroups = function (items) {
+        var removed = 0;
+        for (var i = 0; i < items.length; i++) {
+            try {
+                removeEntry({ item: items[i], isGuide: typeName(items[i]) === "Guide" });
+                removed++;
+            } catch (e) {
+                // Already gone (undone, or deleted by hand): nothing to remove.
+            }
+        }
+        if (removed) {
+            scan = null;
+        }
+        return removed;
+    };
+
+    // Shows grids a preview hid, by reference.
+    A.showGroups = function (entries) {
+        var shown = 0;
+        for (var i = 0; i < entries.length; i++) {
+            try {
+                setHidden(entries[i], false);
+                entries[i].hiddenByPreview = false;
+                shown++;
+            } catch (e) {
+                // The grid is gone; there is nothing to show.
+            }
+        }
+        return shown;
+    };
+
+    // Returns the grids it hid, so the preview can show them again without
+    // searching the document for them.
     A.hideForPreview = function (doc, regions) {
         var entries = ownedEntries(doc, { kind: "final", regions: regions });
-        var hidden = 0;
+        var hidden = [];
         for (var i = 0; i < entries.length; i++) {
             if (!entries[i].isGuide && entries[i].item.visible && setHidden(entries[i], true)) {
-                hidden++;
+                hidden.push(entries[i]);
             }
         }
         return hidden;
@@ -646,7 +701,7 @@
      * Ends previewing in one document: removes preview grids, shows again the
      * grids they hid, and re-hides the grid layer if the preview had to show it.
      */
-    A.endPreview = function (doc, keep) {
+    A.endPreview = function (doc, keep, options) {
         var filter = { kind: "preview" };
         if (keep && keep.length) {
             filter.exclude = keep;
@@ -668,7 +723,12 @@
                 layer.visible = false;
             }
         }
-        if (removed) {
+        /*
+         * The layer stays unless the caller says otherwise. Deleting it and
+         * making it again costs far more than everything else a preview does,
+         * and a preview redraws on every keystroke.
+         */
+        if (removed && !(options && options.keepLayer)) {
             removeEmptyManagedLayer(doc);
         }
         return { removed: removed, restored: restored };
