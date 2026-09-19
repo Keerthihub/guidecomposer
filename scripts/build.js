@@ -29,6 +29,13 @@ function build(outDir) {
         });
     }
 
+    // An adapter for a host the manifest does not declare can never be loaded.
+    // Leaving it in the package ships dead code, and tells anyone who unzips the
+    // .zxp that we support an application we have not run in.
+    for (const adapter of checks.unusedAdapters(checks.ROOT)) {
+        fs.rmSync(path.join(outDir, adapter), { force: true });
+    }
+
     const outputProblems = [...checks.checkManifest(outDir), ...checks.checkPackageContents(outDir)];
     return { ok: outputProblems.length === 0, problems: outputProblems, files: checks.listFiles(outDir) };
 }

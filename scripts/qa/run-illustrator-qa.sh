@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Runs Mullion's live QA in a real Illustrator and prints the results.
+# Runs GridComposer's live QA in a real Illustrator and prints the results.
 #
 #   scripts/qa/run-illustrator-qa.sh [output directory]
 #
@@ -21,7 +21,7 @@ if ! pgrep -f "MacOS/Adobe Illustrator" > /dev/null; then
     exit 2
 fi
 
-echo "Running Mullion live QA"
+echo "Running GridComposer live QA"
 echo "  extension: $ROOT"
 echo "  results:   $OUT"
 echo

@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to Mullion are recorded here. Versions follow [Semantic Versioning](https://semver.org/).
+All notable changes to GridComposer are recorded here. Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [0.1.0] - Unreleased
 
@@ -16,14 +16,14 @@ First release candidate.
 ### Safety and ownership
 
 - Which artboard a grid belongs to is worked out from where the grid sits, so deleting or reordering artboards no longer sends Clear to the wrong one.
-- Grids stay Mullion's own at any depth, so grouping one with your artwork no longer makes it impossible to clear.
+- Grids stay GridComposer's own at any depth, so grouping one with your artwork no longer makes it impossible to clear.
 - Object and construction grids are matched by overlap, so moving the artwork replaces its grid instead of drawing a second one on top.
 - A new grid is drawn before the old one is removed, so a failure can never leave you with neither; in InDesign the failure now reaches InDesign's own rollback.
 - Grids you have edited are handed back to you rather than deleted, and reported as kept.
 - Previews left behind by a crash, or by a file saved while a preview was on screen, are cleared the next time the panel reads the document, and any grid they hid is shown again.
 - Ending a preview puts back a grid layer you had hidden.
 - Every call pins the coordinate system it reads and writes in, so another script's settings cannot place grids, construction lines or snapped objects away from where they belong.
-- Modal dialogs are suppressed while Mullion runs, so a stray alert can no longer park a call for ever.
+- Modal dialogs are suppressed while GridComposer runs, so a stray alert can no longer park a call for ever.
 - Every grid records the settings that drew it, and **More > Use this document's grid settings** reads them back, so a document carries the recipe for its own grid.
 
 ### Construction lines
@@ -54,8 +54,8 @@ First release candidate.
 - Align objects: check selected objects against the grid, select off-grid objects, or snap them to grid lines.
 - Show/hide and lock/unlock the grid layer; a non-printing grid layer.
 - Resize artboards or pages to 29 standard formats; layouts made for a size offer a one-click resize.
-- One Undo reverses each Mullion action.
-- Ownership tags so Preview, Generate, and Clear never remove artwork Mullion didn't create.
+- One Undo reverses each GridComposer action.
+- Ownership tags so Preview, Generate, and Clear never remove artwork GridComposer didn't create.
 
 ### Library and presets
 
@@ -88,15 +88,16 @@ First release candidate.
 ### Hosts
 
 - Illustrator 2022 (26.0) and later on macOS and Windows.
-- InDesign 2022 (17.0) and later, including Set page margins and columns, which writes InDesign's own page margins, columns, and baseline grid. Not yet verified in InDesign.
+- **Illustrator only.** InDesign support is written, and tested against a simulated InDesign, but it has never been run in InDesign, so `CSXS/manifest.xml` does not declare it and the panel does not appear there. It will ship in a later release, in the same purchase, once `npm run qa:indesign` passes in a real copy.
+- Photoshop is not supported and is not planned.
 
-> **Declared host ranges are wider than what has been tested.** `CSXS/manifest.xml`
-> declares `ILST [26.0,99.9]` and `IDSN [17.0,99.9]`, because CEP manifests have
+> **The declared Illustrator range is wider than what has been tested.**
+> `CSXS/manifest.xml` declares `ILST [26.0,99.9]`, because CEP manifests have
 > no way to say "this version and later". The extension has been run in
-> Illustrator 30.8.1 on macOS only: no other Illustrator version, no Windows, and
-> no InDesign at all. Narrow the ranges, or state the tested versions plainly in
-> the listing, before selling. Tested versions belong in `docs/COMPATIBILITY.md`;
-> what has actually been run is recorded in README.md → Verification status.
+> Illustrator 30.8.1 on macOS only: no other Illustrator version and no Windows.
+> Narrow the range, or state the tested versions plainly in the listing, before
+> selling. Tested versions belong in `docs/COMPATIBILITY.md`; what has actually
+> been run is recorded in README.md → Verification status.
 
 ### Documentation, licensing, and delivery
 

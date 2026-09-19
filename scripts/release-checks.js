@@ -9,11 +9,28 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const ROOT = path.resolve(__dirname, "..");
-const BUNDLE_ID = "com.mullion.panel";
-const EXTENSION_ID = "com.mullion.panel.main";
+const BUNDLE_ID = "com.keerthi.gridcomposer";
+const EXTENSION_ID = "com.keerthi.gridcomposer.main";
 
 // Files and folders that make up the shipped extension.
 const PRODUCTION_ENTRIES = ["CSXS", "client", "host", "shared", "icons"];
+
+// The host adapter each declared application boots into. A host the manifest
+// does not declare cannot show the panel, so its adapter is dead weight in the
+// package — and, to anyone who unzips the .zxp, a claim of support we have not
+// made. Both the manifest check and the build read the list from here, so
+// declaring a host is the only thing needed to start shipping its adapter.
+const HOST_ADAPTERS = { ILST: "host/illustrator-adapter.jsx", IDSN: "host/indesign-adapter.jsx" };
+
+function declaredHosts(root) {
+    const manifest = read(root || ROOT, "CSXS/manifest.xml");
+    return [...manifest.matchAll(/<Host Name="([A-Z]+)"/g)].map((m) => m[1]);
+}
+
+function unusedAdapters(root) {
+    const shipped = declaredHosts(root).map((h) => HOST_ADAPTERS[h]).filter(Boolean);
+    return Object.values(HOST_ADAPTERS).filter((file) => shipped.indexOf(file) === -1);
+}
 
 // Development-only files that must never reach a signed package.
 const FORBIDDEN_IN_PACKAGE = [".debug", "tests", "scripts", "node_modules", "package.json", "package-lock.json", ".git", ".gitignore"];
@@ -76,7 +93,7 @@ function checkManifest(root = ROOT) {
         problems.push("manifest must declare a CSXS RequiredRuntime");
     }
     if (/--enable-nodejs|--mixed-context/.test(manifest)) {
-        problems.push("manifest enables Node.js in the panel; Mullion does not need it");
+        problems.push("manifest enables Node.js in the panel; GridComposer does not need it");
     }
     const referenced = [...manifest.matchAll(/>\.\/([^<]+)</g)].map((m) => m[1]);
     if (referenced.length === 0) {
@@ -89,11 +106,10 @@ function checkManifest(root = ROOT) {
     }
     // Every file the host boot loader evaluates must exist too.
     const deps = read(root, "host/index.jsx").match(/DEPENDENCIES = \[([\s\S]*?)\]/);
-    const hosts = [...manifest.matchAll(/<Host Name="([A-Z]+)"/g)].map((m) => m[1]);
-    const adapters = { ILST: "host/illustrator-adapter.jsx", IDSN: "host/indesign-adapter.jsx" };
+    const hosts = declaredHosts(root);
     for (const rel of deps ? [...deps[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]) : []) {
         // "@adapter" is chosen at boot from the host application; each declared host needs its adapter.
-        const files = rel === "@adapter" ? hosts.map((h) => adapters[h]).filter(Boolean) : [rel];
+        const files = rel === "@adapter" ? hosts.map((h) => HOST_ADAPTERS[h]).filter(Boolean) : [rel];
         for (const file of files) {
             if (!fs.existsSync(path.join(root, file))) {
                 problems.push(`host boot dependency ${file} is missing`);
@@ -213,6 +229,9 @@ module.exports = {
     ROOT,
     BUNDLE_ID,
     PRODUCTION_ENTRIES,
+    HOST_ADAPTERS,
+    declaredHosts,
+    unusedAdapters,
     versions,
     checkVersions,
     checkManifest,

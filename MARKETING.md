@@ -1,13 +1,17 @@
 # Launch material
 
-Sales page copy, pricing, screenshots, and a demo video script. Replace "Mullion" with your final name. Keep every claim true to the version you ship: if InDesign hasn't been confirmed by testers, label it **beta** or remove it.
+Sales page copy, pricing, screenshots, and a demo video script. Keep every claim true to the version you ship.
+
+**Name:** GridComposer
+**Tagline:** Professional Layout Grids for Illustrator
+**Scope of this release:** Illustrator only. InDesign is written but has never been run in InDesign, so it is not declared in the manifest and must not appear in any listing, screenshot or claim until `npm run qa:indesign` passes. Photoshop is not supported and is not planned.
 
 ## Positioning
 
-**For** designers who build layouts in Illustrator and InDesign
+**For** designers who build layouts in Adobe Illustrator
 **who** redraw grids by hand on every project,
-**Mullion** is a grid panel
-**that** draws any grid, on any page or inside any object, and snaps your artwork to it,
+**GridComposer** is a grid panel
+**that** draws any grid, on any artboard or inside any object, and snaps your artwork to it,
 **unlike** grid tools that only generate columns and leave the rest to you.
 
 ## Sales page
@@ -16,11 +20,11 @@ Sales page copy, pricing, screenshots, and a demo video script. Replace "Mullion
 
 - Every layout grid, one panel.
 - Build the grid. Snap the design to it.
-- Grids for Illustrator and InDesign, done in a click.
+- Professional layout grids for Illustrator, done in a click.
 
 ### Subheading
 
-Column, modular, baseline, and classic grid systems for Illustrator and InDesign, construction lines for logos, over a hundred layouts that fit any page, and tools to put your artwork exactly on the grid.
+Column, modular, baseline, and classic grid systems for Illustrator, construction lines for logos, over a hundred layouts that fit any artboard, and tools to put your artwork exactly on the grid.
 
 ### Section: Start from a layout
 
@@ -45,32 +49,31 @@ Apply a grid to one artboard, all of them, a list like 1–3, 5, or inside the o
 
 ### Section: Get your design on the grid
 
-Select your artwork and Mullion tells you what's off the grid and by how much. One click selects the stragglers; another snaps them into place.
+Select your artwork and GridComposer tells you what's off the grid and by how much. One click selects the stragglers; another snaps them into place.
 
 ### Section: Safe by design
 
-Mullion only ever changes what it created. Grids live on their own non-printing layer, previews never overwrite your work, and one Undo reverses each action. Drag artwork into a grid by accident and Clear still keeps it.
+GridComposer only ever changes what it created. Grids live on their own non-printing layer, previews never overwrite your work, and one Undo reverses each action. Drag artwork into a grid by accident and Clear still keeps it.
 
 ### Section: Made for real workflows
 
 - Resize artboards to A-series, US, screen, and social sizes
 - Save your grid systems as presets and share them with your team as files
-- InDesign: write margins, columns, and the baseline grid straight into your page setup
-- Matches Illustrator's and InDesign's light and dark interfaces
+- Matches Illustrator's light and dark interfaces
 
 ### Requirements
 
-- Adobe Illustrator 2022 or later, or Adobe InDesign 2022 or later
+- Adobe Illustrator 2022 or later
 - macOS or Windows
 - No account, no subscription, no internet connection
 
 ### FAQ
 
-**Does it work offline?** Yes. Mullion never connects to the internet and collects no data.
+**Does it work offline?** Yes. GridComposer never connects to the internet and collects no data.
 
-**Will it change my artwork?** No. Mullion only removes grids it created, and keeps anything you add to them.
+**Will it change my artwork?** No. GridComposer only removes grids it created, and keeps anything you add to them.
 
-**Can I undo?** Yes. One Undo reverses each Mullion action.
+**Can I undo?** Yes. One Undo reverses each GridComposer action.
 
 **How do I install it?** Your download includes step-by-step instructions for macOS and Windows.
 
@@ -80,11 +83,11 @@ Mullion only ever changes what it created. Grids live on their own non-printing 
 
 ### Call to action
 
-Get Mullion — [PRICE], one-time purchase.
+Get GridComposer — [PRICE], one-time purchase.
 
 ## Pricing
 
-- **Launch price: $29**, rising to **$39** after the first month or first 100 sales. The feature set (library, alignment, composition, patterns, InDesign) supports pricing above basic column tools; a launch discount rewards early buyers and reviews.
+- **Launch price: $29**, rising to **$39** after the first month or first 100 sales. The feature set (library, alignment, composition, patterns, construction lines) supports pricing above basic column tools; a launch discount rewards early buyers and reviews.
 - **Studio license (5 seats): $99** once teams start asking. Preset export and import is the selling point for studios.
 - Avoid subscriptions; "one-time purchase, no account" is a reason to buy.
 - Use your beta survey's price question (BETA.md) to confirm before launch.
@@ -103,7 +106,6 @@ Take these at 2× resolution, in Illustrator's dark and light themes. Use real-l
 8. Social: story safe area on a 1080 × 1920 artboard
 9. Content blocks marked on a modular grid, with the generated result
 10. Line styles: dotted margins in a second color, shaded gutters
-11. InDesign: page margins and columns applied (only once verified)
 
 ## 60-second demo video
 
@@ -116,8 +118,8 @@ Take these at 2× resolution, in Illustrator's dark and light themes. Use real-l
 | 27–35 s | Select three cards, Apply to Selected objects, Generate | "Put a grid inside anything." |
 | 35–45 s | Scattered objects, Check, then Snap to grid | "Then put your design on the grid." |
 | 45–52 s | Select a logo, Construct, Generate | "See how a logo is built." |
-| 52–57 s | Quick cuts: patterns, dotted lines, InDesign page | "Patterns, styles, and InDesign too." |
-| 57–60 s | Product name and price | "[PRODUCT_NAME]. Grids for Illustrator and InDesign." |
+| 52–57 s | Quick cuts: patterns, dotted lines, line styles | "Patterns and styles too." |
+| 57–60 s | Product name and price | "GridComposer. Professional layout grids for Illustrator." |
 
 Keep the cursor slow and zoomed in; add captions, since most viewers watch muted.
 
@@ -126,8 +128,10 @@ Keep the cursor slow and zoomed in; add captions, since most viewers watch muted
 Every sentence on the sales page is a promise you have to support by email
 afterwards. Two in this file are not yet true:
 
-- **InDesign.** It has never been run in InDesign. Label it beta, or cut it from
-  the listing, until it has. See `docs/COMPATIBILITY.md`.
+- **InDesign.** It has never been run in InDesign, and this release does not
+  ship it: the manifest declares Illustrator alone, so the panel will not even
+  appear in InDesign. It must not appear anywhere in the listing. See
+  `docs/COMPATIBILITY.md`.
 - **Version support.** "Illustrator 2022 or later" is what the plugin declares,
   not what has been tested. Say which versions you have run it in.
 

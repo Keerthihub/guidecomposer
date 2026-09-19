@@ -1,5 +1,5 @@
 /*
- * Mullion live QA, part 04: ownership after the user edits the document
+ * GridComposer live QA, part 04: ownership after the user edits the document
  *
  * Runs against a real Illustrator. Every test works in documents it creates and
  * closes; nothing the user has open is touched. Run all parts with
@@ -22,7 +22,7 @@
         for (var l = 0; l < doc.layers.length; l++) { var gs = doc.layers[l].groupItems;
             for (var g = 0; g < gs.length; g++) { var tags = gs[g].tags, o = null, k = null, ab = null;
                 for (var t = 0; t < tags.length; t++) { if (tags[t].name === "MullionOwner") o = tags[t].value; if (tags[t].name === "MullionKind") k = tags[t].value; if (tags[t].name === "MullionArtboard") ab = tags[t].value; }
-                if (o === "com.mullion.panel") out.push({ group: gs[g], kind: k, artboard: ab, nested: gs[g].parent.typename !== "Layer" }); } }
+                if (o === "com.keerthi.gridcomposer") out.push({ group: gs[g], kind: k, artboard: ab, nested: gs[g].parent.typename !== "Layer" }); } }
         return out;
     }
     var COLS = { type: "columns", columns: 4, columnGutter: 12, marginTop: 36, marginRight: 36, marginBottom: 36, marginLeft: 36, units: "pt", strokeColor: "#E0457B", strokeWidth: 0.5, opacity: 100, output: "lines", lockLayer: false };
@@ -150,7 +150,7 @@
         var a = app.documents.add(DocumentColorSpace.RGB, 612, 792);
         call("generate", { settings: COLS, target: { mode: "active" } });
         var layerA = null;
-        for (var i = 0; i < a.layers.length; i++) if (a.layers[i].name === "Mullion grids") layerA = a.layers[i];
+        for (var i = 0; i < a.layers.length; i++) if (a.layers[i].name === "GridComposer grids") layerA = a.layers[i];
         layerA.visible = false; // user hides grids
         var b = app.documents.add(DocumentColorSpace.RGB, 612, 792);
         call("generate", { settings: COLS, target: { mode: "active" } });

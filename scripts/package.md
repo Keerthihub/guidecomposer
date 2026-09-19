@@ -1,6 +1,6 @@
-# Packaging, signing, and releasing Mullion
+# Packaging, signing, and releasing GridComposer
 
-CEP extensions ship as signed `.zxp` files. Don't package Mullion as `.ccx`; that is the UXP format, and Illustrator doesn't run UXP plugins.
+CEP extensions ship as signed `.zxp` files. Don't package GridComposer as `.ccx`; that is the UXP format, and Illustrator doesn't run UXP plugins.
 
 ## 1. One-time setup
 
@@ -38,14 +38,14 @@ Passing a password as a command argument can expose it to other processes on the
 
 ## 3. Build and sign
 
-`npm run build` runs the checks, then copies only `CSXS/`, `client/`, `host/`, `shared/`, and `icons/` to `dist/mullion/`. It then verifies the output contains no `.debug`, tests, scripts, `node_modules`, certificates, or source maps.
+`npm run build` runs the checks, then copies only `CSXS/`, `client/`, `host/`, `shared/`, and `icons/` to `dist/gridcomposer/`. It then verifies the output contains no `.debug`, tests, scripts, `node_modules`, certificates, or source maps.
 
 **macOS / Linux**
 
 ```sh
 export ZXPSIGNCMD=~/Tools/ZXPSignCmd
 export MULLION_CERT=~/Certificates/mullion.p12
-npm run sign:mac          # prompts for the password; writes dist/mullion-<version>.zxp
+npm run sign:mac          # prompts for the password; writes dist/gridcomposer-<version>.zxp
 ```
 
 **Windows** (PowerShell)
@@ -55,8 +55,8 @@ npm run build
 $version = node -p "require('./package.json').version"
 $password = Read-Host "Certificate password" -AsSecureString
 $plain = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($password))
-& C:\Tools\ZXPSignCmd.exe -sign dist\mullion "dist\mullion-$version.zxp" C:\Certificates\mullion.p12 $plain -tsa http://timestamp.digicert.com
-& C:\Tools\ZXPSignCmd.exe -verify "dist\mullion-$version.zxp" -certinfo
+& C:\Tools\ZXPSignCmd.exe -sign dist\gridcomposer "dist\gridcomposer-$version.zxp" C:\Certificates\mullion.p12 $plain -tsa http://timestamp.digicert.com
+& C:\Tools\ZXPSignCmd.exe -verify "dist\gridcomposer-$version.zxp" -certinfo
 ```
 
 The timestamp (`-tsa`) keeps the signature valid after the certificate expires. If the timestamp server is unreachable, try another RFC 3161 server rather than signing without one.
@@ -69,7 +69,7 @@ The timestamp (`-tsa`) keeps the signature valid after the certificate expires. 
    fails the run unless the tag is `v` + `package.json`'s version, every version
    in the manifest and the host agrees with it, and `CHANGELOG.md` has notes
    under a heading for it. Pushing `v0.2.0` on a `0.1.0` commit can no longer
-   produce a `mullion-0.1.0.zxp` under a release called 0.2.0.
+   produce a `gridcomposer-0.1.0.zxp` under a release called 0.2.0.
 2. **Gates on the real tests.** The unit tests, the production build, **and the
    headless-Chrome panel smoke test** must pass on Ubuntu, macOS and Windows
    before anything is signed. A panel that throws on load cannot be signed.
@@ -92,11 +92,11 @@ version a year later, which workflow artefacts never could.
 To verify a downloaded package by hand:
 
 ```sh
-shasum -a 256 mullion-0.1.0.zxp          # macOS/Linux
+shasum -a 256 gridcomposer-0.1.0.zxp          # macOS/Linux
 ```
 
 ```powershell
-Get-FileHash mullion-0.1.0.zxp -Algorithm SHA256   # Windows
+Get-FileHash gridcomposer-0.1.0.zxp -Algorithm SHA256   # Windows
 ```
 
 ## 4. Test the signed package
@@ -109,12 +109,12 @@ Test on **clean user accounts** (or virtual machines) on macOS and Windows, with
 
    ```sh
    # macOS
-   "/Library/Application Support/Adobe/Adobe Desktop Common/RemoteComponents/UPI/UnifiedPluginInstallerAgent/UnifiedPluginInstallerAgent.app/Contents/MacOS/UnifiedPluginInstallerAgent" --install /path/to/mullion-0.1.0.zxp
+   "/Library/Application Support/Adobe/Adobe Desktop Common/RemoteComponents/UPI/UnifiedPluginInstallerAgent/UnifiedPluginInstallerAgent.app/Contents/MacOS/UnifiedPluginInstallerAgent" --install /path/to/gridcomposer-0.1.0.zxp
    ```
 
    ```powershell
    # Windows
-   & "C:\Program Files\Common Files\Adobe\Adobe Desktop Common\RemoteComponents\UPI\UnifiedPluginInstallerAgent\UnifiedPluginInstallerAgent.exe" /install C:\path\to\mullion-0.1.0.zxp
+   & "C:\Program Files\Common Files\Adobe\Adobe Desktop Common\RemoteComponents\UPI\UnifiedPluginInstallerAgent\UnifiedPluginInstallerAgent.exe" /install C:\path\to\gridcomposer-0.1.0.zxp
    ```
 
    List installed extensions with `--list all` (macOS) or `/list all` (Windows). Remove one with `--remove` / `/remove` followed by the name exactly as the list shows it.
@@ -128,9 +128,9 @@ Don't promise customers that a `.zxp` installs by double-clicking. Document the 
 **Direct sale (for example Gumroad)**. Ship a zip like:
 
 ```text
-mullion-0.1.0.zip
-├── mullion-0.1.0.zxp             the signed package
-├── mullion-0.1.0.zxp.sha256      from the GitHub Release, so buyers can verify
+gridcomposer-0.1.0.zip
+├── gridcomposer-0.1.0.zxp             the signed package
+├── gridcomposer-0.1.0.zxp.sha256      from the GitHub Release, so buyers can verify
 ├── Installation.pdf              tested steps for macOS and Windows, with screenshots
 ├── LICENSE.txt                   the end-user licence agreement (from LICENSE)
 ├── PRIVACY.txt                   from PRIVACY.md
@@ -170,7 +170,7 @@ Run this for **every** release, not just the first one.
 - [ ] Versions updated in package.json, manifest (2 places), host/index.jsx, and a dated CHANGELOG.md section — `node scripts/release-checks.js` proves all four agree and that the changelog section exists
 - [ ] `npm run check` and `npm run test:ui` pass locally
 - [ ] Manual QA checklist (README.md) complete on macOS and Windows
-- [ ] `npm run build` succeeds; `dist/mullion/` contains no development files
+- [ ] `npm run build` succeeds; `dist/gridcomposer/` contains no development files
 - [ ] Anything the release changes about behaviour is reflected in `docs/` — especially `docs/COMPATIBILITY.md` (versions actually tested) and `docs/UPDATING.md` (what survives an update)
 
 **Tag and sign**

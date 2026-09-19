@@ -7,7 +7,7 @@ presets that you control.
 
 ## Where your settings and presets live
 
-Mullion saves three things on your own computer, in the panel's private browser
+GridComposer saves three things on your own computer, in the panel's private browser
 storage, which Adobe's CEP plugin runtime keeps **per extension**:
 
 | What | Key | Contains |
@@ -51,7 +51,7 @@ own layer; they stay in the file whatever happens to the plugin.
 3. Install the new `.zxp` **over** the existing installation — do not uninstall
    first. Installing over the top is the path that keeps your settings.
 4. Restart Illustrator or InDesign completely.
-5. If the panel was open during the update, it will say **Mullion was updated**
+5. If the panel was open during the update, it will say **GridComposer was updated**
    and offer **Reload panel**. Click it, or close and reopen the panel.
 6. Check that your presets are still listed. If they are not, use **More >
    Import presets** and pick the file from step 1.
@@ -72,7 +72,7 @@ numbered rather than overwritten.
 ## Moving to a new computer
 
 1. On the old computer: **More > Export presets**.
-2. Install Mullion on the new computer, restart the application.
+2. Install GridComposer on the new computer, restart the application.
 3. **More > Import presets**, and pick the file.
 
 Settings (as opposed to presets) are not exported. Save any grid setup you care

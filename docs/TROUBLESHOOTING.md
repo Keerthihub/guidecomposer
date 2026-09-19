@@ -1,4 +1,4 @@
-# Troubleshooting Mullion
+# Troubleshooting GridComposer
 
 Everything here is safe to do yourself. Nothing on this page asks you to edit
 the Windows registry, run terminal commands as an administrator, or change any
@@ -22,9 +22,9 @@ about two minutes and tells us almost everything we need.
 
 Work through these in order.
 
-1. **Look in the right place.** It is **Window > Extensions > Mullion**. In
+1. **Look in the right place.** It is **Window > Extensions > GridComposer**. In
    recent releases of Illustrator and InDesign the submenu is called
-   **Extensions (Legacy)**. Both are correct; Mullion is a CEP extension, which
+   **Extensions (Legacy)**. Both are correct; GridComposer is a CEP extension, which
    is what that submenu lists.
 2. **Restart the application completely.** Newly installed extensions only
    appear after a full restart. On macOS, quitting the window is not enough:
@@ -32,15 +32,15 @@ Work through these in order.
 3. **Check that it actually installed.** Open the **Creative Cloud desktop
    app**, go to the plugins area (**Stock & Marketplace > Plugins > Manage
    plugins**, or **Marketplace > Plugins**, depending on your version), and look
-   for Mullion in the list of installed plugins. If it isn't there, the
+   for GridComposer in the list of installed plugins. If it isn't there, the
    installation didn't complete — install the `.zxp` again with the steps in the
    installation guide that came with your download.
-4. **Check your application version.** Mullion needs Illustrator 2022 (26.0) or
+4. **Check your application version.** GridComposer needs Illustrator 2022 (26.0) or
    later, or InDesign 2022 (17.0) or later. Older versions will not list it. See
    `COMPATIBILITY.md` for the full matrix. Your application version is under
    **Illustrator > About Illustrator** (macOS) or **Help > About Illustrator**
    (Windows).
-5. **Check that you restarted the right application.** Mullion installs once and
+5. **Check that you restarted the right application.** GridComposer installs once and
    serves both Illustrator and InDesign. If it appears in one and not the other,
    restart the other one too, and check that application's version.
 6. **If you have several Creative Cloud accounts or a managed/enterprise
@@ -57,7 +57,7 @@ This means the panel's own interface failed to start.
 
 1. **Close the panel and open it again** from the Window menu. This reloads it.
 2. **Restart the application.**
-3. **If the panel says "Mullion was updated"** with a **Reload panel** button,
+3. **If the panel says "GridComposer was updated"** with a **Reload panel** button,
    click it. That message appears when the plugin's files changed while the
    panel was open — for example just after an update.
 4. **Reinstall the plugin.** Install your `.zxp` again over the top, then
@@ -73,7 +73,7 @@ reproduce it.
 
 ## The panel shows a message I don't understand
 
-Mullion explains problems in the status line at the bottom of the panel. The
+GridComposer explains problems in the status line at the bottom of the panel. The
 common ones:
 
 | Message | What it means | What to do |
@@ -84,8 +84,8 @@ common ones:
 | A number is highlighted in red | That setting is impossible for the page (for example margins wider than the page). | Fix the highlighted field; nothing was drawn. |
 | "Too many shapes" | The grid would draw more shapes than the limit that keeps the application responsive (10,000 in one go, 5,000 per artboard or page). | Use fewer columns, rows, or artboards at a time. |
 | "…can't be guides" | InDesign guides are only horizontal or vertical, so dots, curves, hexagons, and diagonals can't be drawn as guides. | Choose Lines or Boxes instead of Guides. |
-| "Mullion is missing …. Reinstall the extension." | Part of the plugin is missing or was blocked. | Reinstall the `.zxp` and restart the application. |
-| "Mullion could not start…" | The part that runs inside Illustrator/InDesign failed to load. | Restart the application; if it persists, reinstall, then report it with the full message. |
+| "GridComposer is missing …. Reinstall the extension." | Part of the plugin is missing or was blocked. | Reinstall the `.zxp` and restart the application. |
+| "GridComposer could not start…" | The part that runs inside Illustrator/InDesign failed to load. | Restart the application; if it persists, reinstall, then report it with the full message. |
 | "…did not answer" (after a long wait) | The application didn't answer within 90 seconds, usually because it was busy with a dialog or a very large document. | Close any open dialog in the application, then try again with a smaller selection or fewer artboards. |
 
 Copy the exact message into your bug report — it identifies the failure
@@ -93,7 +93,7 @@ precisely.
 
 ## I clicked Generate and nothing appeared
 
-- **Check the grid layer.** Mullion draws into a layer called "Mullion grids".
+- **Check the grid layer.** GridComposer draws into a layer called "GridComposer grids".
   If it was hidden, use the eye button in the panel (or the Layers panel) to
   show it. The panel's own eye and lock buttons match the Layers panel.
 - **The grid layer is non-printing by design.** It appears on screen but not in
@@ -107,7 +107,7 @@ precisely.
 
 ## The panel looks wrong or text is cut off
 
-- Mullion is designed to work down to 240 pixels wide when docked. If it is
+- GridComposer is designed to work down to 240 pixels wide when docked. If it is
   narrower than that, widen the dock.
 - If the panel's colors don't match the application after you change the
   interface brightness, close and reopen the panel.
@@ -136,9 +136,9 @@ you are about to do any of those.
   before sending if it is confidential.
 - **If the panel won't open:** open the Creative Cloud desktop app's plugins
   list (**Stock & Marketplace > Plugins > Manage plugins**). The installed
-  version is shown next to Mullion.
+  version is shown next to GridComposer.
 - **The file you bought** is named with its version, for example
-  `mullion-0.1.0.zxp`.
+  `gridcomposer-0.1.0.zxp`.
 
 ## Reporting a problem
 

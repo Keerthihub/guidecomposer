@@ -17,7 +17,7 @@ the business.
 ## 1. Choose the final name, and clear it
 
 The product still carries a placeholder name and the placeholder extension id
-`com.mullion.panel`. (Once you have run step 2, this page renames itself along
+`com.keerthi.gridcomposer`. (Once you have run step 2, this page renames itself along
 with everything else, and steps 1 and 2 are behind you.)
 
 - [ ] Search national trademark registers for the name in the classes that cover
@@ -206,7 +206,15 @@ noted the exact OS builds and application versions — they go into
 
 ---
 
-## 8. Decide what to say about InDesign
+## 8. InDesign — decided: not in this release
+
+**This is done.** The decision was to launch Illustrator only.
+`CSXS/manifest.xml` declares `ILST` alone, so the panel does not appear in
+InDesign at all; `tests/release.test.js` fails the build if any other host is
+declared, and `docs/COMPATIBILITY.md`, `MARKETING.md` and `BETA.md` all say
+Illustrator only. Nothing further is needed to ship.
+
+What follows is the recipe for the *later* release that adds InDesign.
 
 The InDesign adapter is tested only against a simulated InDesign. It has never
 run in InDesign.
@@ -225,15 +233,17 @@ opened, and prints a pass or fail for each. The same 31 checks already pass
 against a simulated InDesign, so a failure here means InDesign genuinely differs
 from what the adapter expects: exactly what you need to know.
 
-- [ ] Run `npm run qa:indesign` in a real copy of InDesign and fix what it
-      reports, on macOS and on Windows, or
-- [ ] Label InDesign support **beta** in the listing and the licence, or
-- [ ] Remove InDesign from the listing, and narrow the manifest's `IDSN` host
-      range accordingly.
+- [x] **Chosen:** InDesign removed from this release — undeclared in the
+      manifest, absent from the listing.
+- [ ] *For the InDesign release:* run `npm run qa:indesign` in a real copy of
+      InDesign and fix what it reports, on macOS and on Windows.
+- [ ] *Then:* add a Host entry named `IDSN` with range `[17.0,99.9]` to
+      `CSXS/manifest.xml`, update the host assertion in `tests/release.test.js`,
+      and restore InDesign to `docs/COMPATIBILITY.md`, `MARKETING.md` and
+      `BETA.md`.
 
 **Done when:** what the listing promises and what you have actually run are the
-same thing. `docs/COMPATIBILITY.md` currently says "beta"; change it if you
-verify it.
+same thing. For this release they already are.
 
 ---
 

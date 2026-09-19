@@ -1,5 +1,5 @@
 /*
- * Mullion InDesign adapter (ExtendScript, ES3 only).
+ * GridComposer InDesign adapter (ExtendScript, ES3 only).
  *
  * The InDesign counterpart of illustrator-adapter.jsx: the same interface, used
  * by host/index.jsx, over InDesign's scripting DOM. Pages play the role of
@@ -9,25 +9,25 @@
  *   InDesign measures Y downward and reports bounds as [y1, x1, y2, x2]. The grid
  *   core works in Illustrator's Y-up rectangles [left, top, right, bottom], so
  *   page bounds are converted with Y negated, and shapes are converted back when
- *   drawn. All script measurements are forced to points while Mullion runs.
+ *   drawn. All script measurements are forced to points while GridComposer runs.
  *
  * Ownership model (same rules as Illustrator)
  *   - Every grid is one Group (or a single item) labeled with owner, kind, page
- *     index, and region via insertLabel. Every item Mullion draws carries the
+ *     index, and region via insertLabel. Every item GridComposer draws carries the
  *     owner label too.
  *   - Only labeled grids are removed. A grid is ungrouped first and only items
  *     carrying the owner label are deleted, so artwork a user added survives.
  *   - Guides can't be grouped, so each guide carries the labels itself.
  *
  * Undo: every change runs inside app.doScript with UndoModes.ENTIRE_SCRIPT, so
- * one Undo reverses one Mullion action.
+ * one Undo reverses one GridComposer action.
  *
  * Not yet verified in InDesign itself; see README.
  */
 (function (M) {
     var A = {};
 
-    var LAYER_NAME = "Mullion grids";
+    var LAYER_NAME = "GridComposer grids";
     var LABEL_OWNER = "MullionOwner";
     var LABEL_KIND = "MullionKind";
     var LABEL_PAGE = "MullionArtboard";
@@ -88,7 +88,7 @@
              */
             app.doScript(function () {
                 result = fn();
-            }, ScriptLanguage.JAVASCRIPT, [], UndoModes.ENTIRE_SCRIPT, "Mullion: " + label);
+            }, ScriptLanguage.JAVASCRIPT, [], UndoModes.ENTIRE_SCRIPT, "GridComposer: " + label);
         } catch (err) {
             failure = err;
         } finally {
@@ -534,7 +534,7 @@
                 return 0;
             }
             /*
-             * Release the group, then delete only Mullion's own items, so the
+             * Release the group, then delete only GridComposer's own items, so the
              * user's artwork stays. The children are collected first because
              * ungroup's return value is not relied on.
              */
@@ -574,7 +574,7 @@
 
     /*
      * Hands a grid the user has edited back to them: the labels come off, so
-     * Mullion stops treating it as its own and never deletes it.
+     * GridComposer stops treating it as its own and never deletes it.
      */
     function releaseEntry(entry) {
         var item = entry.item;
@@ -781,7 +781,7 @@
     /*
      * Colours are added to the document's swatches so repeated grids share one,
      * which means they outlive the grids unless they are cleaned up. Every colour
-     * Mullion added is removed once no grid is left to use it.
+     * GridComposer added is removed once no grid is left to use it.
      */
     function removeUnusedSwatches(doc) {
         var colors;
@@ -792,7 +792,7 @@
         }
         for (var i = colors.length - 1; i >= 0; i--) {
             var name = probe(colors[i], "name");
-            if (typeof name === "string" && name.substr(0, 8) === "Mullion ") {
+            if (typeof name === "string" && name.substr(0, 8) === "GridComposer ") {
                 try {
                     colors[i].remove();
                 } catch (e2) {
@@ -1144,7 +1144,7 @@
 
     // Finds or creates an RGB swatch named for the color, so repeated grids share one swatch.
     function swatchFor(doc, hex) {
-        var name = "Mullion " + hex.toUpperCase();
+        var name = "GridComposer " + hex.toUpperCase();
         var color = doc.colors.itemByName(name);
         if (color.isValid) {
             return color;
@@ -1203,7 +1203,7 @@
         var strokeType = strokeStyleNamed(doc, requested);
         if (!strokeType && s.lineStyle !== "solid") {
             throw new M.HostError("UNSUPPORTED",
-                "This InDesign doesn't have a " + s.lineStyle + " stroke style Mullion recognises. Choose solid lines, or add a " +
+                "This InDesign doesn't have a " + s.lineStyle + " stroke style GridComposer recognises. Choose solid lines, or add a " +
                 s.lineStyle + " stroke style to the document.");
         }
         return {
@@ -1371,11 +1371,11 @@
             }
         } catch (e) {
             /*
-             * Labels are how Mullion knows what is its own. Something it cannot
+             * Labels are how GridComposer knows what is its own. Something it cannot
              * label it must not draw, or Clear could never remove it.
              */
             throw new M.HostError("UNSUPPORTED",
-                "InDesign would not let Mullion mark this grid as its own, so it was not drawn. Try a different output than guides.");
+                "InDesign would not let GridComposer mark this grid as its own, so it was not drawn. Try a different output than guides.");
         }
     }
 

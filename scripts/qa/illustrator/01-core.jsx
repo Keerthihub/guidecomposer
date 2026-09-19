@@ -1,5 +1,5 @@
 /*
- * Mullion live QA, part 01: generate, undo, replace, clear, outputs, artboards, previews, construction
+ * GridComposer live QA, part 01: generate, undo, replace, clear, outputs, artboards, previews, construction
  *
  * Runs against a real Illustrator. Every test works in documents it creates and
  * closes; nothing the user has open is touched. Run all parts with
@@ -58,7 +58,7 @@
     }
     function countItems(doc) { return doc.pageItems.length; }
     function gridLayer(doc) {
-        for (var i = 0; i < doc.layers.length; i++) { if (doc.layers[i].name === "Mullion grids") return doc.layers[i]; }
+        for (var i = 0; i < doc.layers.length; i++) { if (doc.layers[i].name === "GridComposer grids") return doc.layers[i]; }
         return null;
     }
     function ownedGroups(doc) {
@@ -69,7 +69,7 @@
                 if (gs[g].parent.typename !== "Layer") continue;
                 var tags = gs[g].tags, owner = null;
                 for (var t = 0; t < tags.length; t++) if (tags[t].name === "MullionOwner") owner = tags[t].value;
-                if (owner === "com.mullion.panel") out.push(gs[g]);
+                if (owner === "com.keerthi.gridcomposer") out.push(gs[g]);
             }
         }
         return out;

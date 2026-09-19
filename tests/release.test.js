@@ -16,10 +16,15 @@ test("manifest is well formed and every referenced file exists", () => {
     assert.deepEqual(checks.checkManifest(), []);
 });
 
-test("manifest targets Illustrator 2022+ and InDesign 2022+ panels without Node.js", () => {
+test("manifest targets Illustrator 2022+ panels without Node.js, and promises no host it has not been run in", () => {
     const manifest = fs.readFileSync(path.join(checks.ROOT, "CSXS/manifest.xml"), "utf8");
     assert.match(manifest, /<Host Name="ILST" Version="\[26\.0,99\.9\]"\/>/);
-    assert.match(manifest, /<Host Name="IDSN" Version="\[17\.0,99\.9\]"\/>/);
+    // InDesign is written and tested against a simulated InDesign, but has never
+    // been run in InDesign. Declaring IDSN would put the panel in front of users
+    // on the strength of a model. Delete this assertion the day
+    // `npm run qa:indesign` passes in a real copy — not before.
+    const hosts = [...manifest.matchAll(/<Host Name="([A-Z]+)"/g)].map((m) => m[1]);
+    assert.deepEqual(hosts, ["ILST"], "this release ships Illustrator only");
     assert.match(manifest, /<RequiredRuntime Name="CSXS" Version="11\.0"\/>/);
     assert.match(manifest, /<Type>Panel<\/Type>/);
     assert.doesNotMatch(manifest, /enable-nodejs/);
@@ -48,6 +53,17 @@ test("build output contains only production files", () => {
             assert.ok(files.includes(required), `missing ${required}`);
         }
         assert.ok(!files.some((f) => f.startsWith("tests/") || f === ".debug" || f.startsWith("scripts/")));
+
+        // The package ships an adapter for every host the manifest declares,
+        // and for no host it does not. An adapter for an undeclared host can
+        // never be loaded, and tells anyone who unzips the .zxp that we support
+        // an application we have not run in.
+        for (const host of checks.declaredHosts()) {
+            assert.ok(files.includes(checks.HOST_ADAPTERS[host]), `${host} is declared but its adapter is missing`);
+        }
+        for (const adapter of checks.unusedAdapters()) {
+            assert.ok(!files.includes(adapter), `${adapter} ships for a host the manifest does not declare`);
+        }
     } finally {
         fs.rmSync(out, { recursive: true, force: true });
     }

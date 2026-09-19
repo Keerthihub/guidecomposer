@@ -1,15 +1,13 @@
-# Mullion
+# GridComposer
 
 A layout-grid panel for Adobe Illustrator and Adobe InDesign.
 
-Mullion draws column, modular, and baseline grids, classic grid systems, composition guides, and patterns, on artboards, pages, or inside selected objects. It draws construction lines around logos, checks and snaps artwork to the grid, and ships with a visual library of 128 layouts. Grids live on their own layer and carry ownership tags, so previews, regenerating, and clearing never touch your artwork.
+GridComposer draws column, modular, and baseline grids, classic grid systems, composition guides, and patterns, on artboards, pages, or inside selected objects. It draws construction lines around logos, checks and snaps artwork to the grid, and ships with a visual library of 128 layouts. Grids live on their own layer and carry ownership tags, so previews, regenerating, and clearing never touch your artwork.
 
-<!-- placeholder-name-note -->
-> **Mullion is a placeholder name.** Check trademarks before you publish, then run `npm run rename` (see [Renaming](#renaming)).
-<!-- /placeholder-name-note -->
 
-- Platform: CEP panel extension (Illustrator has no UXP support; one panel serves both apps)
-- Declared support: Illustrator 2022 (26.0) or later; InDesign 2022 (17.0) or later; macOS and Windows. **The declared range is wider than what has been run** — see [Verification status](#verification-status), and give customers [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) instead of that table.
+- Platform: CEP panel extension (Illustrator has no UXP support)
+- Declared support: Illustrator 2022 (26.0) or later; macOS and Windows. **The declared range is wider than what has been run** — see [Verification status](#verification-status), and give customers [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) instead of that table.
+- **This release ships Illustrator only.** The InDesign adapter, its tests and its QA script stay in the tree and stay green, but `CSXS/manifest.xml` declares `ILST` alone, so the panel does not appear in InDesign. Declaring `IDSN` is gated on `npm run qa:indesign` passing in a real InDesign — see the InDesign row below.
 - No network access, no accounts, no Node.js inside the panel
 
 This file is for whoever works on the code. Customer-facing documentation lives
@@ -87,23 +85,23 @@ whenever the code changes, and never let it drift into marketing copy).
 | Layout library | `tests/layouts.test.js` builds every one of the 128 layouts (10 categories) — count checked against `shared/layouts.js` | — |
 | Artboard formats | 29 formats in `shared/formats.js`, exercised by the resize tests — count checked against the source | — |
 | Illustrator host | Tests against a fake Illustrator DOM, **and** `npm run qa:illustrator` — 84 checks in a running Illustrator, in documents it creates and closes: generate, undo, replace, clear, rescue, previews, construction, artboards with negative coordinates, CMYK, limits, locked and hidden layers, error paths, and ownership after the user deletes an artboard, groups a grid, moves artwork or edits a grid | Last full run: Illustrator 30.8.1, macOS 26.4.1, Apple Silicon — 84 checks, 0 failures, including a 20,000-item document (status 5 ms, preview tick 216 ms, generate 34 ms). Re-run it yourself; that is what the script is for |
-| Undo in Illustrator | `npm run qa:illustrator` checks that one Undo reverses exactly one Mullion action and leaves the user's artwork alone | — |
-| InDesign host | Tests against a strict fake InDesign DOM, including a dry run of the real QA script (`tests/indesign-qa.test.js`): 31 checks covering text selections, localised stroke names, facing pages, the baseline reference point, page insertion, master spreads, guides, rollback and a 200-page document — all passing against the model | Nothing in InDesign itself. **InDesign has still never been run.** `npm run qa:indesign` runs those same 31 checks in a real InDesign; until it does, label InDesign beta or leave it out |
+| Undo in Illustrator | `npm run qa:illustrator` checks that one Undo reverses exactly one GridComposer action and leaves the user's artwork alone | — |
+| InDesign host | Tests against a strict fake InDesign DOM, including a dry run of the real QA script (`tests/indesign-qa.test.js`): 31 checks covering text selections, localised stroke names, facing pages, the baseline reference point, page insertion, master spreads, guides, rollback and a 200-page document — all passing against the model | Nothing in InDesign itself. **InDesign has still never been run, and is therefore not declared in the manifest and does not ship.** `npm run qa:indesign` runs those same 31 checks in a real InDesign; when it passes, add `IDSN` back to the manifest and to `tests/release.test.js` |
 | Panel | `npm run test:ui` — headless Chrome smoke test of every control and all three modes, in all four brightness themes, and down to the smallest panel the manifest allows. CI runs it on Ubuntu, macOS **and Windows** runners | Headless Chrome is not CEP's embedded Chromium inside a host app. The panel has never been opened in Illustrator on Windows |
 | Windows | Unit tests, build and panel smoke test all run on a Windows runner in CI | Nothing. No one has installed the panel in Illustrator or InDesign on Windows |
 | Rename tool | `npm run check` plus the **Rename rehearsal** CI job, which copies the whole tree, renames it, and re-runs the ES3 check, the tests, the build and the panel smoke test against the copy | Never run with the real final name (which does not exist yet) |
 | Signing | Workflow written, with the signing tool pinned by commit and verified by SHA-256 | Nothing. **No package has ever been signed**, so no one has installed a signed `.zxp`, and the update and uninstall paths are unobserved |
 | Installation, update, uninstall | — | Nothing. See step 7 of [docs/LAUNCH-CHECKLIST.md](docs/LAUNCH-CHECKLIST.md) |
 
-**Host version ranges.** `CSXS/manifest.xml` declares `ILST [26.0,99.9]` and
-`IDSN [17.0,99.9]`. That is far wider than the single Illustrator version
-anything has been run in, because CEP has no "and later" syntax. Narrow it, or
-be clear in the listing that untested versions are untested.
+**Host version ranges.** `CSXS/manifest.xml` declares `ILST [26.0,99.9]`, and
+nothing else. That is far wider than the single Illustrator version anything has been
+run in, because CEP has no "and later" syntax. Narrow it, or be clear in the
+listing that untested versions are untested.
 
 ## Project layout
 
 ```text
-CSXS/manifest.xml             Extension manifest (hosts ILST and IDSN, panel geometry, icons)
+CSXS/manifest.xml             Extension manifest (host ILST, panel geometry, icons)
 client/index.html             Panel markup
 client/styles.css             Panel styles; theme tokens are set from the host's colors
 client/app.js                 Panel controller: bridge, queue, preview, library, presets
@@ -175,7 +173,7 @@ Development builds are unsigned, so the apps must be told to allow them. The ins
 **Then:**
 
 1. Quit and restart Illustrator or InDesign.
-2. Choose **Window > Extensions > Mullion**. Some recent versions label this submenu **Extensions (Legacy)**.
+2. Choose **Window > Extensions > GridComposer**. Some recent versions label this submenu **Extensions (Legacy)**.
 3. Dock the panel. It remembers settings between sessions.
 4. Open **More > Draw test line**. A line across the artboard or page confirms everything is connected. **Clear** removes it.
 
@@ -239,7 +237,7 @@ host/<app>-adapter.jsx ── grid layer ─ tagged group ─ paths, guides, or 
 | `preview` | `{ settings, target, mode }` | Replaces all previews; in replace mode, hides the grids it would replace |
 | `clearPreview` | none | Removes previews from every open document and shows hidden grids again |
 | `generate` | `{ settings, target, mode }` | Draws a grid in each target area; `mode: "add"` keeps existing grids |
-| `clear` | `{ target }` | Removes Mullion grids from target artboards, or from inside selected objects |
+| `clear` | `{ target }` | Removes GridComposer grids from target artboards, or from inside selected objects |
 | `setGridLayer` | `{ visible?, locked? }` | Shows, hides, locks, or unlocks the grid layer |
 | `resizeArtboards` | `{ width, height, units, target }` | Resizes artboards/pages, keeping the top-left corner |
 | `alignSelection` | `{ settings, action }` | `check`, `select` off-grid objects, or `snap` them to grid lines |
@@ -253,15 +251,15 @@ Error codes: `NOT_READY`, `NO_DOCUMENT`, `NO_SELECTION`, `NO_TEXT`, `INVALID_SET
 
 **Ownership: why Clear is safe.**
 
-- Every grid is a group (InDesign: group or guides) tagged with owner, kind, artboard, and region. Every item Mullion draws carries the owner id.
+- Every grid is a group (InDesign: group or guides) tagged with owner, kind, artboard, and region. Every item GridComposer draws carries the owner id.
 - Only tagged grids are removed. Names are never used to decide what to delete.
-- Before a grid is removed, anything inside it that Mullion didn't draw (artwork dragged in) is moved out, keeping its lock and visibility.
+- Before a grid is removed, anything inside it that GridComposer didn't draw (artwork dragged in) is moved out, keeping its lock and visibility.
 - Locked or hidden layers are unlocked for the change and restored.
 - The grid layer is deleted only when completely empty, and never when it is the document's last layer.
 
 `tests/host.test.js` and `tests/indesign.test.js` prove these rules against fake DOMs that enforce the apps' lock rules; the Illustrator scenarios also ran in Illustrator 30.8.1.
 
-**Undo.** Illustrator records each Mullion action as one undo step (measured). The InDesign adapter wraps each action in `app.doScript(..., UndoModes.ENTIRE_SCRIPT)` for the same result.
+**Undo.** Illustrator records each GridComposer action as one undo step (measured). The InDesign adapter wraps each action in `app.doScript(..., UndoModes.ENTIRE_SCRIPT)` for the same result.
 
 **Preview.** Changes are debounced by 200 ms; host calls run one at a time and pending previews collapse to the latest settings. Generate and Clear turn preview off.
 

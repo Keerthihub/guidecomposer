@@ -9,7 +9,7 @@
 #   defaults delete com.adobe.CSXS.12 PlayerDebugMode   (repeat for 11 and 13)
 set -euo pipefail
 
-ID="com.mullion.panel"
+ID="com.keerthi.gridcomposer"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 EXT_DIR="$HOME/Library/Application Support/Adobe/CEP/extensions"
 LINK="$EXT_DIR/$ID"
@@ -37,4 +37,4 @@ fi
 ln -sfn "$ROOT" "$LINK"
 
 echo "Linked $LINK -> $ROOT"
-echo "Restart Illustrator or InDesign, then open Window > Extensions > Mullion."
+echo "Restart Illustrator or InDesign, then open Window > Extensions > GridComposer."

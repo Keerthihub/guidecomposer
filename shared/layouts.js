@@ -1,5 +1,5 @@
 /*
- * Mullion layout library.
+ * GridComposer layout library.
  *
  * Each layout sets layout fields only (grid type, counts, gutters, margins,
  * units); appearance such as color and line style stays as the user set it.

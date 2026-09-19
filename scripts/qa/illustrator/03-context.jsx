@@ -1,5 +1,5 @@
 /*
- * Mullion live QA, part 03: the user's selection, layers and preferences are left as they were
+ * GridComposer live QA, part 03: the user's selection, layers and preferences are left as they were
  *
  * Runs against a real Illustrator. Every test works in documents it creates and
  * closes; nothing the user has open is touched. Run all parts with
@@ -61,13 +61,13 @@
         var g = call("generate", { settings: COLS, target: { mode: "active" } });
         record("generating keeps the user's selection", g.ok && doc.selection.length === beforeSel && doc.selection.length === 1 && doc.selection[0].name === "keep me", "selection after generate=" + doc.selection.length + (doc.selection.length ? " (" + doc.selection[0].name + ")" : ""));
         record("generating keeps the user's active layer", doc.activeLayer.name === "Artwork", "activeLayer=" + doc.activeLayer.name);
-        record("grid layer is added last, not on top of the user's layer order expectations", doc.layers[0].name === "Mullion grids" || doc.layers[doc.layers.length - 1].name === "Mullion grids", "layers=" + (function () { var n = []; for (var i = 0; i < doc.layers.length; i++) n.push(doc.layers[i].name); return n.join(","); })());
+        record("grid layer is added last, not on top of the user's layer order expectations", doc.layers[0].name === "GridComposer grids" || doc.layers[doc.layers.length - 1].name === "GridComposer grids", "layers=" + (function () { var n = []; for (var i = 0; i < doc.layers.length; i++) n.push(doc.layers[i].name); return n.join(","); })());
         var beforeUnits = app.preferences.getIntegerPreference("rulerType");
         call("generate", { settings: { type: "columns", columns: 6, units: "mm", columnGutter: 4, marginTop: 10, marginRight: 10, marginBottom: 10, marginLeft: 10 }, target: { mode: "active" } });
         record("app ruler preference untouched", app.preferences.getIntegerPreference("rulerType") === beforeUnits, "rulerType=" + app.preferences.getIntegerPreference("rulerType"));
         record("coordinate system restored", app.coordinateSystem === CoordinateSystem.DOCUMENTCOORDINATESYSTEM || app.coordinateSystem === CoordinateSystem.ARTBOARDCOORDINATESYSTEM, "coordinateSystem=" + app.coordinateSystem);
         // undo naming: one undo must undo the whole grid, twice must not eat the user's own edit
-        // One undo reverses one Mullion action: the last generate replaced a grid,
+        // One undo reverses one GridComposer action: the last generate replaced a grid,
         // so undoing it brings that grid back, and the user's art is untouched.
         var itemsWithGrid = doc.pageItems.length;
         app.undo(); app.redraw();

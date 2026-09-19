@@ -1,5 +1,5 @@
 /*
- * Mullion panel controller.
+ * GridComposer panel controller.
  *
  * Runs in CEP's embedded Chromium (88+, Illustrator 2022 and later). Opened in
  * an ordinary browser it switches to a mock host so the UI can be developed
@@ -234,7 +234,7 @@
             const result = parseHostResponse(raw);
             // Illustrator can reset its script engine (for example after running
             // another extension's script). Every endpoint catches its own errors,
-            // so these two signals mean Mullion itself is gone: boot and retry once.
+            // so these two signals mean GridComposer itself is gone: boot and retry once.
             const engineReset = raw === "EvalScript error." || (result.error && result.error.code === "NOT_READY");
             if (!result.ok && engineReset) {
                 const rebooted = await boot();
@@ -1318,7 +1318,7 @@
             showRangeError(error.message);
         }
         if (error.detail && window.console) {
-            console.warn("[Mullion] host detail:", error.detail);
+            console.warn("[GridComposer] host detail:", error.detail);
         }
     }
 
@@ -2437,7 +2437,7 @@
         if (version !== PANEL_VERSION && version !== offeredVersion) {
             offeredVersion = version;
             // A notice, so a background refresh or a routine message can't lose it.
-            sayNotice("Mullion " + version + " is installed; this panel is still running " + PANEL_VERSION + ".",
+            sayNotice("GridComposer " + version + " is installed; this panel is still running " + PANEL_VERSION + ".",
                 "warning", { label: "Reload panel", run: () => window.location.reload() });
         }
     }
@@ -2671,7 +2671,7 @@
                 : areaWords(data.targetArtboards);
         let message = data.removed
             ? "Cleared " + plural(data.removed, "grid", "grids") + " from " + where + "."
-            : "No Mullion grids to clear on " + where + ".";
+            : "No GridComposer grids to clear on " + where + ".";
         if (data.rescued) {
             message += " Kept " + plural(data.rescued, "item", "items") + " you had added to a grid; " +
                 (data.rescued === 1 ? "it is" : "they are") + " now directly on the layer.";
@@ -2731,7 +2731,7 @@
             return;
         }
         if (!response.data.found) {
-            say("No Mullion grid on this " + nouns().one + " to read settings from.");
+            say("No GridComposer grid on this " + nouns().one + " to read settings from.");
             return;
         }
         applySettings(settingsFromStored(response.data.settings), "Loaded the settings that drew this grid.");
@@ -2913,8 +2913,8 @@
         // A file version this panel doesn't know may mean the settings are
         // written differently; importing it anyway would make silent nonsense.
         if (data.version !== PRESET_FILE_VERSION) {
-            say("This presets file is version " + JSON.stringify(data.version) + "; Mullion " + PANEL_VERSION +
-                " reads version " + PRESET_FILE_VERSION + " files. Update Mullion, or export the presets again from the panel that wrote them.", "error");
+            say("This presets file is version " + JSON.stringify(data.version) + "; GridComposer " + PANEL_VERSION +
+                " reads version " + PRESET_FILE_VERSION + " files. Update GridComposer, or export the presets again from the panel that wrote them.", "error");
             return;
         }
         const presets = loadPresets();
@@ -3647,7 +3647,7 @@
         const lengths = ["columnGutter", "rowGutter", "marginTop", "marginRight", "marginBottom", "marginLeft"]
             .map((name) => name + " " + formatNumber(s[name])).join(", ");
         return [
-            "Mullion panel " + PANEL_VERSION + (hostVersion && hostVersion !== PANEL_VERSION ? " (installed files: " + hostVersion + ")" : ""),
+            "GridComposer panel " + PANEL_VERSION + (hostVersion && hostVersion !== PANEL_VERSION ? " (installed files: " + hostVersion + ")" : ""),
             "Host: " + (app.name || "unknown") + " " + (app.version || "") + " (" + (hostStatus.host || "illustrator") + "), bridge " + bridge.kind,
             "OS: " + (navigator.platform || "unknown") + " — " + navigator.userAgent,
             "Document: " + (hostStatus.hasDocument
@@ -3694,7 +3694,7 @@
         } else {
             say("Couldn't reach the clipboard. The diagnostics are in the panel's console (Help > Debug).", "error");
             if (window.console) {
-                console.log("[Mullion] diagnostics\n" + text);
+                console.log("[GridComposer] diagnostics\n" + text);
             }
         }
     }
@@ -3974,7 +3974,7 @@
 
     function init() {
         if (!core) {
-            say("Mullion is missing its grid engine. Reinstall the extension.", "error");
+            say("GridComposer is missing its grid engine. Reinstall the extension.", "error");
             return;
         }
         applyTheme(bridge.skin());

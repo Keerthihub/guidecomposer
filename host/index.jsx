@@ -1,5 +1,5 @@
 /*
- * Mullion host entry point (ExtendScript, ES3 only).
+ * GridComposer host entry point (ExtendScript, ES3 only).
  *
  * Loaded once by the manifest's ScriptPath, then booted by the panel with the
  * extension's root folder so dependencies can be loaded by absolute path.
@@ -14,7 +14,7 @@ $.global.Mullion = $.global.Mullion || {};
 
 (function (M) {
     M.VERSION = "0.1.0";
-    M.OWNER_ID = "com.mullion.panel";
+    M.OWNER_ID = "com.keerthi.gridcomposer";
     M.ready = false;
 
     // The adapter is chosen by host application; everything else is shared.
@@ -89,7 +89,7 @@ $.global.Mullion = $.global.Mullion || {};
     function endpoint(fn) {
         return function (encoded) {
             if (!M.ready) {
-                return '{"ok":false,"error":{"code":"NOT_READY","message":"Mullion is still starting. Try again in a moment.","fields":[]}}';
+                return '{"ok":false,"error":{"code":"NOT_READY","message":"GridComposer is still starting. Try again in a moment.","fields":[]}}';
             }
             try {
                 var payload = decodePayload(encoded);
@@ -116,7 +116,7 @@ $.global.Mullion = $.global.Mullion || {};
                 var file = new File(root + "/" + relative);
                 if (!file.exists) {
                     return '{"ok":false,"error":{"code":"MISSING_FILE","message":' +
-                        quote("Mullion is missing " + relative + ". Reinstall the extension.") + ',"fields":[]}}';
+                        quote("GridComposer is missing " + relative + ". Reinstall the extension.") + ',"fields":[]}}';
                 }
                 $.evalFile(file);
             }
@@ -136,7 +136,7 @@ $.global.Mullion = $.global.Mullion || {};
             return respond({ version: M.VERSION, host: M.adapter.HOST, hostVersion: hostVersion, schema: M.adapter.SCHEMA || 1 });
         } catch (err) {
             return '{"ok":false,"error":{"code":"BOOT_FAILED","message":' +
-                quote("Mullion could not start: " + (err && err.message ? err.message : err)) + ',"fields":[]}}';
+                quote("GridComposer could not start: " + (err && err.message ? err.message : err)) + ',"fields":[]}}';
         }
     };
 
@@ -493,7 +493,7 @@ $.global.Mullion = $.global.Mullion || {};
         }),
 
         // Draws a grid in each target area and removes any preview. By default it
-        // replaces the Mullion grids already in those areas; mode "add" keeps
+        // replaces the GridComposer grids already in those areas; mode "add" keeps
         // them so grid types can be combined.
         // Payload: { settings, target, mode: "replace" (default) | "add" }
         generate: endpoint(function (payload) {
@@ -522,7 +522,7 @@ $.global.Mullion = $.global.Mullion || {};
             return summary(doc, built, { replaced: replaced.removed, rescued: replaced.rescued, kept: replaced.kept });
         }),
 
-        // Removes Mullion grids (preview and generated). Artboard targets clear
+        // Removes GridComposer grids (preview and generated). Artboard targets clear
         // everything on those artboards, including grids inside objects there;
         // the selection target clears the grids inside the selected objects.
         // Payload: { target }
@@ -570,7 +570,7 @@ $.global.Mullion = $.global.Mullion || {};
             });
         }),
 
-        // Shows/hides or locks/unlocks the Mullion grids layer.
+        // Shows/hides or locks/unlocks the GridComposer grids layer.
         // Payload: { visible?: boolean, locked?: boolean }
         setGridLayer: endpoint(function (payload) {
             var doc = requireDocument();

@@ -1,14 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ExtensionManifest Version="7.0" ExtensionBundleId="com.mullion.panel" ExtensionBundleVersion="0.1.0" ExtensionBundleName="Mullion" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<ExtensionManifest Version="7.0" ExtensionBundleId="com.keerthi.gridcomposer" ExtensionBundleVersion="0.1.0" ExtensionBundleName="GridComposer" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
     <ExtensionList>
-        <Extension Id="com.mullion.panel.main" Version="0.1.0"/>
+        <Extension Id="com.keerthi.gridcomposer.main" Version="0.1.0"/>
     </ExtensionList>
     <ExecutionEnvironment>
         <HostList>
-            <!-- Illustrator 2022 (26.0) and InDesign 2022 (17.0) and later: CEP 11 / Chromium 88.
-                 Narrow these to the versions you have tested. -->
+            <!-- Illustrator 2022 (26.0) and later: CEP 11 / Chromium 88.
+                 InDesign ships in a later release. Its adapter and its QA script
+                 are in the tree and tested against a simulated InDesign, but no
+                 one has run them in InDesign, so IDSN is not declared here: an
+                 undeclared host simply does not show the panel, which is the
+                 honest behaviour until it has been run. To ship it, add a Host
+                 entry named IDSN with range [17.0,99.9] alongside this one.
+                 (Written out rather than shown as a tag: a commented-out tag
+                 still looks like a declaration to anything parsing this file.) -->
             <Host Name="ILST" Version="[26.0,99.9]"/>
-            <Host Name="IDSN" Version="[17.0,99.9]"/>
         </HostList>
         <LocaleList>
             <Locale Code="All"/>
@@ -18,7 +24,7 @@
         </RequiredRuntimeList>
     </ExecutionEnvironment>
     <DispatchInfoList>
-        <Extension Id="com.mullion.panel.main">
+        <Extension Id="com.keerthi.gridcomposer.main">
             <DispatchInfo>
                 <Resources>
                     <MainPath>./client/index.html</MainPath>
@@ -30,7 +36,7 @@
                 </Lifecycle>
                 <UI>
                     <Type>Panel</Type>
-                    <Menu>Mullion</Menu>
+                    <Menu>GridComposer</Menu>
                     <Geometry>
                         <Size>
                             <Height>680</Height>
