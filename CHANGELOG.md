@@ -62,6 +62,11 @@ First release candidate.
 - Layout library: 128 layouts in ten categories, led by Systems, with icon thumbnails drawn on the active artboard, search, and suggestions for the artboard's shape. Proportional layouts size margins and gutters to the page.
 - Saved presets, with export and import as files.
 
+### Editing fields
+
+- Illustrator swallows the ordinary editing shortcuts before a panel sees them, so Select All, Copy, Paste, Cut and Undo did nothing inside a field: selecting "12" and typing 8 gave "128", and the field felt stuck. The panel now claims those keys from the host.
+- Clicking or tabbing into a number field selects what is in it, so typing replaces the number. Fields you type a list into keep the caret where you put it.
+
 ### Speed
 
 - Previewing redraws on every keystroke, and used to search the whole document each time to find what to remove. A live preview now remembers the grids it drew and the grids it hid, and ends them by reference. On a 20,000-item document, each preview while typing went from 216 ms to 36 ms, Generate from 256 ms to 34 ms, and a preview with three documents open from 573 ms to 22 ms.

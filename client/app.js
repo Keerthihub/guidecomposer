@@ -177,6 +177,30 @@
         const encodedRoot = encodeURIComponent(cs.getSystemPath(SystemPath.EXTENSION));
         let booting = null;
 
+        /*
+         * Illustrator swallows the ordinary editing shortcuts before a panel
+         * ever sees them, so Select All, Copy, Paste, Cut and Undo do nothing
+         * inside a field: select a number, type, and the digits append instead
+         * of replacing. A panel has to ask for the keys it wants.
+         */
+        function claimEditingShortcuts() {
+            const keys = [];
+            // A, C, V, X, Z with Command (macOS) and with Control (Windows).
+            [65, 67, 86, 88, 90].forEach((keyCode) => {
+                keys.push({ keyCode, metaKey: true });
+                keys.push({ keyCode, ctrlKey: true });
+                keys.push({ keyCode, metaKey: true, shiftKey: true }); // Redo
+                keys.push({ keyCode, ctrlKey: true, shiftKey: true });
+            });
+            try {
+                cs.registerKeyEventsInterest(JSON.stringify(keys));
+            } catch (e) {
+                // Older hosts may not offer it; the fields still work, they just
+                // need the mouse to select what is in them.
+            }
+        }
+        claimEditingShortcuts();
+
         function evalScript(script) {
             return new Promise((resolve) => cs.evalScript(script, resolve));
         }
@@ -3495,6 +3519,34 @@
     }
 
     // Shift + arrow keys step number fields by ten.
+    /*
+     * Clicking or tabbing into a small numeric field selects what is in it, so
+     * typing replaces the number rather than adding digits to it. This is what
+     * Illustrator's own panels do, and it is the difference between "I can't
+     * edit this" and "I typed 8".
+     */
+    function selectOnFocus(event) {
+        const input = event.target;
+        if (!input || input.form !== els.form) {
+            return;
+        }
+        if (input.type !== "number" && input.type !== "text") {
+            return;
+        }
+        // Long text fields (column widths, preset names) keep the caret where
+        // the user put it.
+        if (input.name === "columnRatios" || input.name === "rowRatios") {
+            return;
+        }
+        window.setTimeout(() => {
+            try {
+                input.select();
+            } catch (e) {
+                // Some input types refuse selection; nothing is lost.
+            }
+        }, 0);
+    }
+
     function onFieldKeydown(event) {
         const input = event.target;
         if (!event.shiftKey || input.type !== "number" || (event.key !== "ArrowUp" && event.key !== "ArrowDown")) {
@@ -3649,6 +3701,7 @@
             }
         });
         els.form.addEventListener("keydown", onFieldKeydown);
+        els.form.addEventListener("focusin", selectOnFocus);
         els.form.addEventListener("submit", (event) => event.preventDefault());
         bindSteppers();
 

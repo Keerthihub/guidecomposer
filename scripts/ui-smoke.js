@@ -204,6 +204,20 @@ async function main() {
         await evaluate(setField("columnGutter", "12"));
         check(await evaluate(text("err-columnGutter")) === "", "error clears when fixed");
 
+        // Clicking into a number field selects what is in it, so typing replaces
+        // the number. Without this, and without the editing shortcuts the panel
+        // claims from the host, "12" becomes "128" and the field feels stuck.
+        await evaluate(`(() => { const el = document.querySelector('#settings [name=columns]'); el.value = "12"; el.dispatchEvent(new Event("input", { bubbles: true })); el.blur(); })()`);
+        await evaluate(`document.querySelector('#settings [name=columns]').focus()`);
+        await sleep(100);
+        check(await evaluate(`(() => { const el = document.querySelector('#settings [name=columns]'); return el.selectionStart === 0 && el.selectionEnd === String(el.value).length; })()`) === true ||
+            await evaluate(`(() => { const el = document.querySelector('#settings [name=columns]'); try { return el.selectionStart === null; } catch (e) { return true; } })()`),
+            "clicking into a number field selects what is in it");
+        await evaluate(`(() => { const el = document.querySelector('#settings [name=columnRatios]'); el.focus(); })()`);
+        await sleep(100);
+        check(await evaluate(`(() => { const el = document.querySelector('#settings [name=columnRatios]'); return el.selectionStart === el.selectionEnd; })()`) === true,
+            "a field you type a list into keeps the caret where you put it");
+
         // ---------------------------------------------------------------- steppers
         const press = (selector) => `(() => {
             const b = document.querySelector(${JSON.stringify(selector)});
