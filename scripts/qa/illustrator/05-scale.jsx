@@ -38,9 +38,36 @@
         units: "pt", strokeColor: "#E0457B", strokeWidth: 0.5, opacity: 100, output: "lines", lockLayer: false
     };
 
-    while (app.documents.length) {
-        app.documents[0].close(SaveOptions.DONOTSAVECHANGES);
+    /*
+     * Documents already open belong to the user: this harness never closes them,
+     * never saves them, and never draws in them. It works only in documents it
+     * creates itself, and closes exactly those.
+     */
+    var theirs = [];
+    for (var d = 0; d < app.documents.length; d++) {
+        theirs.push(app.documents[d]);
     }
+    function isTheirs(doc) {
+        for (var t = 0; t < theirs.length; t++) {
+            try {
+                if (theirs[t] === doc) {
+                    return true;
+                }
+            } catch (e) {
+                // A reference to a document that has since closed is not this one.
+            }
+        }
+        return false;
+    }
+    function closeOurDocuments() {
+        for (var i = app.documents.length - 1; i >= 0; i--) {
+            var doc = app.documents[i];
+            if (!isTheirs(doc)) {
+                doc.close(SaveOptions.DONOTSAVECHANGES);
+            }
+        }
+    }
+    closeOurDocuments();
 
     var doc = app.documents.add(DocumentColorSpace.RGB, 612, 792);
     var art = doc.layers[0];
@@ -84,7 +111,9 @@
     second.close(SaveOptions.DONOTSAVECHANGES);
     doc.close(SaveOptions.DONOTSAVECHANGES);
 
-    record("no documents left open", app.documents.length === 0, "open=" + app.documents.length);
+    closeOurDocuments();
+    record("every document this test opened was closed", app.documents.length === theirs.length,
+        "open before=" + theirs.length + ", open now=" + app.documents.length);
 
     var f = new File(OUT);
     f.encoding = "UTF-8";

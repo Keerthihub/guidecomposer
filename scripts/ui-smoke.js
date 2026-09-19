@@ -169,6 +169,24 @@ async function main() {
         check(await evaluate(text("appearance-summary")) === "Lines, 0.5 pt, 100%", "appearance summary");
         check(await evaluate(`document.getElementById("toggle-visible").disabled`) === true, "show/hide disabled before any grid exists");
         check(await evaluate(`document.getElementById("panel").dataset.panelMode`) === "grid", "panel opens in Grid mode");
+        // Preview is on when the panel opens: the drawing on the artboard is the
+        // explanation, so nobody has to know what Generate means first.
+        check(await evaluate(`document.getElementById("preview-toggle").checked`) === true, "preview is on when the panel opens");
+        // On, but idle: opening the panel must not put anything into a document
+        // the user has not touched.
+        await sleep(450);
+        check(await evaluate(text("status")) === "", "nothing is drawn until the user asks for something");
+        check(await evaluate(`window.__mullionTest.groupCount()`) === 0, "and the document is untouched");
+        await evaluate(setField("columns", "11"));
+        await sleep(450);
+        check(/Previewing on Artboard 1/.test(await evaluate(text("status"))), "the first change draws it, with no further asking: " + await evaluate(text("status")));
+        await evaluate(setField("columns", "12"));
+        await evaluate(`(() => { const t = document.getElementById("preview-toggle"); t.checked = false; t.dispatchEvent(new Event("change")); })()`);
+        await sleep(300);
+        await load("?theme=dark");
+        check(await evaluate(`document.getElementById("preview-toggle").checked`) === false, "turning preview off is remembered");
+        await evaluate(`(() => { const t = document.getElementById("preview-toggle"); t.checked = true; t.dispatchEvent(new Event("change")); })()`);
+        await sleep(300);
         check(await evaluate(shown("#controls")) && !(await evaluate(shown("#library"))) && !(await evaluate(shown("#construct-card"))), "Grid mode shows only grid settings");
         check(await evaluate(`Array.from(document.querySelectorAll('input[name="type"]')).map(i => i.closest("label").textContent.trim()).join("|")`) === "Columns|Modular|Baseline|Compose|Pattern", "grid types as icon buttons");
         await shoot("dark-columns");
@@ -396,7 +414,7 @@ async function main() {
         // ---------------------------------------------------------------- preview and generate
         await evaluate(`(() => { const t = document.getElementById("preview-toggle"); t.checked = true; t.dispatchEvent(new Event("change")); })()`);
         await sleep(450);
-        check(/Previewing on Artboard 1/.test(await evaluate(text("status"))), "preview runs after debounce");
+        check(/Previewing on Artboard 1/.test(await evaluate(text("status"))), "preview runs after debounce: " + await evaluate(text("status")));
         await evaluate(setField("columns", "8"));
         await evaluate(setField("columns", "9"));
         await evaluate(setField("columns", "10"));
@@ -460,23 +478,26 @@ async function main() {
         check(await evaluate(`document.getElementById("preset-select").options.length`) === 1, "preset deleted");
 
         // ---------------------------------------------------------------- layout library
-        const chip = (name) => `(() => { const i = Array.from(document.querySelectorAll("#library-chips input")).find(x => x.value === ${JSON.stringify(name)}); i.checked = true; i.dispatchEvent(new Event("change", { bubbles: true })); })()`;
+        const chip = (name) => `(() => { const s = document.getElementById("library-filter"); s.value = ${JSON.stringify(name)}; s.dispatchEvent(new Event("change", { bubbles: true })); })()`;
         await evaluate(setField("strokeColor", "#123456"));
         await evaluate(mode("layouts"));
         await sleep(150);
         check(await evaluate(shown("#library")) && !(await evaluate(shown("#settings"))) && !(await evaluate(shown("#controls"))), "Layouts mode replaces the settings area");
-        check(await evaluate(`document.getElementById("generate").disabled`) === true &&
-            await evaluate(`document.getElementById("generate").title`) === "Choose a layout, then switch to Grid to generate it.",
-            "Generate waits until a layout is picked and you return to Grid, and says so");
-        const chips = await evaluate(`Array.from(document.querySelectorAll("#library-chips input")).map(i => i.value).join("|")`);
-        check(chips === "Systems|Suggested|All|Columns|Modular|Asymmetric|Baseline|Print|Screen|Social|Composition|Patterns", "category chips: " + chips);
-        check(await evaluate(`document.querySelector("#library-chips input:checked").value`) === "Systems", "library opens on Systems");
+        check(await evaluate(`document.getElementById("generate").disabled`) === false, "Generate works straight from Layouts");
+        const groups = await evaluate(`Array.from(document.querySelectorAll("#library-filter optgroup")).map(g => g.label).join("|")`);
+        check(groups === "Simple grids|Made for a page size|Classic systems|Patterns", "the menu groups layouts in plain language: " + groups);
+        const options = await evaluate(`Array.from(document.querySelectorAll("#library-filter option")).map(o => o.textContent).join(" | ")`);
+        check(/Made for this page \(\d+\)/.test(options) && /All layouts \(128\)/.test(options), "each choice says how many layouts it holds: " + options);
+        check(await evaluate(`document.getElementById("library-filter").value`) === "Suggested", "the library opens on layouts made for this page");
+        check(await evaluate(`document.querySelectorAll("#library-chips").length`) === 0, "the old chip row is gone");
+        await evaluate(chip("Systems"));
         await sleep(300);
         const systems = await evaluate(`Array.from(document.querySelectorAll("#library-grid .tile .tile__name")).map(t => t.textContent)`);
         check(["Golden spiral", "Harmonic armature", "Dynamic rectangle", "Villard's figure", "Rule of fifths", "Compound grid 3 + 4", "Hierarchical grid", "Manuscript grid"].every((n) => systems.includes(n)), "Systems lists the grid systems (" + systems.join(", ") + ")");
         check(await evaluate(`getComputedStyle(document.querySelector("#library-grid .tile svg line, #library-grid .tile svg path")).stroke`) === await evaluate(`getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() && (() => { const d = document.createElement("div"); d.style.color = getComputedStyle(document.documentElement).getPropertyValue("--accent"); document.body.appendChild(d); const c = getComputedStyle(d).color; d.remove(); return c; })()`), "tiles draw in the panel accent");
         await shoot("dark-library-systems");
         await evaluate(chip("Suggested"));
+        await sleep(200);
         const suggested = await evaluate(`Array.from(document.querySelectorAll("#library-grid .tile")).map(t => t.dataset.layout)`);
         check(suggested.includes("letter-3"), "Letter suggestions include US Letter, 3 columns (" + suggested.join(", ") + ")");
         await sleep(300);
@@ -528,7 +549,7 @@ async function main() {
         check(await evaluate(`document.activeElement.value`) === "layouts", "focus returns to the Layouts tab");
         check(await evaluate(value("pattern")) === "dots" && await evaluate(shown('[name="patternSize"]')), "Grid mode shows the applied layout's settings");
         await evaluate(mode("layouts"));
-        check(await evaluate(`document.querySelector("#library-chips input:checked").value`) === "Patterns", "library reopens on the last category");
+        check(await evaluate(`document.getElementById("library-filter").value`) === "Patterns", "the library reopens on the last choice");
         await evaluate(chip("Modular"));
         await evaluate(`document.querySelector('#library-grid .tile[data-layout="modular-4x6"]').click()`);
         await evaluate(`document.querySelector("#status .link-button").click()`);
@@ -724,6 +745,37 @@ async function main() {
         check(await evaluate(value("opacity")) === "40" && await evaluate(text("appearance-summary")) === "Lines, 0.5 pt, 40%", "opacity slider updates the field");
         await evaluate(setField("opacity", "70"));
         check(await evaluate(`document.getElementById("opacity-slider").value`) === "70", "slider follows the field");
+        await evaluate(click("reset"));
+
+        // -------------------------------------------------------------- overlays
+        await evaluate(click("reset"));
+        await evaluate(setTarget("active"));
+        const overlayChip = (type) => `(() => { const i = document.querySelector('#overlay-types input[value=' + ${JSON.stringify(type)} + ']'); i.checked = !i.checked; i.dispatchEvent(new Event("change", { bubbles: true })); })()`;
+        const overlayOffered = await evaluate(`Array.from(document.querySelectorAll("#overlay-types input")).map(i => i.value).join("|")`);
+        check(overlayOffered === "modular|baseline|composition|pattern", "every type except the one you are drawing can be added on top: " + overlayOffered);
+
+        await evaluate(overlayChip("baseline"));
+        await sleep(200);
+        check(/column grid \+ baseline grid/.test(await evaluate(text("grid-metrics"))), "the readout names both grids: " + await evaluate(text("grid-metrics")));
+        const overlaid = await evaluate(`document.querySelectorAll("#schematic line").length`);
+        check(overlaid > 26, "the drawing shows both grids (" + overlaid + " lines, 26 for columns alone)");
+        await shoot("dark-overlay");
+
+        await evaluate(click("generate"));
+        await sleep(400);
+        check(/Added a column grid/.test(await evaluate(text("status"))), "generate draws them together: " + await evaluate(text("status")));
+        check(await evaluate(`window.__mullionTest.groupCount()`) === 2, "two grids on the artboard, one per type");
+        await evaluate(click("generate"));
+        await sleep(400);
+        check(/Replaced 2 grids/.test(await evaluate(text("status"))), "generating again replaces the whole stack: " + await evaluate(text("status")));
+        await evaluate(click("clear"));
+        await sleep(400);
+
+        // Switching the main type to one that is already an overlay drops it.
+        await evaluate(overlayChip("pattern"));
+        await evaluate(setField("type", "pattern"));
+        await sleep(200);
+        check(await evaluate(`Array.from(document.querySelectorAll("#overlay-types input")).map(i => i.value).join("|")`) === "columns|modular|baseline|composition", "a grid is never offered as an overlay of itself");
         await evaluate(click("reset"));
 
         // ------------------------------------------------- settings from the document

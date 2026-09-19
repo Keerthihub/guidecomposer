@@ -30,19 +30,46 @@
     function call(method, payload) {
         return JSON.parse(Mullion.api[method](payload === undefined ? "" : encodeURIComponent(JSON.stringify(payload))));
     }
+    /*
+     * Documents already open belong to the user: this harness never closes them,
+     * never saves them, and never draws in them. It works only in documents it
+     * creates itself, and closes exactly those.
+     */
+    var theirs = [];
+    for (var d = 0; d < app.documents.length; d++) {
+        theirs.push(app.documents[d]);
+    }
+    function isTheirs(doc) {
+        for (var t = 0; t < theirs.length; t++) {
+            try {
+                if (theirs[t] === doc) {
+                    return true;
+                }
+            } catch (e) {
+                // A reference to a document that has since closed is not this one.
+            }
+        }
+        return false;
+    }
+    function closeOurDocuments() {
+        for (var i = app.documents.length - 1; i >= 0; i--) {
+            var doc = app.documents[i];
+            if (!isTheirs(doc)) {
+                doc.close(SaveOptions.NO);
+            }
+        }
+    }
+
     // One test. A failure here is a result, not a reason to stop.
     function test(name, fn) {
-        var doc = null;
         try {
             fn();
         } catch (e) {
             record(name, false, "threw: " + e + (e.line ? " (line " + e.line + ")" : ""));
         }
-        // Leave nothing behind, whatever happened.
+        // Leave nothing behind, whatever happened — except the user's own work.
         try {
-            while (app.documents.length) {
-                app.documents[0].close(SaveOptions.NO);
-            }
+            closeOurDocuments();
         } catch (e2) {
             record(name + ": cleanup", false, "could not close documents: " + e2);
         }
@@ -336,7 +363,9 @@
         call("clearPreview", {});
     });
 
-    record("no documents left open", app.documents.length === 0, "open=" + app.documents.length);
+    closeOurDocuments();
+    record("every document this test opened was closed", app.documents.length === theirs.length,
+        "open before=" + theirs.length + ", open now=" + app.documents.length);
 
     var file = new File(OUT);
     file.encoding = "UTF-8";

@@ -365,9 +365,11 @@
                 if (!built.ok) {
                     return fail("INVALID_SETTINGS", built.errors[0].message, built.errors);
                 }
-                const before = state.groups.length;
+                // Only generated grids count as replaced; sweeping our own
+                // preview is not something to tell the user about.
+                const finals = state.groups.filter((g) => g.kind === "final" && g.construction).length;
                 state.groups = state.groups.filter((g) => g.kind !== "preview" && !(kind === "final" && g.construction));
-                const replaced = kind === "final" ? before - state.groups.length : 0;
+                const replaced = kind === "final" ? finals : 0;
                 state.groups.push({ kind, artboard: 0, construction: true });
                 state.layer = state.layer || { visible: true, locked: false };
                 return ok({ shapes: built.shapeCount, artboards: 1, metrics: built.metrics, replaced, rescued: 0, hidden: 0, status: status() });
@@ -378,14 +380,19 @@
             }
             let shapes = 0;
             let metrics = null;
+            const settings = payload.settings || {};
+            const layers = [settings].concat((settings.overlayTypes || [])
+                .map((type) => Object.assign({}, settings, { type, overlayTypes: [] })));
             for (const board of resolved.boards) {
-                const grid = core.buildGrid(board.rect, payload.settings || {}, { areaLabel: board.areaLabel });
-                if (!grid.ok) {
-                    const prefix = resolved.boards.length > 1 ? board.name + ": " : "";
-                    return fail("INVALID_SETTINGS", prefix + grid.errors[0].message, grid.errors);
+                for (const layer of layers) {
+                    const grid = core.buildGrid(board.rect, layer, { areaLabel: board.areaLabel });
+                    if (!grid.ok) {
+                        const prefix = resolved.boards.length > 1 ? board.name + ": " : "";
+                        return fail("INVALID_SETTINGS", prefix + (layer === settings ? "" : "Overlay grid: ") + grid.errors[0].message, grid.errors);
+                    }
+                    shapes += grid.shapeCount;
+                    metrics = metrics || grid.metrics;
                 }
-                shapes += grid.shapeCount;
-                metrics = metrics || grid.metrics;
             }
             const indices = resolved.boards.map((b) => b.index);
             const replacing = payload.mode !== "add";
@@ -395,13 +402,13 @@
                 state.groups = state.groups.filter((g) => indices.indexOf(g.artboard) === -1);
             }
             const replaced = before - state.groups.length;
-            resolved.boards.forEach((b) => state.groups.push({ kind, artboard: b.index, settings: payload.settings }));
+            resolved.boards.forEach((b) => layers.forEach(() => state.groups.push({ kind, artboard: b.index, settings: payload.settings })));
             state.layer = state.layer || { visible: true, locked: false };
             state.layer.visible = true;
             if (kind === "final") {
                 state.layer.locked = payload.settings.lockLayer === true;
             }
-            return ok({ shapes, artboards: resolved.boards.length, metrics, replaced, rescued: 0, hidden: 0, status: status() });
+            return ok({ shapes, artboards: resolved.boards.length, layers: layers.length, metrics, replaced, rescued: 0, hidden: 0, status: status() });
         }
 
         const handlers = {
@@ -531,6 +538,10 @@
 
         return {
             kind: "mock",
+            // How many grids are on the active artboard, for the panel tests.
+            groupCount() {
+                return state.groups.filter((g) => g.kind === "final" && g.artboard === 0).length;
+            },
             call(method, payload) {
                 const delay = stallMs || 60;
                 stallMs = 0;
@@ -790,7 +801,8 @@
         constructDetail: $("construct-detail"),
         opacitySlider: $("opacity-slider"),
         librarySearch: $("library-search"),
-        libraryChips: $("library-chips"),
+        libraryFilter: $("library-filter"),
+        overlayTypes: $("overlay-types"),
         libraryHint: $("library-hint"),
         libraryGrid: $("library-grid"),
         presetSelect: $("preset-select"),
@@ -878,6 +890,7 @@
             s[name] = field(name).value;
         });
         s.blocks = currentBlocks.map((b) => Object.assign({}, b));
+        s.overlayTypes = readOverlayTypes();
         if (core.UNITS.indexOf(s.units) !== -1) {
             LENGTH_FIELDS.forEach((name) => {
                 const exact = exactValue(name, s.units);
@@ -887,6 +900,52 @@
             });
         }
         return s;
+    }
+
+    /*
+     * Grid types drawn over the main one. They are the same five types, minus
+     * whichever is currently the main grid, so the row never offers to overlay a
+     * grid on itself.
+     */
+    const TYPE_LABELS = { columns: "Columns", modular: "Modular", baseline: "Baseline", composition: "Compose", pattern: "Pattern" };
+
+    function readOverlayTypes() {
+        const chosen = [];
+        els.overlayTypes.querySelectorAll("input:checked").forEach((input) => {
+            if (input.value !== field("type").value) {
+                chosen.push(input.value);
+            }
+        });
+        return chosen;
+    }
+
+    function writeOverlayTypes(list) {
+        const wanted = Array.isArray(list) ? list : [];
+        els.overlayTypes.querySelectorAll("input").forEach((input) => {
+            input.checked = wanted.indexOf(input.value) !== -1;
+        });
+    }
+
+    function renderOverlayTypes() {
+        const main = field("type").value;
+        const chosen = readOverlayTypes();
+        els.overlayTypes.textContent = "";
+        Object.keys(TYPE_LABELS).forEach((type) => {
+            if (type === main) {
+                return; // A grid is not an overlay of itself.
+            }
+            const label = document.createElement("label");
+            label.className = "overlay-type";
+            const input = document.createElement("input");
+            input.type = "checkbox";
+            input.value = type;
+            input.checked = chosen.indexOf(type) !== -1;
+            input.addEventListener("change", update);
+            const text = document.createElement("span");
+            text.textContent = TYPE_LABELS[type];
+            label.append(input, text);
+            els.overlayTypes.appendChild(label);
+        });
     }
 
     // Settings as stored: known keys only, numbers parsed where possible.
@@ -943,6 +1002,8 @@
             field(name).value = s[name];
         });
         currentBlocks = s.blocks;
+        renderOverlayTypes();
+        writeOverlayTypes(s.overlayTypes);
         syncSwatches();
         currentUnits = field("units").value;
         LENGTH_FIELDS.forEach((name) => rememberExact(name, s[name], currentUnits));
@@ -990,7 +1051,14 @@
     let currentBlocks = [];
     let formatSwapped = false;
     let panelMode = "grid";
+    let lastDocumentName = null;
     let previewDrawn = false; // Whether a live preview may be on the document.
+    /*
+     * Previewing is on to begin with, but it waits for the user to ask for
+     * something before it draws: opening the panel, or switching to another
+     * document, must not put anything into work the user has not touched.
+     */
+    let previewArmed = false;
     let previewQuiet = false; // The next preview resumes after Generate; it says nothing.
     let geometry = null; // Selected artwork paths, for construction lines.
     let geometryKey = "";
@@ -1030,7 +1098,24 @@
     }
 
     // Shows a status message with any number of follow-up action buttons.
+    /*
+     * Who last wrote the status line. Previewing chatters as you work, so it is
+     * allowed to replace its own messages and an empty line, never something the
+     * panel said because the user asked for it.
+     */
+    let statusSource = "user";
+
+    function sayFromPreview(message, tone) {
+        say(message, tone);
+        statusSource = "preview";
+    }
+
+    function previewMaySpeak() {
+        return !statusState.message || statusSource === "preview";
+    }
+
     function say(message, tone, actions) {
+        statusSource = "user";
         statusIsValidation = false;
         if (tone === "error" && message) {
             lastErrorMessage = message; // Kept for the diagnostics a customer sends us.
@@ -1551,7 +1636,14 @@
 
     function renderSchematic(result, rect, extra) {
         lastRender = { result, rect, extra };
-        paintGrid(els.svg, result, rect, Object.assign({ empty: !hostStatus.hasDocument }, extra || {}));
+        const options = Object.assign({ empty: !hostStatus.hasDocument }, extra || {});
+        const overlays = options.overlays || [];
+        delete options.overlays;
+        paintGrid(els.svg, result, rect, options);
+        // Overlay grids are drawn into the same picture, fainter than the main one.
+        overlays.forEach((overlay) => {
+            paintGrid(els.svg, overlay, rect, Object.assign({}, options, { append: true, dim: true }));
+        });
         els.svg.classList.toggle("schematic--editable", panelMode === "grid" && blocksEditable(result));
     }
 
@@ -1799,7 +1891,7 @@
         return s.output === "guides" ? plural(total, "guide", "guides") : plural(total, "line", "lines");
     }
 
-    function renderReadout(result, settings, rect) {
+    function renderReadout(result, settings, rect, overlays) {
         const units = core.UNITS.indexOf(settings.units) !== -1 ? settings.units : "pt";
         const width = rect[2] - rect[0];
         const height = rect[1] - rect[3];
@@ -1840,8 +1932,15 @@
             els.metrics.textContent = PATTERN_NAMES[s.pattern] + ", " + measure(m.cellSize, units);
         }
         const boards = targetState.ok ? targetState.boards.length : 0;
-        els.count.textContent = shapeWords(result) + (boards > 1 ? " × " + boards : "");
-        els.count.title = boards > 1 ? "On each of " + boards + " artboards" : "";
+        const stacked = (overlays || []).length;
+        if (stacked) {
+            // The readout names every grid that Generate will draw, in order.
+            els.metrics.textContent = [GRID_NAMES[s.type]].concat((settings.overlayTypes || []).map((t) => GRID_NAMES[t]))
+                .map((name) => name.replace(/^(a |an |set of )/, "")).join(" + ");
+        }
+        const total = (result.shapeCount || 0) + (overlays || []).reduce((sum, o) => sum + (o.shapeCount || 0), 0);
+        els.count.textContent = (stacked ? plural(total, "shape", "shapes") : shapeWords(result)) + (boards > 1 ? " × " + boards : "");
+        els.count.title = boards > 1 ? "On each of " + boards + " " + nouns().many : "";
         describeSchematic(result);
     }
 
@@ -1874,7 +1973,13 @@
         return els.targetMode.value === "selection" ? "object" : nouns().one;
     }
 
+    let lastMainType = "";
+
     function update() {
+        if (field("type").value !== lastMainType) {
+            lastMainType = field("type").value;
+            renderOverlayTypes();
+        }
         const settings = readSettings();
         syncVisibility(settings);
         syncQuickControls(settings);
@@ -1923,8 +2028,21 @@
         } else if (statusIsValidation) {
             say("");
         }
-        renderSchematic(result, rect);
-        renderReadout(result, settings, rect);
+        // Overlay grids are built from the same settings with a different type,
+        // exactly as the host will draw them.
+        const overlays = [];
+        (settings.overlayTypes || []).forEach((type) => {
+            const built = core.buildGrid(rect, Object.assign({}, settings, { type, overlayTypes: [] }), { areaLabel: currentAreaLabel() });
+            if (built.ok) {
+                overlays.push(built);
+            } else if (result.ok) {
+                // The overlay is what is wrong, so say which one.
+                say(TYPE_LABELS[type] + " overlay: " + built.errors[0].message, "error");
+                statusIsValidation = true;
+            }
+        });
+        renderSchematic(result, rect, { overlays });
+        renderReadout(result, settings, rect, overlays);
         renderAppearanceSummary(settings);
         renderBlocksSummary(result, settings);
         updateButtons();
@@ -2046,9 +2164,6 @@
         els.panel.querySelectorAll('input[name="panel-mode"]').forEach((input) => {
             input.checked = input.value === panelMode;
         });
-        if (changed && els.previewToggle.checked) {
-            setPreview(false);
-        }
         lastPreviewKey = "";
         // Messages about the previous mode's work would be misleading here.
         if (changed && !statusIsValidation) {
@@ -2106,7 +2221,7 @@
         const valid = Boolean(lastResult && lastResult.ok);
         const targetOk = targetState.ok;
         const layer = hasDoc && hostStatus.gridLayer ? hostStatus.gridLayer : { exists: false };
-        els.generate.disabled = busy || !hasDoc || !valid || !targetOk || panelMode === "layouts";
+        els.generate.disabled = busy || !hasDoc || !valid || !targetOk;
         // A disabled Generate always says why, on the button as well as in the
         // status line: a button that does nothing and explains nothing reads as
         // a broken panel.
@@ -2163,11 +2278,17 @@
             return;
         }
         const changed = status.hasDocument !== hadDocument;
+        if (status.documentName !== lastDocumentName) {
+            // Another document: nothing is drawn into it until the user asks.
+            lastDocumentName = status.documentName;
+            previewArmed = false;
+        }
         hadDocument = status.hasDocument;
         hostStatus = status;
         if (!status.hasDocument) {
             if (els.previewToggle.checked) {
-                setPreview(false, { silent: true });
+                // The panel is stopping, not the user; their choice is kept.
+                setPreview(false, { silent: true, remember: false });
             }
             /*
              * Only on the way into the no-document state. Saying it on every
@@ -2267,7 +2388,8 @@
 
     function schedulePreview(settings) {
         window.clearTimeout(previewTimer);
-        if (!hostStatus.hasDocument || !lastResult || !lastResult.ok || !targetState.ok || panelMode === "layouts") {
+        // Layouts previews too: picking a tile should show it on the page.
+        if (!previewArmed || !hostStatus.hasDocument || !lastResult || !lastResult.ok || !targetState.ok) {
             return;
         }
         const key = previewKey(settings);
@@ -2283,7 +2405,9 @@
                 previewDrawn = false;
                 queue.enqueue("clearPreview", undefined, { coalesce: true });
             }
-            say("Preview paused: " + shapes.toLocaleString("en-US") + " shapes is too many to redraw on every change. Generate draws them.", "warning");
+            if (previewMaySpeak()) {
+                sayFromPreview("Preview paused: " + shapes.toLocaleString("en-US") + " shapes is too many to redraw on every change. Generate draws them.", "warning");
+            }
             return;
         }
         const target = readTarget();
@@ -2303,12 +2427,15 @@
                     : readTarget().mode === "selection"
                     ? plural(response.data.artboards, "object", "objects")
                     : response.data.artboards > 1 ? areaWords(response.data.artboards) : hostStatus.artboard.name;
-                // A preview that resumes by itself after Generate must not
-                // overwrite the message that says what Generate did.
-                if (previewQuiet) {
+                /*
+                 * Previewing is something the panel does on its own, so it never
+                 * talks over something the user asked for: a result, a warning,
+                 * an error, or a message still offering an action.
+                 */
+                if (previewQuiet || !previewMaySpeak()) {
                     previewQuiet = false;
                 } else {
-                    say("Previewing on " + where + ".");
+                    sayFromPreview("Previewing on " + where + ".");
                 }
             } else {
                 lastPreviewKey = "";
@@ -2320,9 +2447,18 @@
     async function setPreview(on, options) {
         const silent = options && options.silent;
         els.previewToggle.checked = on;
+        if (!(options && options.remember === false)) {
+            storageWriteUi({ preview: on });
+        }
         window.clearTimeout(previewTimer);
         lastPreviewKey = "";
         if (on) {
+            previewArmed = true;
+            // Turning previewing on is a request to see what happens next, so a
+            // finished result makes way for it. An offer still on the line stays.
+            if (!silent && statusState.actions.length === 0) {
+                say("");
+            }
             update();
             return;
         }
@@ -2410,7 +2546,7 @@
         // straight back, so previewing stops here and the message says so.
         const previewing = els.previewToggle.checked;
         if (previewing) {
-            setPreview(false, { silent: true });
+            setPreview(false, { silent: true, remember: false });
         }
         queue.drop("preview");
         const target = readTarget();
@@ -2886,6 +3022,16 @@
         const resolved = layouts.resolveLayout(layout, currentRect(), currentUnits);
         const note = layout.relative ? "Margins are sized for this " + currentAreaLabel() + "." : layouts.describeArtboard(layout);
         applySettings(Object.assign(settingsInUnits(resolved.units), resolved), "Applied \u201c" + layout.name + "\u201d." + (note ? " " + note : ""));
+        /*
+         * Picking a layout should show it, not describe it. If previewing was
+         * off, it goes on here, so the artboard answers the question the tile
+         * asked. Nothing is committed until Generate.
+         */
+        previewArmed = true;
+        if (hostStatus.hasDocument && !els.previewToggle.checked) {
+            // Silent: the message about the layout that was just applied stands.
+            setPreview(true, { silent: true });
+        }
         // Actions are added to the message, never rebuilt from the status line:
         // reading it back would swallow the previous button's label.
         if (panelMode === "layouts") {
@@ -2922,6 +3068,36 @@
         observer: null
     };
 
+    /*
+     * One menu instead of a dozen chips. The wording is what a designer would
+     * say out loud, and the library's own category names sit inside the groups,
+     * so nobody has to know what "Asymmetric" means to find a layout.
+     */
+    const LIBRARY_GROUPS = [
+        { group: "", items: [
+            { value: "Suggested", label: "Made for this page" },
+            { value: "All", label: "All layouts" }
+        ] },
+        { group: "Simple grids", items: [
+            { value: "Columns", label: "Columns" },
+            { value: "Modular", label: "Rows and columns" },
+            { value: "Baseline", label: "Baselines for text" },
+            { value: "Asymmetric", label: "Uneven columns" }
+        ] },
+        { group: "Made for a page size", items: [
+            { value: "Print", label: "Print sizes" },
+            { value: "Screen", label: "Screens and web" },
+            { value: "Social", label: "Social posts" }
+        ] },
+        { group: "Classic systems", items: [
+            { value: "Systems", label: "Grid systems" },
+            { value: "Composition", label: "Composition guides" }
+        ] },
+        { group: "Patterns", items: [
+            { value: "Patterns", label: "Dots, hexagons, isometric" }
+        ] }
+    ];
+
     function libraryList() {
         const query = els.librarySearch.value.trim().toLowerCase();
         if (query) {
@@ -2938,24 +3114,43 @@
 
     function renderLibraryChips() {
         const suggestions = layouts.suggestLayouts(currentRect(), 12);
-        const names = layouts.CATEGORIES.slice(0, 1).concat(suggestions.length ? ["Suggested"] : [], ["All"], layouts.CATEGORIES.slice(1));
-        if (names.indexOf(library.category) === -1) {
-            library.category = layouts.CATEGORIES[0];
-        }
-        els.libraryChips.textContent = "";
-        names.forEach((name) => {
-            const label = document.createElement("label");
-            label.className = "chip";
-            const input = document.createElement("input");
-            input.type = "radio";
-            input.name = "library-category";
-            input.value = name;
-            input.checked = name === library.category;
-            const span = document.createElement("span");
-            span.textContent = name;
-            label.append(input, span);
-            els.libraryChips.appendChild(label);
+        const values = [];
+        els.libraryFilter.textContent = "";
+        LIBRARY_GROUPS.forEach((section) => {
+            // "Made for this page" only appears when there is something to show.
+            const items = section.items.filter((item) => item.value !== "Suggested" || suggestions.length);
+            if (!items.length) {
+                return;
+            }
+            const parent = section.group ? document.createElement("optgroup") : els.libraryFilter;
+            if (section.group) {
+                parent.label = section.group;
+            }
+            items.forEach((item) => {
+                const option = document.createElement("option");
+                option.value = item.value;
+                option.textContent = item.label + " (" + countFor(item.value, suggestions) + ")";
+                parent.appendChild(option);
+                values.push(item.value);
+            });
+            if (section.group) {
+                els.libraryFilter.appendChild(parent);
+            }
         });
+        if (values.indexOf(library.category) === -1) {
+            library.category = suggestions.length ? "Suggested" : "All";
+        }
+        els.libraryFilter.value = library.category;
+    }
+
+    function countFor(value, suggestions) {
+        if (value === "Suggested") {
+            return suggestions.length;
+        }
+        if (value === "All") {
+            return layouts.LAYOUTS.length;
+        }
+        return layouts.LAYOUTS.filter((l) => l.category === value).length;
     }
 
     function paintTile(tile) {
@@ -2996,10 +3191,12 @@
         }
         if (query) {
             els.libraryHint.textContent = plural(list.length, "layout matches", "layouts match") + " \u201c" + query + "\u201d.";
+        } else if (!hostStatus.hasDocument) {
+            els.libraryHint.textContent = "Open a document to see each layout on your own page.";
         } else if (library.category === "Suggested") {
-            els.libraryHint.textContent = "Made for artboards shaped like this one.";
+            els.libraryHint.textContent = "Layouts made for a page shaped like yours. Pick one to see it on the " + nouns().one + ".";
         } else {
-            els.libraryHint.textContent = plural(list.length, "layout", "layouts") + ". Select one to apply it; thumbnails show your artboard.";
+            els.libraryHint.textContent = "Pick one to see it on the " + nouns().one + ", then Generate to keep it.";
         }
 
         library.observer = typeof IntersectionObserver === "function"
@@ -3168,6 +3365,16 @@
         const target = event.target;
         if (!target || !target.name || target.form !== els.form) {
             return;
+        }
+        previewArmed = true;
+        /*
+         * Changing a setting makes the last result stale: "Cleared 2 grids" is
+         * no longer what the panel is doing. The line is cleared so previewing
+         * can say what is happening now. Messages still offering an action are
+         * left alone, because the offer is still good.
+         */
+        if (statusState.message && statusState.actions.length === 0 && !statusIsValidation) {
+            say("");
         }
         if (target.name === "units") {
             if (target.value === currentUnits) {
@@ -3478,8 +3685,8 @@
             update();
         });
         els.librarySearch.addEventListener("input", renderLibraryGrid);
-        els.libraryChips.addEventListener("change", (event) => {
-            library.category = event.target.value;
+        els.libraryFilter.addEventListener("change", () => {
+            library.category = els.libraryFilter.value;
             els.librarySearch.value = "";
             renderLibraryGrid();
         });
@@ -3601,6 +3808,9 @@
         syncStage();
         els.appearance.open = ui.appearanceOpen !== false;
         els.addMode.checked = ui.addMode === true;
+        // Preview is on to begin with: the panel should show what it does
+        // before anyone has to know what Generate means. The choice sticks.
+        els.previewToggle.checked = ui.preview !== false;
         library.category = typeof ui.libraryCategory === "string" ? ui.libraryCategory : "";
         library.selected = typeof ui.lastLayout === "string" ? ui.lastLayout : "";
         if (ui.target && typeof ui.target.mode === "string") {
@@ -3623,6 +3833,7 @@
                 importPresetText,
                 presetFileText,
                 diagnosticsText,
+                groupCount: () => bridge.groupCount(),
                 stall: (ms) => bridge.stall(ms),
                 setHostTimeout: (ms) => queue.setTimeout(ms)
             };

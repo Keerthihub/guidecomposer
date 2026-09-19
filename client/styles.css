@@ -252,6 +252,56 @@ select {
   font-size: 0.92em;
 }
 
+/* ---------------------------------------------------------------- overlays */
+
+.overlays {
+  padding: var(--space-2) var(--space-3) 0;
+}
+
+.overlays .field__label {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.overlays__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.overlay-type {
+  position: relative;
+}
+
+.overlay-type input {
+  position: absolute;
+  opacity: 0;
+  inset: 0;
+  margin: 0;
+}
+
+.overlay-type span {
+  display: block;
+  padding: 3px 10px;
+  border: 1px solid var(--field-border);
+  border-radius: 999px;
+  font-size: 0.92em;
+  color: var(--muted);
+  background: var(--field);
+  cursor: pointer;
+}
+
+.overlay-type input:checked + span {
+  border-color: var(--accent);
+  color: var(--accent-fg, #ffffff);
+  background: var(--accent);
+}
+
+.overlay-type input:focus-visible + span {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
 /* --------------------------------------------------------------- construct */
 
 .construct__card {
@@ -1248,11 +1298,21 @@ input[type="number"]::-webkit-outer-spin-button {
   flex: 1 1 auto;
 }
 
-.library__chips {
+.library__filter {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
+  align-items: center;
+  gap: var(--space-2);
   padding: var(--space-2) var(--space-3) 0;
+}
+
+.library__filter .field__label {
+  margin: 0;
+  flex: 0 0 auto;
+}
+
+.library__filter select {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .chip {

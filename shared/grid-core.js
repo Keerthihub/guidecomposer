@@ -77,6 +77,8 @@
 
     var DEFAULTS = {
         type: "columns",
+        // Other grid types to draw over the main one, as their own grids.
+        overlayTypes: [],
         units: "pt",
         columns: 12,
         rows: 8,
@@ -135,6 +137,7 @@
     };
 
     var FIELD_NAMES = {
+        overlayTypes: "Overlay grids",
         columns: "Columns",
         rows: "Rows",
         columnGutter: "Column gutter",
@@ -185,6 +188,15 @@
 
     function isFiniteNumber(value) {
         return typeof value === "number" && !isNaN(value) && isFinite(value);
+    }
+
+    function contains(list, value) {
+        for (var i = 0; i < list.length; i++) {
+            if (list[i] === value) {
+                return true;
+            }
+        }
+        return false;
     }
 
     function isArray(value) {
@@ -420,6 +432,31 @@
         if (typeof s.type !== "string" || !hasOwn(GRID_TYPES, s.type)) {
             addError("type", "Choose a grid type: columns, modular, baseline, composition, or pattern.");
             s.type = DEFAULTS.type;
+        }
+
+        /*
+         * Overlay types are drawn as separate grids over the main one, each
+         * with these same settings. A type can only appear once, and the main
+         * type is not an overlay of itself.
+         */
+        var overlays = pick(raw, "overlayTypes");
+        s.overlayTypes = [];
+        if (overlays !== undefined && overlays !== null && overlays !== "") {
+            if (!isArray(overlays)) {
+                addError("overlayTypes", "Choose the grid types to overlay.");
+            } else {
+                for (var o = 0; o < overlays.length; o++) {
+                    var overlay = overlays[o];
+                    if (typeof overlay !== "string" || !hasOwn(GRID_TYPES, overlay)) {
+                        addError("overlayTypes", "Choose grid types to overlay: columns, modular, baseline, composition, or pattern.");
+                        s.overlayTypes = [];
+                        break;
+                    }
+                    if (overlay !== s.type && !contains(s.overlayTypes, overlay)) {
+                        s.overlayTypes.push(overlay);
+                    }
+                }
+            }
         }
 
         s.units = pick(raw, "units");

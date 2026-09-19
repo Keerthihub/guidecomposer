@@ -15,12 +15,36 @@
     $.evalFile(new File(ROOT + "/host/index.jsx"));
     var boot = Mullion.boot(encodeURIComponent(ROOT));
     var results = [];
-    // Start from a clean slate: any document left by an earlier part is this
-    // harness's own, and leftovers make later tests fail for the wrong reason.
-    while (app.documents.length) {
-        app.documents[0].close(SaveOptions.DONOTSAVECHANGES);
+    /*
+     * Documents already open belong to the user: this harness never closes them,
+     * never saves them, and never draws in them. It works only in documents it
+     * creates itself, and closes exactly those.
+     */
+    var theirs = [];
+    for (var d = 0; d < app.documents.length; d++) {
+        theirs.push(app.documents[d]);
     }
-    var openedBefore = app.documents.length;
+    function isTheirs(doc) {
+        for (var t = 0; t < theirs.length; t++) {
+            try {
+                if (theirs[t] === doc) {
+                    return true;
+                }
+            } catch (e) {
+                // A reference to a document that has since closed is not this one.
+            }
+        }
+        return false;
+    }
+    function closeOurDocuments() {
+        for (var i = app.documents.length - 1; i >= 0; i--) {
+            var doc = app.documents[i];
+            if (!isTheirs(doc)) {
+                doc.close(SaveOptions.DONOTSAVECHANGES);
+            }
+        }
+    }
+    closeOurDocuments();
 
     function record(name, pass, detail) {
         results.push({ name: name, pass: pass === true, detail: String(detail) });
@@ -222,8 +246,17 @@
 
     // ---- 7. no document and malformed payloads
     try_("error paths", function () {
-        var noDoc = app.documents.length === 0 ? call("generate", { settings: COLS, target: { mode: "active" } }) : null;
-        if (noDoc) record("no document handled", !noDoc.ok && noDoc.error.code === "NO_DOCUMENT", noDoc.error.message);
+        /*
+         * Only meaningful with nothing open at all. With the user's own work
+         * open, generating would draw into it, so this check stands aside.
+         */
+        if (app.documents.length === 0) {
+            var noDoc = call("generate", { settings: COLS, target: { mode: "active" } });
+            record("no document handled", !noDoc.ok && noDoc.error.code === "NO_DOCUMENT",
+                noDoc.ok ? "drew a grid with no document open" : noDoc.error.message);
+        } else {
+            record("no document handled", true, "skipped: " + app.documents.length + " document(s) of yours are open");
+        }
         var raw = Mullion.api.generate("%%%not-json%%%");
         var parsed = JSON.parse(raw);
         record("malformed payload rejected, not crashed", parsed.ok === false, raw.substr(0, 120));
@@ -231,7 +264,9 @@
         record("hostile colour string rejected", !hostile.ok, hostile.ok ? "accepted" : hostile.error.message);
     });
 
-    record("documents left open equals before", app.documents.length === openedBefore, "before=" + openedBefore + " after=" + app.documents.length);
+    closeOurDocuments();
+    record("every document this test opened was closed", app.documents.length === theirs.length,
+        "open before=" + theirs.length + ", open now=" + app.documents.length);
 
     var f = new File(OUT);
     f.encoding = "UTF-8";

@@ -195,28 +195,68 @@ $.global.Mullion = $.global.Mullion || {};
      * Builds the grid for every target before anything is drawn, so an invalid
      * target (for example one too small for the margins) draws nothing.
      */
+    /*
+     * The grids to draw in one area: the main grid, then any overlay types, each
+     * drawn from the same settings with its own type. They are separate grids on
+     * the document, so each can be cleared or replaced on its own.
+     */
+    function layersOf(settings, overlays) {
+        var layers = [settings];
+        if (!overlays || !overlays.length) {
+            return layers;
+        }
+        for (var i = 0; i < overlays.length; i++) {
+            var layer = {};
+            // The settings are copied as the panel sent them, not as normalized
+            // for the main type: a pattern overlay needs the pattern fields that
+            // a column grid's own validation has no use for.
+            for (var key in settings) {
+                if (settings.hasOwnProperty(key)) {
+                    layer[key] = settings[key];
+                }
+            }
+            layer.type = overlays[i];
+            layer.overlayTypes = [];
+            layers.push(layer);
+        }
+        return layers;
+    }
+
     function buildForTargets(doc, payload) {
         var targets = resolveTargets(doc, payload.target);
         var builds = [];
         var total = 0;
+        // Overlay types are validated once, against the settings as given.
+        var checked = M.core.normalizeSettings(payload.settings || {});
+        if (!checked.ok) {
+            throw new HostError("INVALID_SETTINGS", checked.errors[0].message, checked.errors);
+        }
+        var layers = layersOf(payload.settings || {}, checked.settings.overlayTypes);
         for (var i = 0; i < targets.length; i++) {
-            var grid = M.core.buildGrid(targets[i].rect, payload.settings || {}, { areaLabel: targets[i].areaLabel });
-            if (!grid.ok) {
-                var message = grid.errors[0].message;
-                if (targets.length > 1) {
-                    message = targets[i].name + ": " + message;
+            for (var l = 0; l < layers.length; l++) {
+                var grid = M.core.buildGrid(targets[i].rect, layers[l], { areaLabel: targets[i].areaLabel });
+                if (!grid.ok) {
+                    var message = grid.errors[0].message;
+                    if (l > 0) {
+                        message = "Overlay grid: " + message;
+                    }
+                    if (targets.length > 1) {
+                        message = targets[i].name + ": " + message;
+                    }
+                    throw new HostError("INVALID_SETTINGS", message, grid.errors);
                 }
-                throw new HostError("INVALID_SETTINGS", message, grid.errors);
+                total += grid.shapeCount;
+                builds.push({ artboard: targets[i], grid: grid });
             }
-            total += grid.shapeCount;
-            builds.push({ artboard: targets[i], grid: grid });
         }
         if (total > M.core.LIMITS.maxTotalShapes) {
             throw new HostError("TOO_MANY_SHAPES",
                 "That would draw " + total + " shapes across " + targets.length + " areas. Choose fewer areas or a simpler grid to stay at or under " +
                 M.core.LIMITS.maxTotalShapes + ".");
         }
-        return { builds: builds, shapes: total };
+        // areas is how many artboards or objects were targeted; builds can be
+        // larger than that, because each overlay type is its own grid.
+        return { builds: builds, shapes: total, areas: targets.length, layers: layers.length };
     }
 
     function roundKey(v) {
@@ -269,7 +309,8 @@ $.global.Mullion = $.global.Mullion || {};
         var first = built ? built.builds[0].grid : null;
         var out = {
             shapes: built ? built.shapes : 0,
-            artboards: built ? built.builds.length : 0,
+            artboards: built ? (built.areas === undefined ? built.builds.length : built.areas) : 0,
+            layers: built ? (built.layers || 1) : 0,
             metrics: first ? first.metrics : null,
             status: M.adapter.describe(doc)
         };

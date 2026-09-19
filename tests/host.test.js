@@ -615,6 +615,39 @@ test("a document carries the settings that made its grid", () => {
     assert.equal(r.data.settings.type, "columns");
 });
 
+test("several grid types can be drawn over each other in one action", () => {
+    const { host, doc } = ready({});
+    const r = host.call("generate", { settings: { ...COLUMNS, lockLayer: false, overlayTypes: ["baseline"] } });
+    assert.equal(r.ok, true, r.ok ? "" : r.error.message);
+    assert.equal(r.data.artboards, 1, "one artboard, not one per overlay");
+    assert.equal(r.data.layers, 2, "the main grid and one overlay");
+
+    const groups = ownedGroups(doc);
+    assert.equal(groups.length, 2);
+    assert.deepEqual(groups.map((g) => g.name).sort(), ["Baseline grid, Artboard 1", "Column grid, Artboard 1"]);
+    assert.equal(host.app.redrawCount > 0, true);
+
+    // Both are Mullion's, so both are replaced together next time.
+    const again = host.call("generate", { settings: { ...COLUMNS, lockLayer: false, overlayTypes: ["baseline"] } });
+    assert.equal(again.data.replaced, 2, "the whole stack is replaced, not added to");
+    assert.equal(ownedGroups(doc).length, 2);
+
+    // And cleared together.
+    assert.equal(host.call("clear").data.removed, 2);
+    assert.equal(ownedGroups(doc).length, 0);
+});
+
+test("an overlay that cannot be drawn stops the whole action, before anything is drawn", () => {
+    const { host, doc } = ready({});
+    const r = host.call("generate", {
+        settings: { ...COLUMNS, lockLayer: false, overlayTypes: ["pattern"], pattern: "square", patternSize: 5000 }
+    });
+    assert.equal(r.ok, false);
+    assert.equal(r.error.code, "INVALID_SETTINGS");
+    assert.match(r.error.message, /Overlay/, "the message says which grid could not be drawn: " + r.error.message);
+    assert.equal(ownedGroups(doc).length, 0, "nothing is drawn");
+});
+
 const THREE_BOARDS = {
     artboards: [
         { name: "Cover", rect: [0, 792, 612, 0] },

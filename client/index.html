@@ -71,6 +71,12 @@
       <label class="type"><input type="radio" name="type" value="pattern" form="settings"><span class="type__face"><svg class="type__icon"><use href="#t-pattern"/></svg><span class="type__label">Pattern</span></span></label>
     </div>
 
+    <div class="overlays" data-mode="grid">
+      <span class="field__label" id="overlay-label">Add on top</span>
+      <div class="overlays__row" role="group" aria-labelledby="overlay-label" id="overlay-types"></div>
+      <p class="field__error" id="err-overlayTypes" data-error-for="overlayTypes"></p>
+    </div>
+
     <div class="target">
       <label class="target__label" for="target-mode">Apply to</label>
       <select class="field__input target__select" id="target-mode">
@@ -525,7 +531,10 @@
       <label class="visually-hidden" for="library-search">Search layouts</label>
       <input class="field__input library__search" id="library-search" type="search" placeholder="Search 128 layouts" spellcheck="false" autocomplete="off">
     </div>
-    <div class="library__chips" id="library-chips" role="radiogroup" aria-label="Layout categories"></div>
+    <label class="library__filter">
+      <span class="field__label">Show</span>
+      <select class="field__input" id="library-filter"></select>
+    </label>
     <p class="library__hint" id="library-hint" aria-live="polite"></p>
     <ul class="library__grid" id="library-grid"></ul>
   </section>
