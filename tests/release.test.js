@@ -93,6 +93,6 @@ test("panel loads no remote resources", () => {
 test("gitignore keeps certificates, passwords, and packages out of the repository", () => {
     const ignore = fs.readFileSync(path.join(checks.ROOT, ".gitignore"), "utf8");
     for (const pattern of ["*.p12", "*.pfx", "dist/", "*.zxp", ".env"]) {
-        assert.ok(ignore.split("\n").includes(pattern), `.gitignore should include ${pattern}`);
+        assert.ok(ignore.split(/\r?\n/).includes(pattern), `.gitignore should include ${pattern}`);
     }
 });

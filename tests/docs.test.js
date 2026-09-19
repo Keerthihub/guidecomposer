@@ -28,7 +28,9 @@ function trackedDocs() {
 }
 
 function read(file) {
-    return fs.readFileSync(path.join(ROOT, file), "utf8");
+    // Git may present CRLF on Windows even when the repository stores LF.
+    // Documentation assertions care about wording, not the checkout's newline.
+    return fs.readFileSync(path.join(ROOT, file), "utf8").replace(/\r\n/g, "\n");
 }
 
 // A [PLACEHOLDER] is an all-caps token in brackets. Markdown links such as
