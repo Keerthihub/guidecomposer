@@ -102,14 +102,20 @@ scripts/create-signing-cert-mac.sh <country-code> "<state-or-province>"
 - [x] Rosetta installed and Adobe's official macOS `ZXPSignCmd` 4.1.1 placed at
       `/Users/keerthismac/Tools/Adobe-ZXPSignCmd-4.1.1/ZXPSignCmd` after the
       downloaded Git object hash was verified.
-- [ ] Certificate created **outside** this repository, with a long validity.
-- [ ] Password stored in a password manager; certificate backed up somewhere you
-      will still have it in five years.
+- [x] Certificate created **outside** this repository, valid from September
+      2026 through September 2036. Subject: `IN / Tamil Nadu / Keerthihub /
+      GuideComposer ZXP Signing`.
+- [x] Generated password stored in the macOS Keychain as
+      `GuideComposer-ZXP-Signing`; the `.p12` is readable only by its owner.
+- [ ] Back up the certificate somewhere you will still have it in five years.
 - [ ] Both added to GitHub as repository secrets: `ZXP_CERT_BASE64`
       (`base64 -i cert.p12`) and `ZXP_CERT_PASSWORD`.
 
 **Done when:** the secrets exist and a manual run of the **Signed release**
-workflow completes signing and verification.
+workflow completes signing and verification. Adobe's macOS 4.1.1 signer can
+create the certificate on this Mac but crashes while packaging on macOS 26; the
+release workflow therefore remains the authoritative signing path and uses the
+newer pinned Windows 4.1.103 signer.
 
 **Why it matters later:** updates signed with a *different* certificate may
 refuse to install over the previous version. Use one certificate for the life of

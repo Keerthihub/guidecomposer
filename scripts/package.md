@@ -9,6 +9,11 @@ CEP extensions ship as signed `.zxp` files. Don't package GuideComposer as `.ccx
 - **On GitHub (no local tools).** Push the repository to GitHub, then add two repository secrets under Settings > Secrets and variables > Actions: `ZXP_CERT_BASE64` (on macOS: `base64 -i cert.p12 | pbcopy`) and `ZXP_CERT_PASSWORD`. Push a tag such as `v0.1.0`, or run **Signed release** from the Actions tab. See [What the release workflow does](#what-the-release-workflow-does) below — a tag publishes a permanent GitHub Release; a manual run only signs.
 - **On your computer.** Download ZXPSignCmd for your OS from Adobe's [CEP-Resources repository](https://github.com/Adobe-CEP/CEP-Resources) (`ZXPSignCMD` folder). On macOS, run `chmod +x ZXPSignCmd` and approve it in System Settings > Privacy & Security if blocked. Adobe's macOS build is Intel-only: on Apple Silicon Macs install Rosetta once with `softwareupdate --install-rosetta --agree-to-license`.
 
+  On the current development Mac, Adobe's macOS 4.1.1 tool creates certificates
+  successfully but crashes while packaging on macOS 26. Use the GitHub workflow
+  for releases; it uses Adobe's newer Windows 4.1.103 signer. Keep the local
+  commands below as a fallback for systems where Adobe's macOS binary runs.
+
 **Create a certificate.** Adobe accepts self-signed certificates for ZXP
 packages. Store the certificate **outside this repository** and the password in
 a password manager. On the prepared development Mac, run the helper with the
