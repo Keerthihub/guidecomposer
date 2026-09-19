@@ -1225,6 +1225,7 @@ async function main() {
             await load("?theme=dark");
             // A message of some kind, so the status line is on screen to measure.
             await evaluate(setField("columns", "0"));
+            await waitFor(`document.getElementById("status").getBoundingClientRect().height > 0`);
             const at = size[0] + " × " + size[1];
             const state = await evaluate(fits);
             check(state.generate && state.clear, "Generate and Clear are inside the panel at " + at);
