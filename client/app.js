@@ -2816,6 +2816,9 @@
         ensureOutputAllowed();
         update();
         say(message);
+        // New settings redraw the preview; that routine confirmation must not
+        // replace what the panel just told the user it did.
+        previewQuiet = true;
     }
 
     function applyPreset(value) {

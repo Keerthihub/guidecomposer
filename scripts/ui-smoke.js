@@ -738,9 +738,15 @@ async function main() {
         await sleep(300);
         await evaluate(click("reset"));
         check(await evaluate(value("columns")) === "12", "reset returns to the default");
+        // With Preview on, the routine "Previewing…" message must not talk over
+        // the result of an action the user asked for.
+        await evaluate(`(() => { const t = document.getElementById("preview-toggle"); t.checked = true; t.dispatchEvent(new Event("change")); })()`);
+        await sleep(450);
         await evaluate(click("load-document-grid"));
+        await sleep(700);
+        check(await evaluate(value("columns")) === "5" && /Loaded the settings that drew this grid/.test(await evaluate(text("status"))), "a grid hands its settings back, and previewing doesn't talk over it: " + await evaluate(text("status")));
+        await evaluate(`(() => { const t = document.getElementById("preview-toggle"); t.checked = false; t.dispatchEvent(new Event("change")); })()`);
         await sleep(300);
-        check(await evaluate(value("columns")) === "5" && /Loaded the settings that drew this grid/.test(await evaluate(text("status"))), "a grid hands its settings back: " + await evaluate(text("status")) + " + ");
         await evaluate(click("clear"));
         await sleep(300);
 
