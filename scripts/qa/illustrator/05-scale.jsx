@@ -1,5 +1,5 @@
 /*
- * GridComposer live QA, part 05: how the panel behaves on a heavy document.
+ * GuideComposer live QA, part 05: how the panel behaves on a heavy document.
  *
  * Builds a document with tens of thousands of objects, then times the calls the
  * panel makes while you work. A call that takes longer than its budget freezes

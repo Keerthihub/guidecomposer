@@ -1,6 +1,6 @@
-# What GridComposer runs on
+# What GuideComposer runs on
 
-Last updated for GridComposer [VERSION].
+Last updated for GuideComposer [VERSION].
 
 ## Applications
 
@@ -8,9 +8,9 @@ Last updated for GridComposer [VERSION].
 | --- | --- | --- |
 | Adobe Illustrator | 2022 (26.0) and later, including [TESTED_ILLUSTRATOR_VERSIONS] | Supported |
 | Adobe InDesign | — | Not in this release. Planned; see below. |
-| Any other Adobe application | — | Not supported. GridComposer is not offered for Photoshop, After Effects, Premiere Pro, or Express. |
+| Any other Adobe application | — | Not supported. GuideComposer is not offered for Photoshop, After Effects, Premiere Pro, or Express. |
 
-GridComposer is an Illustrator plugin. In any other Adobe application it will
+GuideComposer is an Illustrator plugin. In any other Adobe application it will
 not appear in the Extensions menu at all — nothing to uninstall, nothing to
 configure, it simply is not there.
 
@@ -34,15 +34,15 @@ publish a fix.
 | Windows on Arm | Untested. It should work wherever Illustrator itself runs, but we have not tried it. |
 | Linux, ChromeOS, iPad | Not supported — Illustrator for those platforms does not take this kind of plugin. |
 
-We have run GridComposer on [TESTED_MACOS_VERSIONS] and [TESTED_WINDOWS_VERSIONS]. On
-other versions of macOS or Windows, if your Illustrator runs, GridComposer is
+We have run GuideComposer on [TESTED_MACOS_VERSIONS] and [TESTED_WINDOWS_VERSIONS]. On
+other versions of macOS or Windows, if your Illustrator runs, GuideComposer is
 expected to run.
 
 Minimum system requirements are Adobe's, not ours: if your computer runs
-Illustrator 2022 or later, it runs GridComposer. The plugin adds no meaningful memory
+Illustrator 2022 or later, it runs GuideComposer. The plugin adds no meaningful memory
 or disk requirement (it is under a megabyte).
 
-## What GridComposer needs, and doesn't
+## What GuideComposer needs, and doesn't
 
 - **Needs:** your own licensed copy of Adobe Illustrator, and the Creative
   Cloud desktop app to install the plugin.

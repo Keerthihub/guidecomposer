@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Runs GridComposer's live QA in a real Illustrator and prints the results.
+# Runs GuideComposer's live QA in a real Illustrator and prints the results.
 #
 #   scripts/qa/run-illustrator-qa.sh [output directory]
 #
@@ -21,7 +21,7 @@ if ! pgrep -f "MacOS/Adobe Illustrator" > /dev/null; then
     exit 2
 fi
 
-echo "Running GridComposer live QA"
+echo "Running GuideComposer live QA"
 echo "  extension: $ROOT"
 echo "  results:   $OUT"
 echo

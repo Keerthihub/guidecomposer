@@ -1,8 +1,8 @@
 {
-  "name": "gridcomposer",
+  "name": "guidecomposer",
   "version": "0.1.0",
   "private": true,
-  "description": "GridComposer: a layout-grid panel for Adobe Illustrator (CEP extension).",
+  "description": "GuideComposer: a layout-grid panel for Adobe Illustrator (CEP extension).",
   "license": "SEE LICENSE IN LICENSE",
   "scripts": {
     "test": "node --test \"tests/*.test.js\"",

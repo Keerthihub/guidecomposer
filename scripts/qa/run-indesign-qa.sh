@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Runs GridComposer's live QA in a real InDesign and prints the results.
+# Runs GuideComposer's live QA in a real InDesign and prints the results.
 #
 #   scripts/qa/run-indesign-qa.sh [output directory]
 #
@@ -22,7 +22,7 @@ if ! pgrep -f "Adobe InDesign" > /dev/null; then
     exit 2
 fi
 
-echo "Running GridComposer live QA in InDesign"
+echo "Running GuideComposer live QA in InDesign"
 echo "  extension: $ROOT"
 echo "  results:   $OUT"
 echo

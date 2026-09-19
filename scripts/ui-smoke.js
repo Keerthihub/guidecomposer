@@ -841,7 +841,7 @@ async function main() {
         await evaluate(setTarget("active"));
         await evaluate(click("load-document-grid"));
         await sleep(300);
-        check(/No GridComposer grid on this artboard/.test(await evaluate(text("status"))), "nothing to read before a grid exists: " + await evaluate(text("status")));
+        check(/No GuideComposer grid on this artboard/.test(await evaluate(text("status"))), "nothing to read before a grid exists: " + await evaluate(text("status")));
         await evaluate(setField("columns", "5"));
         await evaluate(click("generate"));
         await sleep(300);
@@ -1068,7 +1068,7 @@ async function main() {
         check(await evaluate(text("panel-version")) === "0.1.0", "the More section shows the panel's version");
         await evaluate(`window.__mullionTest.importPresetText("nonsense")`);
         const diagnostics = await evaluate(`window.__mullionTest.diagnosticsText()`);
-        check(/GridComposer panel 0\.1\.0/.test(diagnostics) && /Host: ILST/.test(diagnostics) && /OS: /.test(diagnostics) &&
+        check(/GuideComposer panel 0\.1\.0/.test(diagnostics) && /Host: ILST/.test(diagnostics) && /OS: /.test(diagnostics) &&
             /Document: Mock document/.test(diagnostics) && /Mode: grid/.test(diagnostics) && /Grid: columns/.test(diagnostics) &&
             /Last error: That file isn't a presets file\./.test(diagnostics),
             "diagnostics carry panel version, host, OS, document, mode, settings and the last error");
@@ -1078,7 +1078,7 @@ async function main() {
 
         // ------------------------------------------------- an installed update is named, and it sticks
         await load("?theme=dark&hostversion=0.2.0");
-        check(/GridComposer 0\.2\.0 is installed; this panel is still running 0\.1\.0\./.test(await evaluate(text("status"))) &&
+        check(/GuideComposer 0\.2\.0 is installed; this panel is still running 0\.1\.0\./.test(await evaluate(text("status"))) &&
             await evaluate(`document.querySelector("#status .link-button").textContent`) === "Reload panel",
             "the update prompt names the version: " + await evaluate(text("status")));
         check(await evaluate(text("panel-version")) === "0.1.0 (installed: 0.2.0)", "the More section shows both versions");
@@ -1086,14 +1086,14 @@ async function main() {
         await sleep(300);
         await evaluate(`window.dispatchEvent(new Event("focus"))`);
         await sleep(300);
-        check(/GridComposer 0\.2\.0 is installed/.test(await evaluate(text("status"))) &&
+        check(/GuideComposer 0\.2\.0 is installed/.test(await evaluate(text("status"))) &&
             Boolean(await evaluate(`document.querySelector("#status .link-button")`)), "the update prompt survives background refreshes");
         await evaluate(click("toggle-lock"));
         await sleep(250);
         check(!/0\.2\.0/.test(await evaluate(text("status"))), "a message of its own covers the prompt: " + await evaluate(text("status")));
         await evaluate(mode("construct"));
         await sleep(300);
-        check(/GridComposer 0\.2\.0 is installed/.test(await evaluate(text("status"))), "and the prompt comes back when the status line clears");
+        check(/GuideComposer 0\.2\.0 is installed/.test(await evaluate(text("status"))), "and the prompt comes back when the status line clears");
         await evaluate(mode("grid"));
 
         // ------------------------------------- the no-document message is set on the transition only

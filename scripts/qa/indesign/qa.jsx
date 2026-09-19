@@ -1,5 +1,5 @@
 /*
- * GridComposer live QA for InDesign.
+ * GuideComposer live QA for InDesign.
  *
  * The InDesign adapter is written and tested against a fake DOM, but until this
  * runs in InDesign itself nothing about it is proven. This script is that proof:
@@ -86,7 +86,7 @@
         var items = doc.pageItems.everyItem().getElements();
         for (var i = 0; i < items.length; i++) {
             try {
-                if (items[i].extractLabel("MullionOwner") === "com.keerthi.gridcomposer" && items[i].extractLabel("MullionKind")) {
+                if (items[i].extractLabel("MullionOwner") === "com.keerthi.guidecomposer" && items[i].extractLabel("MullionKind")) {
                     out.push(items[i]);
                 }
             } catch (e) {
@@ -101,7 +101,7 @@
             var guides = doc.pages[p].guides.everyItem().getElements();
             for (var g = 0; g < guides.length; g++) {
                 try {
-                    if (guides[g].extractLabel("MullionOwner") === "com.keerthi.gridcomposer") {
+                    if (guides[g].extractLabel("MullionOwner") === "com.keerthi.guidecomposer") {
                         count++;
                     }
                 } catch (e) {
@@ -115,7 +115,7 @@
         var count = 0;
         var colors = doc.colors.everyItem().getElements();
         for (var i = 0; i < colors.length; i++) {
-            if (String(colors[i].name).substr(0, 8) === "GridComposer ") {
+            if (String(colors[i].name).substr(0, 8) === "GuideComposer ") {
                 count++;
             }
         }
@@ -147,7 +147,7 @@
         var cleared = call("clear", { target: { mode: "active" } });
         record("clear removes it", cleared.ok && ownedItems(doc).length === 0,
             cleared.ok ? "removed=" + cleared.data.removed : cleared.error.message);
-        record("clearing removes the swatches it added", mullionSwatches(doc) === 0, mullionSwatches(doc) + " GridComposer swatches left");
+        record("clearing removes the swatches it added", mullionSwatches(doc) === 0, mullionSwatches(doc) + " GuideComposer swatches left");
     });
 
     test("one undo reverses one action", function () {
@@ -322,7 +322,7 @@
         var master = doc.masterSpreads[0];
         var frame = master.pages[0].rectangles.add();
         frame.geometricBounds = [36, 36, 100, 100];
-        frame.insertLabel("MullionOwner", "com.keerthi.gridcomposer");
+        frame.insertLabel("MullionOwner", "com.keerthi.guidecomposer");
         frame.insertLabel("MullionKind", "final");
         frame.insertLabel("MullionArtboard", "0");
 

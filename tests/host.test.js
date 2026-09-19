@@ -3,7 +3,7 @@
 /*
  * Runs the real ExtendScript host files against a fake Illustrator DOM.
  * Focus: the public API contract and proof that Preview and Clear only remove
- * objects GridComposer created.
+ * objects GuideComposer created.
  */
 
 const test = require("node:test");
@@ -11,7 +11,7 @@ const assert = require("node:assert/strict");
 const path = require("node:path");
 const { createHost, PathItem, GroupItem, CompoundPathItem, TextFrame } = require("./helpers/fake-illustrator.js");
 
-const OWNER = "com.keerthi.gridcomposer";
+const OWNER = "com.keerthi.guidecomposer";
 
 const COLUMNS = {
     type: "columns", units: "pt", columns: 12, columnGutter: 12,
@@ -165,7 +165,7 @@ test("unexpected DOM errors are captured as UNEXPECTED, not thrown", () => {
 
 // ------------------------------------------------------------------------ drawing
 
-test("generate draws tagged lines into a non-printing GridComposer layer", () => {
+test("generate draws tagged lines into a non-printing GuideComposer layer", () => {
     const { host, doc } = ready({});
     const userLayer = doc._layers[0];
     const r = host.call("generate", { settings: COLUMNS });
@@ -175,7 +175,7 @@ test("generate draws tagged lines into a non-printing GridComposer layer", () =>
     assert.equal(r.data.metrics.columnWidth, 34);
     assert.deepEqual(counts(r.data.status.grids), { preview: 0, generated: 1 });
 
-    const layer = layerNamed(doc, "GridComposer grids");
+    const layer = layerNamed(doc, "GuideComposer grids");
     assert.ok(layer);
     assert.equal(layer.printable, false);
     assert.equal(layer.locked, true, "lockLayer: true locks the layer after generating");
@@ -220,7 +220,7 @@ test("guides output creates guides with no stroke", () => {
         assert.equal(p.stroked, false);
         assert.equal(p.strokeColor, null);
     }
-    assert.equal(layerNamed(doc, "GridComposer grids").locked, false);
+    assert.equal(layerNamed(doc, "GuideComposer grids").locked, false);
 });
 
 test("CMYK documents receive a CMYK stroke color", () => {
@@ -231,10 +231,10 @@ test("CMYK documents receive a CMYK stroke color", () => {
     assert.deepEqual([color.cyan, color.magenta, color.yellow, color.black], [0, 80, 30, 0]);
 });
 
-test("generating into a locked, hidden GridComposer layer works and applies the lock setting", () => {
+test("generating into a locked, hidden GuideComposer layer works and applies the lock setting", () => {
     const { host, doc } = ready({});
     assert.equal(host.call("generate", { settings: COLUMNS }).ok, true);
-    const layer = layerNamed(doc, "GridComposer grids");
+    const layer = layerNamed(doc, "GuideComposer grids");
     layer.visible = false;
     assert.equal(layer.locked, true);
     const r = host.call("generate", { settings: { ...COLUMNS, type: "baseline", baselineSpacing: 12, lockLayer: true }, mode: "add" });
@@ -279,7 +279,7 @@ test("preview replaces only the previous preview and never a generated grid", ()
 test("preview leaves the layer lock as it was; generate replaces the preview", () => {
     const { host, doc } = ready({});
     host.call("preview", { settings: { ...COLUMNS, lockLayer: true } });
-    const layer = layerNamed(doc, "GridComposer grids");
+    const layer = layerNamed(doc, "GuideComposer grids");
     assert.equal(layer.locked, false, "preview does not lock a new layer");
 
     const r = host.call("generate", { settings: COLUMNS });
@@ -326,19 +326,19 @@ test("clearPreview without a document is a harmless no-op", () => {
 
 // --------------------------------------------------------------- clear safety
 
-test("Clear never removes user artwork, even in the GridComposer layer or look-alike groups", () => {
+test("Clear never removes user artwork, even in the GuideComposer layer or look-alike groups", () => {
     const { host, doc } = ready({});
     const userLayer = doc._layers[0];
     const art = place(userLayer, userPath("Logo"));
     host.call("generate", { settings: { ...COLUMNS, lockLayer: false } });
-    const layer = layerNamed(doc, "GridComposer grids");
+    const layer = layerNamed(doc, "GuideComposer grids");
 
-    // User content that only *looks* like GridComposer's.
+    // User content that only *looks* like GuideComposer's.
     const stray = place(layer, userPath("Sketch"));
     const lookalike = place(layer, new GroupItem());
     lookalike.name = "Column grid, Artboard 1";
     const lookalikePath = place(lookalike, userPath("inner"));
-    lookalikePath.note = OWNER; // even with a GridComposer note, the group is not tagged
+    lookalikePath.note = OWNER; // even with a GuideComposer note, the group is not tagged
     const wrongOwner = place(layer, new GroupItem());
     wrongOwner._tags.push(Object.assign({ typename: "Tag" }, { name: "MullionOwner", value: "com.someone.else" }));
     place(wrongOwner, userPath("theirs"));
@@ -353,13 +353,13 @@ test("Clear never removes user artwork, even in the GridComposer layer or look-a
     assert.ok(layer.children.includes(lookalike));
     assert.ok(lookalike.children.includes(lookalikePath));
     assert.ok(layer.children.includes(wrongOwner));
-    assert.ok(doc._layers.includes(layer), "a GridComposer layer holding user items is kept");
+    assert.ok(doc._layers.includes(layer), "a GuideComposer layer holding user items is kept");
 });
 
-test("Clear moves user items out of a GridComposer group and keeps their lock and visibility", () => {
+test("Clear moves user items out of a GuideComposer group and keeps their lock and visibility", () => {
     const { host, doc } = ready({});
     host.call("generate", { settings: COLUMNS }); // lockLayer: true
-    const layer = layerNamed(doc, "GridComposer grids");
+    const layer = layerNamed(doc, "GuideComposer grids");
     const group = ownedGroups(doc)[0];
 
     // Simulate a user dragging artwork into the generated group, then locking things.
@@ -370,7 +370,7 @@ test("Clear moves user items out of a GridComposer group and keeps their lock an
     hiddenArt._hidden = true;
     const nested = place(group, new GroupItem());
     const nestedChild = place(nested, userPath("nested child"));
-    const impostor = place(group, userPath("compound path carrying a GridComposer note"));
+    const impostor = place(group, userPath("compound path carrying a GuideComposer note"));
     impostor.typename = "CompoundPathItem";
     impostor.note = OWNER;
     group._locked = true;
@@ -382,7 +382,7 @@ test("Clear moves user items out of a GridComposer group and keeps their lock an
     assert.equal(r.data.removed, 1);
     assert.equal(r.data.rescued, 4);
 
-    assert.ok(!layer.children.includes(group), "the GridComposer group is gone");
+    assert.ok(!layer.children.includes(group), "the GuideComposer group is gone");
     for (const item of [lockedArt, hiddenArt, nested, impostor]) {
         assert.equal(item.parent, layer, `${item.name || item.typename} was moved to the layer`);
     }
@@ -394,7 +394,7 @@ test("Clear moves user items out of a GridComposer group and keeps their lock an
     assert.ok(doc._layers.includes(layer), "layer with rescued art is kept");
 });
 
-test("Clear finds GridComposer groups the user moved to another layer or grouped with their own artwork", () => {
+test("Clear finds GuideComposer groups the user moved to another layer or grouped with their own artwork", () => {
     const { host, doc } = ready({});
     host.call("generate", { settings: { ...COLUMNS, lockLayer: false } });
     const group = ownedGroups(doc)[0];
@@ -406,10 +406,10 @@ test("Clear finds GridComposer groups the user moved to another layer or grouped
     userLayer.locked = true;
 
     // Pressing Cmd-G with a grid selected puts it inside a user group; it must
-    // still be GridComposer's to clear, or the user could never remove it.
+    // still be GuideComposer's to clear, or the user could never remove it.
     host.call("generate", { settings: { ...COLUMNS, lockLayer: false }, mode: "add" });
     const second = ownedGroups(doc).find((g) => g !== group);
-    const mullionLayer = layerNamed(doc, "GridComposer grids");
+    const mullionLayer = layerNamed(doc, "GuideComposer grids");
     const wrapper = place(userLayer, new GroupItem());
     mullionLayer.children.splice(mullionLayer.children.indexOf(second), 1);
     place(wrapper, second);
@@ -446,7 +446,7 @@ test("Clear scopes to the target artboards", () => {
     assert.equal(ownedGroups(doc).length, 0);
 });
 
-test("an emptied GridComposer layer is removed, but never the document's last layer", () => {
+test("an emptied GuideComposer layer is removed, but never the document's last layer", () => {
     const { host, doc } = ready({});
     host.call("generate", { settings: COLUMNS });
     assert.equal(doc._layers.length, 2);
@@ -454,9 +454,9 @@ test("an emptied GridComposer layer is removed, but never the document's last la
     assert.equal(doc._layers.length, 1);
     assert.equal(doc._layers[0].name, "Layer 1");
 
-    // Document whose only layer is named like GridComposer's.
+    // Document whose only layer is named like GuideComposer's.
     const solo = ready({});
-    solo.doc._layers[0].name = "GridComposer grids";
+    solo.doc._layers[0].name = "GuideComposer grids";
     solo.host.call("generate", { settings: COLUMNS });
     solo.host.call("clear");
     assert.equal(solo.doc._layers.length, 1, "last layer is kept");
@@ -535,7 +535,7 @@ test("a grid the user has edited is kept and handed back, never deleted", () => 
     assert.equal(r.data.kept, 1, "the edited grid is reported as kept");
     const survivor = doc._layers.flatMap((l) => l.children).find((c) => c.typename === "GroupItem");
     assert.ok(survivor, "the edited grid is still in the document");
-    assert.equal(tagsOf(survivor).MullionOwner, undefined, "and is no longer GridComposer's to remove");
+    assert.equal(tagsOf(survivor).MullionOwner, undefined, "and is no longer GuideComposer's to remove");
     assert.equal(survivor.name, "Edited grid");
 });
 
@@ -561,7 +561,7 @@ test("a preview left behind by a crash is swept when the panel next asks for sta
 test("ending a preview puts back a grid layer the user had hidden", () => {
     const { host, doc } = ready({});
     host.call("generate", { settings: { ...COLUMNS, lockLayer: false } });
-    const layer = layerNamed(doc, "GridComposer grids");
+    const layer = layerNamed(doc, "GuideComposer grids");
     layer.visible = false;
 
     host.call("preview", { settings: { ...COLUMNS, columns: 6, lockLayer: false } });
@@ -627,7 +627,7 @@ test("several grid types can be drawn over each other in one action", () => {
     assert.deepEqual(groups.map((g) => g.name).sort(), ["Baseline grid, Artboard 1", "Column grid, Artboard 1"]);
     assert.equal(host.app.redrawCount > 0, true);
 
-    // Both are GridComposer's, so both are replaced together next time.
+    // Both are GuideComposer's, so both are replaced together next time.
     const again = host.call("generate", { settings: { ...COLUMNS, lockLayer: false, overlayTypes: ["baseline"] } });
     assert.equal(again.data.replaced, 2, "the whole stack is replaced, not added to");
     assert.equal(ownedGroups(doc).length, 2);
@@ -755,7 +755,7 @@ test("the golden spiral is drawn as one smooth curve with handles", () => {
 
 // ---------------------------------------------------------- grid layer
 
-test("setGridLayer hides, shows, locks and unlocks the GridComposer layer", () => {
+test("setGridLayer hides, shows, locks and unlocks the GuideComposer layer", () => {
     const { host, doc } = ready({});
     const none = host.call("setGridLayer", { visible: false });
     assert.equal(none.ok, true);
@@ -766,7 +766,7 @@ test("setGridLayer hides, shows, locks and unlocks the GridComposer layer", () =
     const hidden = host.call("setGridLayer", { visible: false, locked: true });
     assert.equal(hidden.data.changed, true);
     assert.deepEqual(hidden.data.status.gridLayer, { exists: true, visible: false, locked: true });
-    const layer = layerNamed(doc, "GridComposer grids");
+    const layer = layerNamed(doc, "GuideComposer grids");
     assert.equal(layer.visible, false);
     assert.equal(layer.locked, true);
 
@@ -899,10 +899,10 @@ test("add mode stacks grids so types can be combined", () => {
 test("replacing touches only the target artboards and keeps the layer", () => {
     const { host, doc } = ready(THREE_BOARDS);
     host.call("generate", { settings: COLUMNS, target: { mode: "all" } });
-    const layer = layerNamed(doc, "GridComposer grids");
+    const layer = layerNamed(doc, "GuideComposer grids");
     const r = host.call("generate", { settings: { ...COLUMNS, type: "baseline" }, target: { mode: "range", range: "2" } });
     assert.equal(r.data.replaced, 1);
-    assert.equal(layerNamed(doc, "GridComposer grids"), layer, "the same layer is reused, not deleted and recreated");
+    assert.equal(layerNamed(doc, "GuideComposer grids"), layer, "the same layer is reused, not deleted and recreated");
     const byBoard = Object.fromEntries(ownedGroups(doc).map((g) => [tagsOf(g).MullionArtboard, g.name]));
     assert.deepEqual(byBoard, { 0: "Column grid, Cover", 1: "Baseline grid, Card", 2: "Column grid, Poster" });
 });
@@ -913,7 +913,7 @@ test("replacing still rescues artwork dragged into the old grid", () => {
     const art = place(ownedGroups(doc)[0], userPath("Dragged in"));
     const r = host.call("generate", { settings: COLUMNS });
     assert.equal(r.data.rescued, 1);
-    assert.equal(art.parent, layerNamed(doc, "GridComposer grids"));
+    assert.equal(art.parent, layerNamed(doc, "GuideComposer grids"));
 });
 
 test("a replacing preview hides the grid it would replace, and ending it shows the grid again", () => {
@@ -926,7 +926,7 @@ test("a replacing preview hides the grid it would replace, and ending it shows t
     assert.equal(p.data.hidden, 1);
     assert.equal(original.hidden, true, "old grid hidden while previewing");
     assert.equal(hiddenTag(original), "1");
-    assert.equal(layerNamed(doc, "GridComposer grids").locked, true, "layer lock restored");
+    assert.equal(layerNamed(doc, "GuideComposer grids").locked, true, "layer lock restored");
 
     // Previewing again doesn't lose track of the hidden grid.
     host.call("preview", { settings: { ...COLUMNS, columns: 5 } });
@@ -1045,7 +1045,7 @@ test("clearing an artboard also removes grids inside objects on it", () => {
     assert.equal(host.call("clear").data.removed, 2);
 });
 
-test("the selection target needs a selection and ignores GridComposer's own grids", () => {
+test("the selection target needs a selection and ignores GuideComposer's own grids", () => {
     const { host, doc } = ready({});
     const none = host.call("generate", { settings: CARD, target: { mode: "selection" } });
     assert.equal(none.error.code, "NO_SELECTION");

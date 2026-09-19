@@ -61,7 +61,7 @@ easy to confuse:
 **Should you replace the generated icons?** The generated icon is a legible
 schematic page divided by two vertical rules, drawn pixel by pixel. It is
 honest, and it is not distinctive — and it was drawn for the old placeholder
-name, so it says nothing about GridComposer. Before launch, draw the panel icon by hand (in Illustrator,
+name, so it says nothing about GuideComposer. Before launch, draw the panel icon by hand (in Illustrator,
 obviously) and export it at 23 × 23 and 46 × 46 for each of the five states. A
 hand-drawn icon is the one piece of "generated" artwork a customer sees inside
 the product, and it sits in the tab bar next to Adobe's own icons all day.

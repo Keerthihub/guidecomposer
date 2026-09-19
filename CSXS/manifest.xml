@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ExtensionManifest Version="7.0" ExtensionBundleId="com.keerthi.gridcomposer" ExtensionBundleVersion="0.1.0" ExtensionBundleName="GridComposer" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<ExtensionManifest Version="7.0" ExtensionBundleId="com.keerthi.guidecomposer" ExtensionBundleVersion="0.1.0" ExtensionBundleName="GuideComposer" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
     <ExtensionList>
-        <Extension Id="com.keerthi.gridcomposer.main" Version="0.1.0"/>
+        <Extension Id="com.keerthi.guidecomposer.main" Version="0.1.0"/>
     </ExtensionList>
     <ExecutionEnvironment>
         <HostList>
@@ -24,7 +24,7 @@
         </RequiredRuntimeList>
     </ExecutionEnvironment>
     <DispatchInfoList>
-        <Extension Id="com.keerthi.gridcomposer.main">
+        <Extension Id="com.keerthi.guidecomposer.main">
             <DispatchInfo>
                 <Resources>
                     <MainPath>./client/index.html</MainPath>
@@ -36,7 +36,7 @@
                 </Lifecycle>
                 <UI>
                     <Type>Panel</Type>
-                    <Menu>GridComposer</Menu>
+                    <Menu>GuideComposer</Menu>
                     <Geometry>
                         <Size>
                             <Height>680</Height>

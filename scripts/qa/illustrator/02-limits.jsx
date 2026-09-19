@@ -1,5 +1,5 @@
 /*
- * GridComposer live QA, part 02: rescue, shape limits, awkward artwork, several documents
+ * GuideComposer live QA, part 02: rescue, shape limits, awkward artwork, several documents
  *
  * Runs against a real Illustrator. Every test works in documents it creates and
  * closes; nothing the user has open is touched. Run all parts with
@@ -23,7 +23,7 @@
             for (var g = 0; g < gs.length; g++) { if (gs[g].parent.typename !== "Layer") continue;
                 var tags = gs[g].tags, owner = null;
                 for (var t = 0; t < tags.length; t++) if (tags[t].name === "MullionOwner") owner = tags[t].value;
-                if (owner === "com.keerthi.gridcomposer") out.push(gs[g]); } }
+                if (owner === "com.keerthi.guidecomposer") out.push(gs[g]); } }
         return out;
     }
     function try_(n, fn) { try { fn(); } catch (e) { record(n, false, "threw: " + e + (e.line ? " line " + e.line : "")); } }

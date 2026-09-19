@@ -1,6 +1,6 @@
 # Beta test kit
 
-Everything you need to run a two-week beta with 5–10 designers before launch. Replace "GridComposer" with your product name if you have renamed it.
+Everything you need to run a two-week beta with 5–10 designers before launch. Replace "GuideComposer" with your product name if you have renamed it.
 
 ## 1. Who to invite
 
@@ -23,7 +23,7 @@ Mix Illustrator versions (2022 through the latest) and screen setups (docked, fl
 >
 > Hi [name],
 >
-> I'm building GridComposer, a panel that makes layout grids in Illustrator: columns, modular and baseline grids, composition guides like the golden spiral, and patterns. You can put a grid inside any object, snap artwork to it, and pick from over a hundred ready-made layouts.
+> I'm building GuideComposer, a panel that makes layout grids in Illustrator: columns, modular and baseline grids, composition guides like the golden spiral, and patterns. You can put a grid inside any object, snap artwork to it, and pick from over a hundred ready-made layouts.
 >
 > I'm looking for a few designers to use it on real work for two weeks and tell me what's confusing, broken, or missing. It takes about 15 minutes to get started, plus a short feedback form at the end. Beta testers get the full version free when it launches.
 >
@@ -52,16 +52,16 @@ Mix Illustrator versions (2022 through the latest) and screen setups (docked, fl
 **Install on macOS** (Terminal):
 
 ```sh
-"/Library/Application Support/Adobe/Adobe Desktop Common/RemoteComponents/UPI/UnifiedPluginInstallerAgent/UnifiedPluginInstallerAgent.app/Contents/MacOS/UnifiedPluginInstallerAgent" --install ~/Downloads/gridcomposer-0.1.0.zxp
+"/Library/Application Support/Adobe/Adobe Desktop Common/RemoteComponents/UPI/UnifiedPluginInstallerAgent/UnifiedPluginInstallerAgent.app/Contents/MacOS/UnifiedPluginInstallerAgent" --install ~/Downloads/guidecomposer-0.1.0.zxp
 ```
 
 **Install on Windows** (PowerShell):
 
 ```powershell
-& "C:\Program Files\Common Files\Adobe\Adobe Desktop Common\RemoteComponents\UPI\UnifiedPluginInstallerAgent\UnifiedPluginInstallerAgent.exe" /install "$env:USERPROFILE\Downloads\gridcomposer-0.1.0.zxp"
+& "C:\Program Files\Common Files\Adobe\Adobe Desktop Common\RemoteComponents\UPI\UnifiedPluginInstallerAgent\UnifiedPluginInstallerAgent.exe" /install "$env:USERPROFILE\Downloads\guidecomposer-0.1.0.zxp"
 ```
 
-Then restart Illustrator and open **Window > Extensions > GridComposer**.
+Then restart Illustrator and open **Window > Extensions > GuideComposer**.
 
 ## 4. First-session tasks (about 15 minutes)
 
@@ -87,7 +87,7 @@ Create this in Google Forms, Tally, or similar.
 4. Did installation work the first time? If not, what happened?
 5. Which tasks were easy? (checkboxes for tasks 1–10)
 6. Which tasks were confusing or didn't work? What happened?
-7. Did GridComposer ever change or delete something you didn't expect? (Yes/No, and details)
+7. Did GuideComposer ever change or delete something you didn't expect? (Yes/No, and details)
 8. Which feature would you miss most if it were removed?
 9. What's missing that would make you use it every day?
 10. How likely are you to recommend it to a colleague? (0–10)

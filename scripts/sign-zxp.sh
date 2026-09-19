@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds dist/gridcomposer and signs it into dist/gridcomposer-<version>.zxp.
+# Builds dist/guidecomposer and signs it into dist/guidecomposer-<version>.zxp.
 #
 # Required environment:
 #   ZXPSIGNCMD            path to Adobe's ZXPSignCmd binary
@@ -36,11 +36,11 @@ if [[ "$(uname -s)" == "Darwin" && "$(uname -m)" == "arm64" ]] && ! /usr/bin/arc
 fi
 
 VERSION="$(node -p "require('./package.json').version")"
-OUT="dist/gridcomposer-$VERSION.zxp"
+OUT="dist/guidecomposer-$VERSION.zxp"
 
 npm run build
 rm -f "$OUT"
-"$ZXPSIGNCMD" -sign dist/gridcomposer "$OUT" "$MULLION_CERT" "$MULLION_CERT_PASSWORD" -tsa "$TSA"
+"$ZXPSIGNCMD" -sign dist/guidecomposer "$OUT" "$MULLION_CERT" "$MULLION_CERT_PASSWORD" -tsa "$TSA"
 "$ZXPSIGNCMD" -verify "$OUT" -certinfo
 
 echo "Signed $OUT"

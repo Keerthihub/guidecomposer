@@ -1,5 +1,5 @@
 /*
- * GridComposer grid core: pure geometry and validation.
+ * GuideComposer grid core: pure geometry and validation.
  *
  * ES3-compatible so the same file runs in Illustrator's ExtendScript engine,
  * in the CEP panel, and under Node for tests. No DOM, no Illustrator objects,

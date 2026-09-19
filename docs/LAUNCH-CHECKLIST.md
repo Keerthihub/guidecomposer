@@ -17,7 +17,7 @@ the business.
 ## 1. Choose the final name, and clear it
 
 The product still carries a placeholder name and the placeholder extension id
-`com.keerthi.gridcomposer`. (Once you have run step 2, this page renames itself along
+`com.keerthi.guidecomposer`. (Once you have run step 2, this page renames itself along
 with everything else, and steps 1 and 2 are behind you.)
 
 - [ ] Search national trademark registers for the name in the classes that cover

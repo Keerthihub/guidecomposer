@@ -9,8 +9,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const ROOT = path.resolve(__dirname, "..");
-const BUNDLE_ID = "com.keerthi.gridcomposer";
-const EXTENSION_ID = "com.keerthi.gridcomposer.main";
+const BUNDLE_ID = "com.keerthi.guidecomposer";
+const EXTENSION_ID = "com.keerthi.guidecomposer.main";
 
 // Files and folders that make up the shipped extension.
 const PRODUCTION_ENTRIES = ["CSXS", "client", "host", "shared", "icons"];
@@ -93,7 +93,7 @@ function checkManifest(root = ROOT) {
         problems.push("manifest must declare a CSXS RequiredRuntime");
     }
     if (/--enable-nodejs|--mixed-context/.test(manifest)) {
-        problems.push("manifest enables Node.js in the panel; GridComposer does not need it");
+        problems.push("manifest enables Node.js in the panel; GuideComposer does not need it");
     }
     const referenced = [...manifest.matchAll(/>\.\/([^<]+)</g)].map((m) => m[1]);
     if (referenced.length === 0) {

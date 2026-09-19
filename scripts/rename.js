@@ -10,6 +10,12 @@
  * Internal code identifiers such as Mullion.api, MullionCore, and storage keys
  * are left alone: users never see them, and renaming them adds risk for nothing.
  *
+ * It renames FROM whatever the tree currently says it is, read from
+ * CSXS/manifest.xml and package.json rather than hardcoded, so it can be run
+ * again when you change your mind. An earlier version only knew how to rename
+ * from the original placeholder, which made the second rename a silent no-op
+ * and the CI rename rehearsal a test of nothing.
+ *
  * Run it before the first public release. After release, changing the id means
  * Clear no longer recognizes grids made by earlier versions.
  */
@@ -19,15 +25,34 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const ROOT = path.resolve(__dirname, "..");
-const OLD_ID = "com.mullion.panel";
-const OLD_NAME = "Mullion";
-const OLD_SLUG = "mullion";
+const PLACEHOLDER_ID = "com.mullion.panel";
+
+/*
+ * What the tree calls itself today: the extension id and product name from the
+ * manifest, and the package slug from package.json. These three are the only
+ * strings the rename replaces, so reading them back is what makes a second
+ * rename work.
+ */
+function currentIdentity(root) {
+    const manifest = fs.readFileSync(path.join(root || ROOT, "CSXS/manifest.xml"), "utf8");
+    const pkg = JSON.parse(fs.readFileSync(path.join(root || ROOT, "package.json"), "utf8"));
+    const id = manifest.match(/ExtensionBundleId="([^"]+)"/);
+    const name = manifest.match(/ExtensionBundleName="([^"]+)"/);
+    if (!id || !name) {
+        throw new Error("CSXS/manifest.xml has no ExtensionBundleId/ExtensionBundleName to rename from");
+    }
+    return { id: id[1], name: name[1], slug: pkg.name };
+}
+
+function escapeRegExp(text) {
+    return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 const SKIP_DIRS = new Set([".git", "node_modules", "dist", "vendor"]);
 const TEXT_EXTENSIONS = new Set([".js", ".jsx", ".json", ".html", ".css", ".md", ".xml", ".sh", ".ps1", ".yml", ""]);
 const SKIP_FILES = new Set(["scripts/rename.js", "tests/rename.test.js"]);
 
-function validate(options) {
+function validate(options, from) {
     const problems = [];
     if (!options.name || !/^[A-Za-z][A-Za-z0-9 &'-]{1,29}$/.test(options.name)) {
         problems.push("--name must be 2 to 30 characters: letters, numbers, spaces, & ' -, starting with a letter.");
@@ -35,8 +60,11 @@ function validate(options) {
     if (!options.id || !/^[a-z][a-z0-9-]*(\.[a-z0-9-]+){1,5}$/.test(options.id)) {
         problems.push("--id must be lowercase reverse-DNS, such as com.yourstudio.gridwright.");
     }
-    if (options.id === OLD_ID) {
+    if (options.id === PLACEHOLDER_ID) {
         problems.push("--id is still the placeholder id.");
+    }
+    if (from && options.id === from.id && options.name === from.name) {
+        problems.push("--name and --id are what the project is already called; nothing to do.");
     }
     return problems;
 }
@@ -46,20 +74,25 @@ function slugify(name) {
 }
 
 /*
- * Returns the renamed text. The product name is replaced only where it is a
- * word on its own: not in identifiers (MullionCore), member access (Mullion.api,
- * $.global.Mullion), or `typeof Mullion` checks.
+ * Returns the renamed text, renaming from `from` (what the project is called
+ * now) to `options` (what it should be called). The product name is replaced
+ * only where it is a word on its own: not in identifiers (MullionCore), member
+ * access (Mullion.api, $.global.Mullion), or `typeof Mullion` checks — which is
+ * why renaming the visible name never disturbs the internal ones.
  */
-function renameText(text, options) {
+function renameText(text, options, from) {
+    from = from || { id: PLACEHOLDER_ID, name: "Mullion", slug: "mullion" };
     const slug = options.slug || slugify(options.name);
+    const name = escapeRegExp(from.name);
+    const oldSlug = escapeRegExp(from.slug);
     return text
         .replace(/<!-- placeholder-name-note -->[\s\S]*?<!-- \/placeholder-name-note -->\n?/g, "")
-        .split(OLD_ID).join(options.id)
-        .replace(/(?<![\w.$])(?<!typeof )Mullion(?![\w(])(?!\.[A-Za-z_$])/g, options.name)
-        .replace(/("name":\s*")mullion(")/g, "$1" + slug + "$2")
-        .replace(/\bmullion-(?=\$\{?|<version>|0\.|\d)/g, slug + "-")
-        .replace(/dist\/mullion\b/g, "dist/" + slug)
-        .replace(/dist\\mullion\b/g, "dist\\" + slug);
+        .split(from.id).join(options.id)
+        .replace(new RegExp("(?<![\\w.$])(?<!typeof )" + name + "(?![\\w(])(?!\\.[A-Za-z_$])", "g"), options.name)
+        .replace(new RegExp('("name":\\s*")' + oldSlug + '(")', "g"), "$1" + slug + "$2")
+        .replace(new RegExp("\\b" + oldSlug + "-(?=\\$\\{?|<version>|0\\.|\\d)", "g"), slug + "-")
+        .replace(new RegExp("dist/" + oldSlug + "\\b", "g"), "dist/" + slug)
+        .replace(new RegExp("dist\\\\" + oldSlug + "\\b", "g"), "dist\\" + slug);
 }
 
 function listFiles(dir) {
@@ -76,7 +109,8 @@ function listFiles(dir) {
     });
 }
 
-function rename(root, options, dryRun) {
+function rename(root, options, dryRun, from) {
+    from = from || currentIdentity(root);
     const changed = [];
     for (const file of listFiles(root)) {
         const rel = path.relative(root, file).split(path.sep).join("/");
@@ -84,7 +118,7 @@ function rename(root, options, dryRun) {
             continue;
         }
         const before = fs.readFileSync(file, "utf8");
-        const after = renameText(before, options);
+        const after = renameText(before, options, from);
         if (after !== before) {
             changed.push(rel);
             if (!dryRun) {
@@ -103,13 +137,15 @@ if (require.main === module) {
     };
     const options = { name: read("--name"), id: read("--id") };
     const dryRun = args.includes("--dry-run");
-    const problems = validate(options);
+    const from = currentIdentity(ROOT);
+    const problems = validate(options, from);
     if (problems.length) {
         console.error(problems.join("\n"));
         console.error('\nUsage: npm run rename -- --name "Gridwright" --id com.yourstudio.gridwright [--dry-run]');
         process.exit(1);
     }
-    const changed = rename(ROOT, options, dryRun);
+    console.log(`Renaming ${from.name} (${from.id}) to ${options.name} (${options.id})`);
+    const changed = rename(ROOT, options, dryRun, from);
     console.log(`${dryRun ? "Would change" : "Changed"} ${changed.length} files:`);
     changed.forEach((f) => console.log("  " + f));
     if (!dryRun) {
@@ -118,4 +154,4 @@ if (require.main === module) {
     }
 }
 
-module.exports = { renameText, rename, validate, slugify, OLD_ID };
+module.exports = { renameText, rename, validate, slugify, currentIdentity, PLACEHOLDER_ID };

@@ -1,8 +1,8 @@
 /*
- * GridComposer Illustrator adapter (ExtendScript, ES3 only).
+ * GuideComposer Illustrator adapter (ExtendScript, ES3 only).
  *
  * The only file that touches the Illustrator DOM. It turns the shapes built by
- * shared/grid-core.js into PathItems and manages what GridComposer owns.
+ * shared/grid-core.js into PathItems and manages what GuideComposer owns.
  *
  * Ownership model
  *   - Every grid is one GroupItem carrying tags: owner, kind ("preview" or
@@ -11,12 +11,12 @@
  *   - Which artboard a grid belongs to is worked out from where the grid sits,
  *     not from a stored index, because artboard indices shift when the user
  *     adds, deletes or reorders artboards.
- *   - Every path GridComposer draws carries the owner id in its note.
+ *   - Every path GuideComposer draws carries the owner id in its note.
  *   - Only groups whose owner tag equals M.OWNER_ID are ever removed. Layer
  *     names are used to find a place to draw, never to decide what to delete.
  *   - A preview that will replace grids hides them rather than deleting them,
  *     tagging each one it hid, so ending the preview shows exactly those again.
- *   - Before removing an owned group, any child that is not a GridComposer path
+ *   - Before removing an owned group, any child that is not a GuideComposer path
  *     (for example artwork a user dragged into the group) is moved out and
  *     keeps its locked and hidden state.
  *
@@ -27,7 +27,7 @@
 (function (M) {
     var A = {};
 
-    var LAYER_NAME = "GridComposer grids";
+    var LAYER_NAME = "GuideComposer grids";
     var TAG_OWNER = "MullionOwner";
     var TAG_KIND = "MullionKind";
     var TAG_ARTBOARD = "MullionArtboard";
@@ -381,7 +381,7 @@
         scan = null;
     };
 
-    // Groups GridComposer owns, at any depth, with the layer that has to be unlocked
+    // Groups GuideComposer owns, at any depth, with the layer that has to be unlocked
     // to edit them. Nested groups count: a user who presses Cmd-G with a grid
     // selected must still be able to clear it.
     function collectOwned(doc, container, layer, depth, found) {
@@ -478,7 +478,7 @@
         return out;
     };
 
-    // Moves a non-GridComposer item out of an owned group, preserving its state.
+    // Moves a non-GuideComposer item out of an owned group, preserving its state.
     function rescue(item, group) {
         var wasLocked = item.locked;
         var wasHidden = item.hidden;
@@ -537,7 +537,7 @@
         if (isNaN(entry.shapes)) {
             return false;
         }
-        // Count only the paths GridComposer drew: artwork the user dragged into the
+        // Count only the paths GuideComposer drew: artwork the user dragged into the
         // group is rescued on removal and must not read as an edit.
         try {
             var drawn = 0;
@@ -558,7 +558,7 @@
 
     /*
      * Hands a grid the user has edited back to them: the tags come off, so
-     * GridComposer stops treating it as its own and never deletes it.
+     * GuideComposer stops treating it as its own and never deletes it.
      */
     function releaseOwnedGroup(entry) {
         withEditableLayer(entry.layer, function () {
@@ -584,7 +584,7 @@
 
     /*
      * Removes owned groups matching filter.
-     * options.keepLayer leaves an emptied GridComposer layer in place (used when a
+     * options.keepLayer leaves an emptied GuideComposer layer in place (used when a
      * grid is about to be redrawn into it); options.force deletes even grids the
      * user has edited.
      * Returns { removed, rescued, kept, artboards }.
@@ -737,7 +737,7 @@
 
     // ------------------------------------------------------------- selection
 
-    // True when an item is, or sits inside, a GridComposer grid group.
+    // True when an item is, or sits inside, a GuideComposer grid group.
     function isInsideOwnedGrid(item) {
         var node = item;
         while (node && node.typename !== "Layer" && node.typename !== "Document") {
@@ -754,7 +754,7 @@
     }
 
     /*
-     * Selected objects that aren't part of a GridComposer grid:
+     * Selected objects that aren't part of a GuideComposer grid:
      * [{ item, rect: [left, top, right, bottom], artboard }].
      * Text being edited (a TextRange selection) doesn't count as an object.
      */
@@ -820,7 +820,7 @@
 
     /*
      * Paths of the selected artwork, for construction lines: groups and compound
-     * paths are opened up; GridComposer's own grids are skipped.
+     * paths are opened up; GuideComposer's own grids are skipped.
      * Returns { paths: [{ closed, points: [{ anchor, left, right }] }], artboard, hasText }.
      */
     A.selectionPaths = function (doc) {
@@ -968,7 +968,7 @@
         return layer;
     }
 
-    // Deletes the GridComposer layer only when nothing at all remains in it.
+    // Deletes the GuideComposer layer only when nothing at all remains in it.
     function removeEmptyManagedLayer(doc) {
         var layer = findManagedLayer(doc);
         if (!layer || doc.layers.length < 2) {
@@ -983,7 +983,7 @@
     }
 
     /*
-     * Shows/hides or locks/unlocks the GridComposer grids layer.
+     * Shows/hides or locks/unlocks the GuideComposer grids layer.
      * changes: { visible?: boolean, locked?: boolean }. Returns false when there is no layer.
      */
     A.setGridLayer = function (doc, changes) {

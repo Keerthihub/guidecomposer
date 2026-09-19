@@ -9,7 +9,7 @@
 param([switch]$Uninstall)
 
 $ErrorActionPreference = "Stop"
-$Id = "com.keerthi.gridcomposer"
+$Id = "com.keerthi.guidecomposer"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $ExtDir = Join-Path $env:APPDATA "Adobe\CEP\extensions"
 $Link = Join-Path $ExtDir $Id
@@ -45,4 +45,4 @@ if (Test-Path $Link) {
 New-Item -ItemType Junction -Path $Link -Target $Root | Out-Null
 
 Write-Host "Linked $Link -> $Root"
-Write-Host "Restart Illustrator or InDesign, then open Window > Extensions > GridComposer."
+Write-Host "Restart Illustrator or InDesign, then open Window > Extensions > GuideComposer."

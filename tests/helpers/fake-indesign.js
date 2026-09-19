@@ -362,10 +362,10 @@ class Document {
         };
         this.documentPreferences = { facingPages: false, pageWidth: "612pt", pageHeight: "792pt" };
         this._undoStack = [];
-        // Master spreads exist so tests can prove GridComposer leaves them alone.
+        // Master spreads exist so tests can prove GuideComposer leaves them alone.
         this.masterSpreadList = [{ pages: collection([new Page(this, 0, [0, 0, 792, 612])]) }];
         this.swatches = { itemByName: (n) => (n === "None" ? { name: "None", isValid: true } : { isValid: false }) };
-        // A document's view settings: GridComposer pins these while it reads geometry.
+        // A document's view settings: GuideComposer pins these while it reads geometry.
         this.viewPreferences = { rulerOrigin: "RulerOrigin.PAGE_ORIGIN" };
         this.zeroPoint = [0, 0];
         this.strokeStyleList = ["Solid", "Dashed", "Dotted"].map((name) => ({ name, isValid: true }));
@@ -432,7 +432,7 @@ class Document {
     get pageItems() { return collection(this.pageList.flatMap((p) => p.items)); }
 
     // One spread per page, as in a single-page-spread document. Master spreads
-    // are deliberately absent: GridComposer must not treat master items as page grids.
+    // are deliberately absent: GuideComposer must not treat master items as page grids.
     get spreads() {
         return collection(this.pageList.map((page) => ({
             get pageItems() { return collection(page.items); }
@@ -476,7 +476,7 @@ function createInDesignHost() {
             get activePage() { return currentApp._activePage; },
             set activePage(page) { currentApp._activePage = page; }
         },
-        // Undo is modelled only as far as GridComposer relies on it: the last
+        // Undo is modelled only as far as GuideComposer relies on it: the last
         // transaction's changes are reversed by restoring what it recorded.
         undo() {
             const doc = this.activeDocument;

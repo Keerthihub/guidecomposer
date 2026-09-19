@@ -2,7 +2,7 @@
 
 Sales page copy, pricing, screenshots, and a demo video script. Keep every claim true to the version you ship.
 
-**Name:** GridComposer
+**Name:** GuideComposer
 **Tagline:** Professional Layout Grids for Illustrator
 **Scope of this release:** Illustrator only. InDesign is written but has never been run in InDesign, so it is not declared in the manifest and must not appear in any listing, screenshot or claim until `npm run qa:indesign` passes. Photoshop is not supported and is not planned.
 
@@ -10,7 +10,7 @@ Sales page copy, pricing, screenshots, and a demo video script. Keep every claim
 
 **For** designers who build layouts in Adobe Illustrator
 **who** redraw grids by hand on every project,
-**GridComposer** is a grid panel
+**GuideComposer** is a grid panel
 **that** draws any grid, on any artboard or inside any object, and snaps your artwork to it,
 **unlike** grid tools that only generate columns and leave the rest to you.
 
@@ -49,11 +49,11 @@ Apply a grid to one artboard, all of them, a list like 1–3, 5, or inside the o
 
 ### Section: Get your design on the grid
 
-Select your artwork and GridComposer tells you what's off the grid and by how much. One click selects the stragglers; another snaps them into place.
+Select your artwork and GuideComposer tells you what's off the grid and by how much. One click selects the stragglers; another snaps them into place.
 
 ### Section: Safe by design
 
-GridComposer only ever changes what it created. Grids live on their own non-printing layer, previews never overwrite your work, and one Undo reverses each action. Drag artwork into a grid by accident and Clear still keeps it.
+GuideComposer only ever changes what it created. Grids live on their own non-printing layer, previews never overwrite your work, and one Undo reverses each action. Drag artwork into a grid by accident and Clear still keeps it.
 
 ### Section: Made for real workflows
 
@@ -69,11 +69,11 @@ GridComposer only ever changes what it created. Grids live on their own non-prin
 
 ### FAQ
 
-**Does it work offline?** Yes. GridComposer never connects to the internet and collects no data.
+**Does it work offline?** Yes. GuideComposer never connects to the internet and collects no data.
 
-**Will it change my artwork?** No. GridComposer only removes grids it created, and keeps anything you add to them.
+**Will it change my artwork?** No. GuideComposer only removes grids it created, and keeps anything you add to them.
 
-**Can I undo?** Yes. One Undo reverses each GridComposer action.
+**Can I undo?** Yes. One Undo reverses each GuideComposer action.
 
 **How do I install it?** Your download includes step-by-step instructions for macOS and Windows.
 
@@ -83,7 +83,7 @@ GridComposer only ever changes what it created. Grids live on their own non-prin
 
 ### Call to action
 
-Get GridComposer — [PRICE], one-time purchase.
+Get GuideComposer — [PRICE], one-time purchase.
 
 ## Pricing
 
@@ -119,7 +119,7 @@ Take these at 2× resolution, in Illustrator's dark and light themes. Use real-l
 | 35–45 s | Scattered objects, Check, then Snap to grid | "Then put your design on the grid." |
 | 45–52 s | Select a logo, Construct, Generate | "See how a logo is built." |
 | 52–57 s | Quick cuts: patterns, dotted lines, line styles | "Patterns and styles too." |
-| 57–60 s | Product name and price | "GridComposer. Professional layout grids for Illustrator." |
+| 57–60 s | Product name and price | "GuideComposer. Professional layout grids for Illustrator." |
 
 Keep the cursor slow and zoomed in; add captions, since most viewers watch muted.
 

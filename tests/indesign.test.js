@@ -10,7 +10,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { createInDesignHost, Rectangle, TextFrame, TextSelection, Group } = require("./helpers/fake-indesign.js");
 
-const OWNER = "com.keerthi.gridcomposer";
+const OWNER = "com.keerthi.guidecomposer";
 const COLUMNS = {
     type: "columns", units: "pt", columns: 3, columnGutter: 12,
     marginTop: 36, marginRight: 36, marginBottom: 36, marginLeft: 36,
@@ -27,7 +27,7 @@ function ready(docOptions) {
 
 const plain = (v) => JSON.parse(JSON.stringify(v));
 const grids = (doc) => doc.pageList.flatMap((p) => p.items).filter((i) => i.labels.MullionOwner === OWNER && i.labels.MullionKind);
-const managedLayer = (doc) => doc.layerList.find((l) => l.name === "GridComposer grids");
+const managedLayer = (doc) => doc.layerList.find((l) => l.name === "GuideComposer grids");
 
 test("boot loads the InDesign adapter and status describes pages in points", () => {
     const { host, doc } = ready({ pages: [[0, 0, 792, 612], [0, 648, 792, 1260]] });
@@ -69,11 +69,11 @@ test("generate draws a labeled group of lines in InDesign coordinates, as one un
     const firstColumn = group.children.find((c) => c.paths[0]._points[0][0] === 36 && c.paths[0]._points[1][0] === 36);
     assert.deepEqual(plain(firstColumn.paths[0]._points), [[36, 36], [36, 756]], "Y measured downward from the page top");
     assert.equal(firstColumn.strokeWeight, 0.5);
-    assert.equal(firstColumn.strokeColor.name, "GridComposer #E0457B");
+    assert.equal(firstColumn.strokeColor.name, "GuideComposer #E0457B");
     assert.deepEqual(plain(firstColumn.strokeColor.colorValue), [224, 69, 123]);
     assert.equal(doc.colorList.length, 1, "one shared swatch");
 
-    assert.deepEqual(host.app.transactions.map((t) => [t.name, t.undoMode]), [["GridComposer: Generate grid", "UndoModes.ENTIRE_SCRIPT"]]);
+    assert.deepEqual(host.app.transactions.map((t) => [t.name, t.undoMode]), [["GuideComposer: Generate grid", "UndoModes.ENTIRE_SCRIPT"]]);
     assert.equal(host.app.scriptPreferences.measurementUnit, "MeasurementUnits.PICAS");
     assert.equal(host.app.scriptPreferences.enableRedraw, true);
 });
@@ -88,7 +88,7 @@ test("grids land on the right page of a spread", () => {
     assert.ok(xs.includes(648) && xs.includes(1188), "margins measured from page 2's left edge at 612");
 });
 
-test("regenerating replaces, Add keeps, and Clear removes only GridComposer grids", () => {
+test("regenerating replaces, Add keeps, and Clear removes only GuideComposer grids", () => {
     const { host, doc } = ready({});
     const userArt = doc.pageList[0].addItem(new Rectangle(doc.pageList[0], doc.layerList[0]), {});
     host.call("generate", { settings: COLUMNS });
@@ -113,7 +113,7 @@ test("Clear ungroups a grid holding user artwork and keeps that artwork", () => 
     const r = host.call("clear");
     assert.equal(r.data.rescued, 1);
     assert.ok(doc.pageList[0].items.includes(art), "artwork is back on the page");
-    assert.ok(doc.pageList[0].items.every((item) => item.labels.MullionOwner !== OWNER), "no GridComposer lines left");
+    assert.ok(doc.pageList[0].items.every((item) => item.labels.MullionOwner !== OWNER), "no GuideComposer lines left");
     assert.ok(managedLayer(doc), "layer with user artwork is kept");
 });
 
@@ -179,7 +179,7 @@ test("shapes: boxes, gutters, blocks, dots, hexagons, spiral, and rings", () => 
     });
     assert.equal(boxes.ok, true, boxes.ok ? "" : boxes.error.message);
     const children = grids(page2.doc)[0].children;
-    const gutterFills = children.filter((c) => c.fillColor && c.fillColor.name === "GridComposer #0000FF");
+    const gutterFills = children.filter((c) => c.fillColor && c.fillColor.name === "GuideComposer #0000FF");
     assert.ok(gutterFills.length >= 2 && gutterFills.every((c) => c.transparencySettings.blendingSettings.opacity === 25));
     const block = children.find((c) => c.transparencySettings.blendingSettings.opacity === 20);
     assert.ok(block && block.strokeWeight === 0);
@@ -213,7 +213,7 @@ test("dashed and dotted styles use InDesign stroke styles", () => {
     const children = grids(doc)[0].children;
     assert.ok(children.every((c) => c.strokeType.name === "Dotted" && c.endCap === "EndCap.ROUND_END_CAP"));
     const margins = children.filter((c) => c.paths[0]._points[0][1] === c.paths[0]._points[1][1]);
-    assert.ok(margins.length === 2 && margins.every((c) => c.strokeColor.name === "GridComposer #00FF00"));
+    assert.ok(margins.length === 2 && margins.every((c) => c.strokeColor.name === "GuideComposer #00FF00"));
 });
 
 test("grids inside selected objects, and snapping objects to the grid", () => {
@@ -299,10 +299,10 @@ test("InDesign construction lines read page item paths in page coordinates", () 
     assert.equal(group.name, "Construction lines, Artwork on Page 1");
     const rings = group.children.filter((c) => c.constructor.name === "Polygon" && c.paths[0].pathType === "PathType.CLOSED_PATH");
     assert.equal(rings.length, 1);
-    assert.equal(rings[0].strokeColor.name, "GridComposer #FF0000");
+    assert.equal(rings[0].strokeColor.name, "GuideComposer #FF0000");
     const line = group.children.find((c) => c.constructor.name === "GraphicLine" && c.paths[0]._points[0][0] === 306 && c.paths[0]._points[1][0] === 306);
     assert.deepEqual(plain(line.paths[0]._points), [[306, 0], [306, 792]], "vertical key line through the center, across the page");
-    assert.equal(line.strokeColor.name, "GridComposer #0000FF");
+    assert.equal(line.strokeColor.name, "GuideComposer #0000FF");
 });
 
 // ------------------------------------------------- InDesign's own hard cases
@@ -355,7 +355,7 @@ test("the baseline grid follows the document's own reference point", () => {
     assert.equal(doc.gridPreferences.baselineStart, 4, "measured from the margin: the margin is not counted twice");
 });
 
-test("a grid the user grouped with their own artwork is still GridComposer's to clear", () => {
+test("a grid the user grouped with their own artwork is still GuideComposer's to clear", () => {
     const { host, doc } = ready({});
     host.call("generate", { settings: COLUMNS });
     const [grid] = grids(doc);
@@ -384,7 +384,7 @@ test("a grid the user has edited is handed back, not deleted", () => {
     assert.equal(r.ok, true, r.ok ? "" : r.error.message);
     assert.equal(r.data.removed, 0);
     assert.equal(r.data.kept, 1, "reported as kept, not cleared");
-    assert.equal(grid.labels.MullionOwner, "", "and no longer GridComposer's");
+    assert.equal(grid.labels.MullionOwner, "", "and no longer GuideComposer's");
 });
 
 test("a preview left behind is swept when the panel next asks for status", () => {

@@ -109,11 +109,16 @@ jobs:
           cp -R ./. "$rehearsal"
           rm -rf "$rehearsal/.git" "$rehearsal/dist"
           cd "$rehearsal"
+          # Read the id the project carries NOW, before renaming it away. The
+          # tool renames from whatever the tree currently says it is, so this
+          # rehearsal stays honest after every real rename; reading a hardcoded
+          # placeholder here would quietly rehearse a rename of nothing.
+          old=$(node -p "require('./scripts/rename.js').currentIdentity('.').id")
+          echo "Rehearsing a rename away from $old"
           node scripts/rename.js --name "Gridwright" --id com.example.gridwright
           # The old extension id must survive nowhere: it is the one string that
           # would break Clear and strand customers' settings if it were missed.
           # (scripts/rename.js and its test are excluded by the tool itself.)
-          old=$(node -p "require('./scripts/rename.js').OLD_ID")
           leftovers=$(grep -rl --exclude-dir=node_modules --exclude-dir=.git -F "$old" . \
             | grep -v -E "scripts/rename.js|tests/rename.test.js" || true)
           if [ -n "$leftovers" ]; then
