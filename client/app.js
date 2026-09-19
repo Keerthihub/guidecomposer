@@ -52,6 +52,9 @@
     const FALLBACK_RECT = [0, 792, 612, 0]; // US Letter, shown when no document is open
     const MAX_SCHEMATIC_CELLS = 2500;
     const THUMBNAIL_MAX_MARKS = 500; // Dots and hexagons beyond this are thinned in tile thumbnails.
+    // Marks across a tile before it stops reading as a grid and starts reading
+    // as a solid block.
+    const TILE_LEGIBLE_MARKS = 14;
 
     const formats = window.MullionFormats || { GROUPS: [], FORMATS: [], find: () => null, toPoints: () => ({}), label: () => "" };
 
@@ -62,6 +65,8 @@
     const BOOLEAN_FIELDS = ["extendToEdges", "lockLayer", "marginColorOn", "shadeGutters", "addBaseline", "squareModules"]
         .concat(core ? core.COMPOSITION_FLAGS : [], core ? core.CONSTRUCTION_FLAGS : []);
     const TEXT_FIELDS = ["columnRatios", "rowRatios"];
+    // Fields that are simply off when left blank.
+    const OFF_WHEN_EMPTY = { overlayColumns: 0 };
     // Host vocabulary: Illustrator has artboards, InDesign has pages.
     const NOUNS = {
         illustrator: { one: "artboard", many: "artboards", title: "Artboard" },
@@ -884,7 +889,10 @@
             s[name] = field(name).checked;
         });
         NUMBER_FIELDS.forEach((name) => {
-            s[name] = field(name).value;
+            // An empty optional field means "off", not "invalid".
+            s[name] = field(name).value === "" && OFF_WHEN_EMPTY[name] !== undefined
+                ? OFF_WHEN_EMPTY[name]
+                : field(name).value;
         });
         TEXT_FIELDS.forEach((name) => {
             s[name] = field(name).value;
@@ -996,7 +1004,9 @@
             field(name).checked = s[name];
         });
         NUMBER_FIELDS.forEach((name) => {
-            field(name).value = formatNumber(s[name]);
+            // Leave optional fields blank when they are off, so the field reads
+            // as "Off" rather than as a number someone has to interpret.
+            field(name).value = OFF_WHEN_EMPTY[name] === s[name] ? "" : formatNumber(s[name]);
         });
         TEXT_FIELDS.forEach((name) => {
             field(name).value = s[name];
@@ -1474,6 +1484,39 @@
      * options: { empty: draw the page as an outline, thumb: thin out dense marks,
      *            icon: draw in the panel accent, artwork: selected paths to draw beneath }
      */
+    /*
+     * How much of the page a tile should show. A tile is about 120 px wide, so
+     * more than a dozen or so marks across it turn into a solid block: past
+     * that, the tile shows a corner of the page at a size you can actually read.
+     */
+    function tileZoom(result) {
+        const across = {};
+        const down = {};
+        (result.segments || []).forEach((seg) => {
+            if (seg.x1 === seg.x2) {
+                across[Math.round(seg.x1)] = true;
+            } else if (seg.y1 === seg.y2) {
+                down[Math.round(seg.y1)] = true;
+            }
+        });
+        // Diagonals (isometric, angled patterns) have no axis to count along,
+        // so their number stands in for how dense they look.
+        let diagonals = 0;
+        (result.segments || []).forEach((seg) => {
+            if (seg.x1 !== seg.x2 && seg.y1 !== seg.y2) {
+                diagonals++;
+            }
+        });
+        const marks = (result.dots || []).length + (result.polygons || []).length;
+        const perAxis = Math.max(
+            Object.keys(across).length,
+            Object.keys(down).length,
+            diagonals ? diagonals / 2 : 0,
+            marks ? Math.sqrt(marks) : 0
+        );
+        return perAxis > TILE_LEGIBLE_MARKS ? Math.min(6, perAxis / TILE_LEGIBLE_MARKS) : 1;
+    }
+
     function paintGrid(svg, result, rect, options) {
         const opts = options || {};
         const width = rect[2] - rect[0];
@@ -1481,12 +1524,21 @@
         const x = (v) => v - rect[0];
         const y = (v) => rect[1] - v; // Illustrator Y grows upward; SVG Y grows downward.
 
-        svg.setAttribute("viewBox", "0 0 " + width + " " + height);
-        Array.from(svg.childNodes).forEach((node) => {
-            if (node.nodeName !== "title") {
-                svg.removeChild(node);
+        // An overlay is painted into the picture that is already there.
+        if (!opts.append) {
+            svg.setAttribute("viewBox", "0 0 " + width + " " + height);
+            Array.from(svg.childNodes).forEach((node) => {
+                if (node.nodeName !== "title") {
+                    svg.removeChild(node);
+                }
+            });
+            if (opts.thumb && result.ok) {
+                const zoom = tileZoom(result);
+                if (zoom > 1) {
+                    svg.setAttribute("viewBox", "0 0 " + (width / zoom) + " " + (height / zoom));
+                }
             }
-        });
+        }
         svg.classList.toggle("schematic--invalid", !result.ok);
         const style = result.ok ? result.settings : {};
         svg.classList.toggle("schematic--guides", style.output === "guides");
@@ -1494,10 +1546,12 @@
         svg.classList.toggle("schematic--dotted", style.output !== "guides" && style.lineStyle === "dotted");
 
         const frag = document.createDocumentFragment();
-        frag.appendChild(svgNode("rect", {
-            class: "schematic__paper" + (opts.empty ? " schematic__paper--empty" : ""),
-            x: 0, y: 0, width, height
-        }));
+        if (!opts.append) {
+            frag.appendChild(svgNode("rect", {
+                class: "schematic__paper" + (opts.empty ? " schematic__paper--empty" : ""),
+                x: 0, y: 0, width, height
+            }));
+        }
 
         (opts.artwork || []).forEach((path) => {
             const p = path.points;
@@ -1522,7 +1576,8 @@
             const color = opts.icon ? rootStyle.getPropertyValue("--accent").trim()
                 : guides ? rootStyle.getPropertyValue("--guide").trim() : s.strokeColor;
             const marginColor = !opts.icon && !guides && s.marginColorOn ? s.marginColor : color;
-            const strokeOpacity = opts.icon ? 0.95 : guides ? 1 : Math.max(0.35, s.opacity / 100);
+            // Overlays are drawn fainter, so the main grid still reads first.
+            const strokeOpacity = (opts.icon ? 0.95 : guides ? 1 : Math.max(0.35, s.opacity / 100)) * (opts.dim ? 0.5 : 1);
             const colorFor = (kind) => {
                 if (!opts.icon && !guides && s.kindColors && s.kindColors[kind]) {
                     return s.kindColors[kind];
@@ -1685,7 +1740,10 @@
         // path for it, so the summary says so rather than leaving it unsaid.
         els.blocksSummary.textContent = count
             ? plural(count, "block", "blocks") + " marked. Click a block in the drawing to remove it (mouse or pen only)."
-            : "Drag across the drawing with a mouse or pen to mark content blocks. This needs a pointer.";
+            : "Drag across the drawing to mark content blocks.";
+        // The fact that this needs a pointer matters to someone using a
+        // keyboard or a screen reader, and clutters the panel for everyone else.
+        els.blocksSummary.title = count ? "" : "Marking blocks needs a mouse, trackpad or pen.";
         els.blocksClear.hidden = count === 0;
     }
 
@@ -3153,6 +3211,24 @@
         return layouts.LAYOUTS.filter((l) => l.category === value).length;
     }
 
+    /*
+     * What a tile says under its name. The name already carries the detail
+     * ("Dot grid, 5 mm"), so the line below it answers the only question left:
+     * will this fit the page I am working on?
+     */
+    function describeTile(layout) {
+        if (!layout.artboard) {
+            return layouts.describeShort(layout);
+        }
+        const wanted = { width: core.toPoints(layout.artboard.width, layout.artboard.units), height: core.toPoints(layout.artboard.height, layout.artboard.units) };
+        const rect = currentRect();
+        const fits = Math.abs(rect[2] - rect[0] - wanted.width) <= 1 && Math.abs(rect[1] - rect[3] - wanted.height) <= 1;
+        if (fits) {
+            return "Fits this " + nouns().one;
+        }
+        return "Made for " + layout.artboard.width + " \u00d7 " + layout.artboard.height + " " + layout.artboard.units;
+    }
+
     function paintTile(tile) {
         const layout = layouts.find(tile.dataset.layout);
         const svg = tile.querySelector("svg");
@@ -3173,7 +3249,7 @@
         tile.classList.toggle("tile--unfit", !result.ok);
         // Repainting happens in place, so the meta line goes back to the
         // layout's own description when the artboard changes to one that fits.
-        tile.querySelector(".tile__meta").textContent = result.ok ? layouts.describeShort(layout) : "Doesn't fit this artboard";
+        tile.querySelector(".tile__meta").textContent = result.ok ? describeTile(layout) : "Doesn't fit this " + nouns().one;
     }
 
     function renderLibraryGrid() {
@@ -3228,7 +3304,7 @@
             name.textContent = layout.name;
             const meta = document.createElement("span");
             meta.className = "tile__meta";
-            meta.textContent = layouts.describeShort(layout);
+            meta.textContent = describeTile(layout);
             // The gallery is one tab stop (see setRovingTile): arrow keys move
             // between tiles, so Tab doesn't have to walk through 128 of them.
             tile.tabIndex = -1;

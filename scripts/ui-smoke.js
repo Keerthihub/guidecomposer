@@ -539,6 +539,17 @@ async function main() {
             await evaluate(value("units")) + " " + await evaluate(value("columnGutter")) + " " + await evaluate(value("marginTop")));
         await evaluate(`(() => { const s = document.getElementById("library-search"); s.value = ""; s.dispatchEvent(new Event("input", { bubbles: true })); })()`);
         await evaluate(chip("Patterns"));
+        await sleep(500);
+        // A 5 mm grid on an A4 page cannot be drawn whole in a 120 px tile: it
+        // comes out a solid block, and every fine pattern looks like the next.
+        const tileViews = await evaluate(`Array.from(document.querySelectorAll("#library-grid .tile")).slice(0, 8).map((t) => ({
+            name: t.querySelector(".tile__name").textContent,
+            zoomed: t.querySelector("svg").getAttribute("viewBox") !== "0 0 612 792" && t.querySelector("svg").getAttribute("viewBox") !== "0 0 595.2755905511812 841.8897637795277",
+            marks: t.querySelectorAll("svg circle, svg line, svg polygon").length
+        }))`);
+        check(tileViews.filter((t) => t.zoomed).length >= 4, "dense patterns show a legible piece of the page: " + tileViews.map((t) => t.name + (t.zoomed ? " (piece)" : " (whole page)")).join(", "));
+        check(tileViews.every((t) => t.marks <= 600), "and no tile draws more marks than it can show: " + Math.max(...tileViews.map((t) => t.marks)));
+        check(/Fits this artboard|Made for /.test(await evaluate(`document.querySelector("#library-grid .tile .tile__meta").textContent`)), "each tile says whether it fits this page: " + await evaluate(`document.querySelector("#library-grid .tile .tile__meta").textContent`));
         await evaluate(`document.querySelector('#library-grid .tile[data-layout="dots-5mm"]').click()`);
         check(await evaluate(value("type")) === "pattern" && await evaluate(value("pattern")) === "dots", "pattern layout applies");
         await sleep(300);
@@ -747,6 +758,16 @@ async function main() {
         check(await evaluate(`document.getElementById("opacity-slider").value`) === "70", "slider follows the field");
         await evaluate(click("reset"));
 
+        // An optional field reads as off when it is off.
+        check(await evaluate(value("overlayColumns")) === "" && await evaluate(`document.querySelector('[name=overlayColumns]').placeholder`) === "Off",
+            "a second set of columns is blank until you ask for one");
+        await evaluate(setField("overlayColumns", "4"));
+        await sleep(250);
+        check(/overlay|4/.test(await evaluate(text("grid-count"))) || await evaluate(value("overlayColumns")) === "4", "and takes a number when you do");
+        await evaluate(setField("overlayColumns", ""));
+        await sleep(250);
+        check(await evaluate(text("err-overlay")) === "", "clearing it turns it off rather than complaining: " + await evaluate(text("err-overlay")));
+
         // -------------------------------------------------------------- overlays
         await evaluate(click("reset"));
         await evaluate(setTarget("active"));
@@ -848,7 +869,9 @@ async function main() {
         await evaluate(setField("columns", "12"));
         check(await evaluate(text("status")) === "" && await evaluate(text("field-errors")) === "", "both clear when the settings are valid again");
         check(/^Drawing of .*Artboard 1\.$/.test(await evaluate(text("schematic-title"))), "the drawing's title describes what it shows: " + await evaluate(text("schematic-title")));
-        check(/pointer/.test(await evaluate(text("blocks-summary"))), "the blocks note says marking blocks needs a pointer: " + await evaluate(text("blocks-summary")));
+        check(await evaluate(text("blocks-summary")) === "Drag across the drawing to mark content blocks." &&
+            /mouse, trackpad or pen/.test(await evaluate(`document.getElementById("blocks-summary").title`)),
+            "the blocks note is short on screen, and says it needs a pointer to anyone who asks: " + await evaluate(text("blocks-summary")));
         check(await evaluate(`getComputedStyle(document.getElementById("status"), "::before").color`) === "rgb(27, 27, 27)" ||
             await evaluate(`(() => { const s = document.getElementById("status"); s.dataset.tone = "ok"; const c = getComputedStyle(s, "::before").color; delete s.dataset.tone; return c; })()`) === "rgb(27, 27, 27)",
             "the tone badge draws its glyph in dark ink, not white on mid-tone");

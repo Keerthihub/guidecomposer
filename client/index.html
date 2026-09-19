@@ -64,15 +64,15 @@
 
   <div class="controls" id="controls" data-mode="grid">
     <div class="types" role="radiogroup" aria-label="Grid type">
-      <label class="type"><input type="radio" name="type" value="columns" form="settings" checked><span class="type__face"><svg class="type__icon"><use href="#t-columns"/></svg><span class="type__label">Columns</span></span></label>
-      <label class="type"><input type="radio" name="type" value="modular" form="settings"><span class="type__face"><svg class="type__icon"><use href="#t-modular"/></svg><span class="type__label">Modular</span></span></label>
-      <label class="type"><input type="radio" name="type" value="baseline" form="settings"><span class="type__face"><svg class="type__icon"><use href="#t-baseline"/></svg><span class="type__label">Baseline</span></span></label>
-      <label class="type"><input type="radio" name="type" value="composition" form="settings"><span class="type__face"><svg class="type__icon"><use href="#t-composition"/></svg><span class="type__label">Compose</span></span></label>
-      <label class="type"><input type="radio" name="type" value="pattern" form="settings"><span class="type__face"><svg class="type__icon"><use href="#t-pattern"/></svg><span class="type__label">Pattern</span></span></label>
+      <label class="type"><input type="radio" name="type" value="columns" form="settings" checked><span class="type__face" title="Vertical columns with gutters between them"><svg class="type__icon"><use href="#t-columns"/></svg><span class="type__label">Columns</span></span></label>
+      <label class="type"><input type="radio" name="type" value="modular" form="settings"><span class="type__face" title="Columns and rows together, making modules"><svg class="type__icon"><use href="#t-modular"/></svg><span class="type__label">Modular</span></span></label>
+      <label class="type"><input type="radio" name="type" value="baseline" form="settings"><span class="type__face" title="Evenly spaced horizontal lines for text to sit on"><svg class="type__icon"><use href="#t-baseline"/></svg><span class="type__label">Baseline</span></span></label>
+      <label class="type"><input type="radio" name="type" value="composition" form="settings"><span class="type__face" title="Composition guides: thirds, golden sections, diagonals, spiral"><svg class="type__icon"><use href="#t-composition"/></svg><span class="type__label">Compose</span></span></label>
+      <label class="type"><input type="radio" name="type" value="pattern" form="settings"><span class="type__face" title="Repeating pattern: squares, dots, isometric, hexagons, diagonal, radial"><svg class="type__icon"><use href="#t-pattern"/></svg><span class="type__label">Pattern</span></span></label>
     </div>
 
     <div class="overlays" data-mode="grid">
-      <span class="field__label" id="overlay-label">Add on top</span>
+      <span class="field__label" id="overlay-label">Draw another grid on top</span>
       <div class="overlays__row" role="group" aria-labelledby="overlay-label" id="overlay-types"></div>
       <p class="field__error" id="err-overlayTypes" data-error-for="overlayTypes"></p>
     </div>
@@ -227,7 +227,7 @@
 
       <div class="pair" data-for="columns modular">
         <label class="field">
-          <span class="field__label">Overlay columns</span>
+          <span class="field__label">Second set of columns</span>
           <input class="field__input" type="number" name="overlayColumns" min="0" max="48" step="1" inputmode="numeric" placeholder="Off" title="Adds a second, gutterless division, such as 4 over 3 columns for a compound grid. 0 turns it off." aria-describedby="err-overlay">
         </label>
         <label class="check check--inline" data-for="modular">

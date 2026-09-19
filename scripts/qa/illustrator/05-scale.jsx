@@ -111,7 +111,7 @@
     // With everything selected, the panel still has to answer.
     app.executeMenuCommand("selectall");
     budget("status with 20,000 objects selected", function () { return call("status"); }, 500, "selection capped at 200");
-    budget("construction geometry with everything selected", function () { return call("selectionGeometry"); }, 1500, "points capped at 3000");
+    budget("construction geometry with everything selected", function () { return call("selectionGeometry"); }, 1000, "points capped at 1500");
     doc.selection = null;
 
     // Several documents open at once: previews sweep every one of them.

@@ -62,6 +62,12 @@ First release candidate.
 - Layout library: 128 layouts in ten categories, led by Systems, with icon thumbnails drawn on the active artboard, search, and suggestions for the artboard's shape. Proportional layouts size margins and gutters to the page.
 - Saved presets, with export and import as files.
 
+### Speed
+
+- Previewing redraws on every keystroke, and used to search the whole document each time to find what to remove. A live preview now remembers the grids it drew and the grids it hid, and ends them by reference. On a 20,000-item document, each preview while typing went from 216 ms to 36 ms, Generate from 256 ms to 34 ms, and a preview with three documents open from 573 ms to 22 ms.
+- Whether a grid has been edited is worked out only when something is about to be removed, not on every scan.
+- The grid layer is no longer deleted and made again between preview ticks.
+
 ### Panel
 
 - Three modes: Grid, Layouts, and Construct. Grid types as icon buttons, quick color swatches, an opacity slider, and success, warning, and error messages with icons.
@@ -69,7 +75,7 @@ First release candidate.
 - Matches all four host UI brightness settings; keyboard accessible; works docked down to 240 px wide.
 - Draw test line diagnostic.
 - Live preview pauses for grids over 1,500 shapes, which would stall the app on every edit; Generate still draws them.
-- Construct reads the selected artwork only when the selection changes, and at most 3,000 points.
+- Construct reads the selected artwork only when the selection changes, and at most 1,500 points; the panel says when it used part of a selection.
 - A host call that gets no answer for 90 seconds is abandoned with a message, so the panel never stays busy.
 - Applying a layout in other units converts the lengths it doesn't set (24 pt spacing no longer becomes 24 in).
 - When the extension's files change while the panel is open, the panel says so and offers Reload panel, so it never runs stale code against newer host scripts.

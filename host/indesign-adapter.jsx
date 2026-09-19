@@ -959,7 +959,7 @@
             var hasText = false;
             var points = 0;
             var firstBounds = null;
-            var limit = 3000; // Reading points is slow in the host; stop well before users notice.
+            var limit = 1500; // Reading points is slow in the host; a logo needs a fraction of this.
             function flip(p) {
                 return [p[0], -p[1]];
             }
