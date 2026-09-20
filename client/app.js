@@ -143,6 +143,120 @@
         return false;
     }
 
+    /*
+     * A copy of the presets kept outside the panel's own storage.
+     *
+     * CEP names each extension's storage area after the extension id AND the
+     * host application's version: `ILST_30.8.1_<id>`. Updating Illustrator —
+     * which happens every few weeks — produces a new, empty one, and presets a
+     * user spent months building are simply not there any more. Nothing warns
+     * them, and nothing in the panel could detect it from storage alone.
+     * Adobe's own bundled extension leaves one such folder behind per
+     * Illustrator version, which is how this was found.
+     *
+     * So presets are mirrored to a file under the user's data folder, which no
+     * Illustrator update touches, and restored when the panel starts up to find
+     * its storage empty. Best-effort throughout: this is a safety net, and a
+     * safety net that throws is worse than no safety net.
+     */
+    const VAULT_FOLDER = "GuideComposer";
+    const VAULT_FILE = "presets-backup.json";
+
+    function vaultPaths() {
+        try {
+            if (typeof CSInterface !== "function" || !(window.cep && window.cep.fs)) {
+                return null;
+            }
+            const base = new CSInterface().getSystemPath(SystemPath.USER_DATA);
+            if (!base) {
+                return null;
+            }
+            const separator = base.indexOf("\\") !== -1 ? "\\" : "/";
+            const dir = base + separator + VAULT_FOLDER;
+            return { dir: dir, file: dir + separator + VAULT_FILE };
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function vaultSave(presets) {
+        const paths = vaultPaths();
+        if (!paths) {
+            return false;
+        }
+        try {
+            const fs = window.cep.fs;
+            // makedir reports an error when the folder is already there, which
+            // is the normal case; the write that follows is the real test.
+            if (fs.makedir) {
+                fs.makedir(paths.dir);
+            }
+            return !fs.writeFile(paths.file, JSON.stringify({
+                format: PRESET_FILE_FORMAT,
+                version: PRESET_FILE_VERSION,
+                savedBy: PANEL_VERSION,
+                presets: presets.map((preset) => ({ name: preset.name, settings: preset.settings }))
+            })).err;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function vaultLoad() {
+        const paths = vaultPaths();
+        if (!paths) {
+            return [];
+        }
+        try {
+            const read = window.cep.fs.readFile(paths.file);
+            if (read.err || typeof read.data !== "string") {
+                return [];
+            }
+            const data = JSON.parse(read.data);
+            if (!data || data.format !== PRESET_FILE_FORMAT || !Array.isArray(data.presets)) {
+                return [];
+            }
+            return data.presets
+                .filter((preset) => preset && typeof preset.name === "string" && preset.name &&
+                    preset.settings && typeof preset.settings === "object")
+                .slice(0, MAX_IMPORT_PRESETS);
+        } catch (e) {
+            return [];
+        }
+    }
+
+    // Every preset write goes through here, so the backup can never fall behind
+    // the storage it exists to outlive.
+    function writePresets(presets, what) {
+        if (!storageWrite(STORAGE_PRESETS, presets, what)) {
+            return false;
+        }
+        vaultSave(presets);
+        return true;
+    }
+
+    /*
+     * Runs once at startup. Storage that is empty while a backup exists was
+     * almost certainly orphaned by an Illustrator update, not emptied by the
+     * user: deleting the last preset rewrites the backup as empty too.
+     */
+    function restorePresetsIfOrphaned() {
+        if (loadPresets().length) {
+            return 0;
+        }
+        const saved = vaultLoad();
+        if (!saved.length) {
+            return 0;
+        }
+        const presets = saved.map((preset) => ({
+            name: preset.name,
+            settings: settingsFromStored(preset.settings),
+            savedAt: new Date().toISOString()
+        }));
+        presets.sort((a, b) => a.name.localeCompare(b.name));
+        return storageWrite(STORAGE_PRESETS, presets, "the restored presets", true) ? presets.length : 0;
+    }
+
     function storageWriteUi(changes) {
         const ok = storage.updateUi(changes);
         if (!ok && !storageFailed) {
@@ -2934,7 +3048,7 @@
             added++;
         });
         presets.sort((a, b) => a.name.localeCompare(b.name));
-        if (!storageWrite(STORAGE_PRESETS, presets, "the imported presets")) {
+        if (!writePresets(presets, "the imported presets")) {
             renderPresets("");
             return;
         }
@@ -3032,7 +3146,7 @@
             presets[existing] = entry;
         }
         presets.sort((a, b) => a.name.localeCompare(b.name));
-        if (!storageWrite(STORAGE_PRESETS, presets, "the preset")) {
+        if (!writePresets(presets, "the preset")) {
             return;
         }
         closePresetSave();
@@ -3461,7 +3575,7 @@
         const name = value.slice(5);
         const before = loadPresets();
         const deleted = before.find((p) => p.name === name);
-        if (!storageWrite(STORAGE_PRESETS, before.filter((p) => p.name !== name), "the preset list")) {
+        if (!writePresets(before.filter((p) => p.name !== name), "the preset list")) {
             return;
         }
         renderPresets("");
@@ -3469,7 +3583,7 @@
         offerUndo("Deleted preset “" + name + "”.", undefined, () => {
             const presets = loadPresets().filter((p) => p.name !== name).concat(deleted ? [deleted] : []);
             presets.sort((a, b) => a.name.localeCompare(b.name));
-            if (storageWrite(STORAGE_PRESETS, presets, "the preset list")) {
+            if (writePresets(presets, "the preset list")) {
                 renderPresets("user:" + name);
                 say("Restored preset “" + name + "”.");
             }
@@ -3999,6 +4113,7 @@
             els.targetRange.value = typeof ui.target.range === "string" ? ui.target.range : "";
         }
 
+        const restoredPresets = restorePresetsIfOrphaned();
         renderPresets("");
         renderFormats();
         applyNouns();
@@ -4006,7 +4121,14 @@
         showVersion();
         bindEvents();
         setMode(PANEL_MODES.indexOf(ui.panelMode) !== -1 ? ui.panelMode : "grid", { silent: true });
-        refreshStatus(true); // Reads the document, and looks for a newer installed version.
+        // The first status refresh overwrites whatever the status line holds, so
+        // a restore announced before it would never be seen. Say it afterwards.
+        refreshStatus(true).then(() => { // Reads the document, and looks for a newer installed version.
+            if (restoredPresets) {
+                say("Restored " + plural(restoredPresets, "preset", "presets") +
+                    " from a backup. Panel storage was empty, which usually means Illustrator was updated.", "ok");
+            }
+        });
         if (bridge.kind === "mock") {
             document.documentElement.dataset.host = "mock";
             // Browser-only hooks for the smoke test; never present inside Illustrator.

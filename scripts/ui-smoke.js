@@ -1153,6 +1153,118 @@ async function main() {
         await send("Emulation.setDeviceMetricsOverride", { width: 320, height: 1180, deviceScaleFactor: 2, mobile: false });
         await sleep(300);
 
+        // ------------------------------------------- presets survive an Illustrator update
+        /*
+         * CEP keys each extension's storage area by the HOST APPLICATION's
+         * version as well as the extension id, so updating Illustrator hands
+         * the panel an empty store and the user's presets are gone. The panel
+         * mirrors presets to a file outside that store and restores them.
+         *
+         * This reproduces the bug exactly: save a preset, wipe localStorage the
+         * way a new Illustrator version would, reload, and require the preset
+         * back. The fake cep.fs below is the only stand-in — everything else is
+         * the panel's real code path.
+         */
+        /*
+         * Only cep.fs and one CSInterface method are stood in for. Setting
+         * window.__adobe_cep__ instead would flip the panel onto its real CEP
+         * bridge and break every check after this one — which is exactly what
+         * the first version of this test did.
+         */
+        const fakeFs = `(() => {
+            /*
+             * The stand-in files live in sessionStorage, not on window, because
+             * window is new on every navigation and the whole point of this
+             * test is that the backup outlives a reload with an empty
+             * localStorage. sessionStorage is the test harness's disk; the
+             * panel itself never touches it.
+             */
+            const FILES_KEY = "__fakeFiles";
+            const readFiles = () => {
+                try { return JSON.parse(sessionStorage.getItem(FILES_KEY)) || {}; }
+                catch (e) { return {}; }
+            };
+            const writeFiles = (files) => sessionStorage.setItem(FILES_KEY, JSON.stringify(files));
+            window.cep = {
+                fs: {
+                    makedir: (dir) => ({ err: 0, data: dir }),
+                    writeFile: (path, data) => {
+                        const files = readFiles();
+                        files[path] = data;
+                        writeFiles(files);
+                        return { err: 0 };
+                    },
+                    readFile: (path) => {
+                        const files = readFiles();
+                        return path in files ? { err: 0, data: files[path] } : { err: 1, data: null };
+                    }
+                }
+            };
+            /*
+             * This script runs before any page script, so CSInterface does not
+             * exist yet and cannot be patched here. The panel loads
+             * vendor/CSInterface.js and then app.js, which calls init() as it
+             * runs — so the patch has to land in the gap between the two.
+             * A MutationObserver fires as each script element is parsed in,
+             * which is inside that gap.
+             */
+            const patch = () => {
+                if (typeof window.CSInterface === "function") {
+                    window.CSInterface.prototype.getSystemPath = () => "/fake/userdata";
+                    return true;
+                }
+                return false;
+            };
+            if (!patch()) {
+                const observer = new MutationObserver(() => {
+                    if (patch()) { observer.disconnect(); }
+                });
+                observer.observe(document.documentElement || document, { childList: true, subtree: true });
+            }
+        })()`;
+        const fakeFsScript = await send("Page.addScriptToEvaluateOnNewDocument", { source: fakeFs });
+        await load("?theme=dark");
+        await evaluate(`localStorage.clear()`);
+        await load("?theme=dark");
+
+        await evaluate(setField("columns", 7));
+        await evaluate(click("preset-new"));
+        await sleep(150);
+        await evaluate(`(() => {
+            const input = document.getElementById("preset-name");
+            input.value = "Update Survivor";
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+        })()`);
+        await evaluate(click("preset-save"));
+        await sleep(250);
+
+        const vaultFile = "/fake/userdata/GuideComposer/presets-backup.json";
+        const backed = await evaluate(
+            `(JSON.parse(sessionStorage.getItem("__fakeFiles") || "{}")[${JSON.stringify(vaultFile)}]) || ""`
+        );
+        check(backed.includes("Update Survivor"), "a saved preset is mirrored to a file outside CEP's storage");
+
+        // Exactly what an Illustrator update does: a brand-new, empty store,
+        // with the backup file untouched beside it.
+        await evaluate(`localStorage.clear()`);
+        await load("?theme=dark");
+        await sleep(300);
+        const restored = await evaluate(
+            `Array.from(document.getElementById("preset-select").options).map((o) => o.textContent).join("|")`
+        );
+        check(restored.includes("Update Survivor"), "presets come back after CEP storage is orphaned by an app update");
+        check(/Restored 1 preset/.test(await evaluate(text("status"))), "and the panel says the presets were restored");
+
+        // A panel with no presets and no backup must stay quiet rather than
+        // announce a restore of nothing.
+        await evaluate(`localStorage.clear(); sessionStorage.removeItem("__fakeFiles");`);
+        await load("?theme=dark");
+        await sleep(300);
+        check(!/Restored/.test(await evaluate(text("status"))), "no restore message when there is nothing to restore");
+
+        // Later checks must run against the real conditions, not the stand-in.
+        await send("Page.removeScriptToEvaluateOnNewDocument", { identifier: fakeFsScript.identifier });
+
         // ---------------------------------------------------------------- no document, themes, narrow
         await load("?theme=light&nodoc");
         check(await evaluate(text("artboard-name")) === "No document open", "no-document readout");

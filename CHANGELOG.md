@@ -13,6 +13,12 @@ First release candidate.
 - Compound grids (overlay columns) and square modules.
 - Patterns: square grid, dot grid, isometric grid, hexagons, diagonal grid at any angle, and radial grid.
 
+### Presets survive an Illustrator update
+
+- **Presets are no longer lost when Illustrator updates itself.** CEP names each extension's storage after the extension id *and the host application's version*, so a new Illustrator gives the panel a brand-new empty store — silently, every few weeks. Presets are now mirrored to a file outside that store (`~/Library/Application Support/GuideComposer/presets-backup.json`, `%APPDATA%\GuideComposer\` on Windows) and restored when the panel opens to find its storage empty, with a message saying so.
+- Settings are deliberately not restored: reopening at defaults costs seconds, not months of work. Presets you deleted yourself are not resurrected — deleting your last preset empties the backup too.
+- This does not replace **Export presets**, which is still the only copy you control and the only one that survives an uninstall or a new computer.
+
 ### Safety and ownership
 
 - Which artboard a grid belongs to is worked out from where the grid sits, so deleting or reordering artboards no longer sends Clear to the wrong one.

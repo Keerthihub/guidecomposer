@@ -25,6 +25,37 @@ Two consequences follow from "per extension", and they explain everything below:
 - Anything that removes the extension, or gives it a new identity, takes the
   storage with it.
 
+## Updating Illustrator empties the panel's storage
+
+This one is Adobe's behaviour, not a choice of ours, and it surprised us too.
+
+CEP names each extension's storage area after **both** the extension id and the
+host application's version — `ILST_30.8.1_com.keerthi.guidecomposer`. Update
+Illustrator and CEP makes a **new, empty one**. Nothing is deleted, but nothing
+is carried across either, and Illustrator updates every few weeks.
+
+So GuideComposer keeps a second copy of your presets in a plain file, outside
+that storage, where no Illustrator update reaches it:
+
+| System | File |
+| --- | --- |
+| macOS | `~/Library/Application Support/GuideComposer/presets-backup.json` |
+| Windows | `%APPDATA%\GuideComposer\presets-backup.json` |
+
+It is rewritten whenever you save, rename, delete or import a preset, so it
+never lags behind. When the panel opens and finds its storage empty but that
+file present, it puts your presets back and says so in the status line.
+
+Two things it deliberately does not do. It does not restore **settings** — the
+panel simply reopens at its defaults, which costs you a few seconds rather than
+months of work. And it does not restore presets you actually deleted: deleting
+your last preset rewrites the backup as empty too, so only a storage area that
+was emptied *without* you doing it is ever refilled.
+
+**This does not replace exporting.** The backup file lives on one computer, in
+one user account, and an uninstall or a disk failure takes it with everything
+else. **More > Export presets** is still the only copy you control.
+
 ## What survives what
 
 | Action | Settings | Presets | Grids already in your documents |
@@ -34,7 +65,8 @@ Two consequences follow from "per extension", and they explain everything below:
 | Restarting the computer | Kept | Kept | Kept |
 | **Updating in place** — installing a newer `.zxp` over the installed one, same product | **Expected to be kept** (verified per release: see below) | **Expected to be kept** | Kept, and still recognised by Clear |
 | **Uninstalling, then installing again** | **Lost** | **Lost** | Kept in the documents, and still recognised by Clear once the same product is reinstalled |
-| Clearing Adobe's CEP plugin cache | **Lost** | **Lost** | Kept |
+| **Updating Illustrator itself** (e.g. 30.8 to 30.9) | **Lost** | **Restored automatically** — see below | Kept, and still recognised by Clear |
+| Clearing Adobe's CEP plugin cache | Lost | **Restored automatically** | Kept |
 | Moving to a new computer | Not carried over | Not carried over — import your exported file | Kept, they are in the document files |
 | Using a different user account on the same computer | Not carried over | Not carried over | Kept |
 | Installing a version published under a **different plugin id** (a rebrand, or a different seller's build) | Not carried over | Not carried over | Kept as artwork, but **Clear and Generate no longer recognise them**: the new plugin looks for its own ownership tag. Delete those old grid layers by hand. |
