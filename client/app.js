@@ -27,7 +27,7 @@
 
     // This panel's own version. The host reports the version of the files on
     // disk, so the two differing means the extension was updated underneath us.
-    const PANEL_VERSION = "0.1.0";
+    const PANEL_VERSION = "0.1.1";
 
     const PREVIEW_DELAY_MS = 200;
     // Redrawing thousands of shapes on every edit stalls Illustrator and fills its

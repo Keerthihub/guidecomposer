@@ -48,10 +48,15 @@ function versions(root) {
     const manifest = read(root, "CSXS/manifest.xml");
     const extensionTag = manifest.match(/<Extension Id="[^"]+" Version="([^"]+)"\s*\/>/);
     const host = read(root, "host/index.jsx").match(/M\.VERSION = "([^"]+)"/);
+    // The panel's own copy: this is the number a user reads in More, and the
+    // one Copy diagnostics puts in a bug report. It was the only version site
+    // nothing checked, so a release could ship a panel reporting the last one.
+    const panel = read(root, "client/app.js").match(/PANEL_VERSION = "([^"]+)"/);
     return {
         bundle: attr(manifest, "ExtensionBundleVersion"),
         extension: extensionTag ? extensionTag[1] : null,
-        host: host ? host[1] : null
+        host: host ? host[1] : null,
+        panel: panel ? panel[1] : null
     };
 }
 
@@ -62,7 +67,7 @@ function checkVersions(root = ROOT) {
     if (!/^\d+\.\d+\.\d+$/.test(pkg.version)) {
         problems.push(`package.json version "${pkg.version}" is not MAJOR.MINOR.PATCH`);
     }
-    for (const [where, value] of [["manifest ExtensionBundleVersion", v.bundle], ["manifest Extension Version", v.extension], ["host/index.jsx M.VERSION", v.host]]) {
+    for (const [where, value] of [["manifest ExtensionBundleVersion", v.bundle], ["manifest Extension Version", v.extension], ["host/index.jsx M.VERSION", v.host], ["client/app.js PANEL_VERSION", v.panel]]) {
         if (value !== pkg.version) {
             problems.push(`${where} is "${value}" but package.json is "${pkg.version}"`);
         }

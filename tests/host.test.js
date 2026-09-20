@@ -12,6 +12,9 @@ const path = require("node:path");
 const { createHost, PathItem, GroupItem, CompoundPathItem, TextFrame } = require("./helpers/fake-illustrator.js");
 
 const OWNER = "com.keerthi.guidecomposer";
+// Read the version rather than repeat it: a literal here fails on every version
+// bump, which teaches whoever bumps next to edit the assertion out of the way.
+const VERSION = require("../package.json").version;
 
 const COLUMNS = {
     type: "columns", units: "pt", columns: 12, columnGutter: 12,
@@ -92,7 +95,7 @@ test("status without a document", () => {
     assert.equal(status.ok, true);
     assert.equal(status.data.hasDocument, false);
     assert.equal(status.data.host, "illustrator");
-    assert.equal(status.data.version, "0.1.0", "the panel can compare its version with the host's");
+    assert.equal(status.data.version, VERSION, "the panel can compare its version with the host's");
 });
 
 test("status describes the active artboard", () => {

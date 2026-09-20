@@ -2,6 +2,20 @@
 
 All notable changes to GuideComposer are recorded here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.1.1] - Unreleased
+
+Second release candidate. Everything in 0.1.0 plus one fix that had to happen
+before anyone installed it.
+
+### Fixed
+
+- **Presets are no longer lost when Illustrator updates itself.** CEP names each extension's storage after the extension id *and the host application's version*, so a new Illustrator silently gives the panel a brand-new empty store — every few weeks. Presets are now mirrored to a file outside that store and restored when the panel opens to find its storage empty. Full explanation in `docs/UPDATING.md`.
+
+The 0.1.0 signed beta predates this and carries the bug. It is kept only as the
+older of the two builds the update-in-place check needs.
+
+---
+
 ## [0.1.0] - Unreleased
 
 First release candidate.

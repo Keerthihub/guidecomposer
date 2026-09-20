@@ -13,7 +13,7 @@
 $.global.Mullion = $.global.Mullion || {};
 
 (function (M) {
-    M.VERSION = "0.1.0";
+    M.VERSION = "0.1.1";
     M.OWNER_ID = "com.keerthi.guidecomposer";
     M.ready = false;
 

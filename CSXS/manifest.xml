@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ExtensionManifest Version="7.0" ExtensionBundleId="com.keerthi.guidecomposer" ExtensionBundleVersion="0.1.0" ExtensionBundleName="GuideComposer" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<ExtensionManifest Version="7.0" ExtensionBundleId="com.keerthi.guidecomposer" ExtensionBundleVersion="0.1.1" ExtensionBundleName="GuideComposer" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
     <ExtensionList>
-        <Extension Id="com.keerthi.guidecomposer.main" Version="0.1.0"/>
+        <Extension Id="com.keerthi.guidecomposer.main" Version="0.1.1"/>
     </ExtensionList>
     <ExecutionEnvironment>
         <HostList>
