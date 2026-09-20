@@ -70,11 +70,11 @@ npm run build
 $version = node -p "require('./package.json').version"
 $password = Read-Host "Certificate password" -AsSecureString
 $plain = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($password))
-& C:\Tools\ZXPSignCmd.exe -sign dist\guidecomposer "dist\guidecomposer-$version.zxp" C:\Certificates\guidecomposer-signing.p12 $plain -tsa http://timestamp.digicert.com
+& C:\Tools\ZXPSignCmd.exe -sign dist\guidecomposer "dist\guidecomposer-$version.zxp" C:\Certificates\guidecomposer-signing.p12 $plain -tsa http://time.certum.pl/
 & C:\Tools\ZXPSignCmd.exe -verify "dist\guidecomposer-$version.zxp" -certinfo
 ```
 
-The timestamp (`-tsa`) keeps the signature valid after the certificate expires. If the timestamp server is unreachable, try another RFC 3161 server rather than signing without one.
+The timestamp (`-tsa`) keeps the signature valid after the certificate expires. If the timestamp server is unreachable, try another RFC 3161 server rather than signing without one. Adobe's Windows 4.1.103 tool crashed while using DigiCert on the GitHub runner tested on 2026-09-20; Certum and Comodo both granted valid RFC 3161 test requests, so the release workflow tries those two documented services in that order.
 
 ### What the release workflow does
 
