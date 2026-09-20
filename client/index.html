@@ -585,6 +585,13 @@
 <script src="../shared/grid-core.js"></script>
 <script src="../shared/layouts.js"></script>
 <script src="../shared/formats.js"></script>
+<!-- Panel modules. Plain scripts in dependency order: CEP extensions load
+     from file://, where ES modules are blocked, so each file attaches to the
+     shared MullionUI namespace instead of importing. -->
+<script src="modules/constants.js"></script>
+<script src="modules/storage.js"></script>
+<script src="modules/queue.js"></script>
+<script src="modules/theme.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

@@ -188,7 +188,7 @@ async function main() {
         // The panel compares its own version with the one the host reports, so a
         // stale PANEL_VERSION would offer a reload on every launch.
         const pkgVersion = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8")).version;
-        const panelVersion = (fs.readFileSync(path.join(ROOT, "client", "app.js"), "utf8").match(/PANEL_VERSION = "([^"]+)"/) || [])[1];
+        const panelVersion = (fs.readFileSync(path.join(ROOT, "client", "modules", "constants.js"), "utf8").match(/PANEL_VERSION = "([^"]+)"/) || [])[1];
         check(panelVersion === pkgVersion, "the panel's version matches package.json (" + panelVersion + " vs " + pkgVersion + ")");
 
         // ---------------------------------------------------------------- default state

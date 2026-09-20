@@ -15,258 +15,64 @@
 (function () {
     "use strict";
 
-    const core = window.MullionCore;
-    const layouts = window.MullionLayouts || {
-        CATEGORIES: [], LAYOUTS: [], find: () => null, resolveLayout: () => ({}),
-        suggestLayouts: () => [], describeArtboard: () => "", describeShort: () => ""
-    };
-
-    const STORAGE_SETTINGS = "mullion.settings.v1";
-    const STORAGE_PRESETS = "mullion.presets.v1";
-    const STORAGE_UI = "mullion.ui.v1";
-
-    // This panel's own version. The host reports the version of the files on
-    // disk, so the two differing means the extension was updated underneath us.
-    const PANEL_VERSION = "0.1.1";
-
-    const PREVIEW_DELAY_MS = 200;
-    // Redrawing thousands of shapes on every edit stalls Illustrator and fills its
-    // undo history, so live preview pauses above this many shapes (Generate still works).
-    const PREVIEW_MAX_SHAPES = 1500;
-    // A host call that hasn't answered by now is abandoned so the panel stays usable.
-    const HOST_TIMEOUT_MS = 90000;
-    // The host keeps running an abandoned call, so anything that would change the
-    // document waits until it answers rather than doing the work twice.
-    const MUTATING_METHODS = { preview: true, generate: true, clear: true, clearPreview: true, setGridLayer: true, resizeArtboards: true, alignSelection: true, applyPageMargins: true, drawTestLine: true };
-    // Show a working state only once a call is slow enough to notice.
-    const WORKING_DELAY_MS = 400;
-    const STATUS_THROTTLE_MS = 600;
-    // How long an Undo stays on offer after a destructive change.
-    const UNDO_MS = 8000;
-    // Rebooting the host re-reads its files, so look for a new version sparingly.
-    const UPDATE_CHECK_MS = 300000;
-    const STEP_REPEAT_DELAY_MS = 400;
-    const STEP_REPEAT_MS = 70;
-    // Below this the drawing cannot share the panel with the controls, so it collapses.
-    const SHORT_PANEL_PX = 470;
-    const FALLBACK_RECT = [0, 792, 612, 0]; // US Letter, shown when no document is open
-    const MAX_SCHEMATIC_CELLS = 2500;
-    const THUMBNAIL_MAX_MARKS = 500; // Dots and hexagons beyond this are thinned in tile thumbnails.
-    // Marks across a tile before it stops reading as a grid and starts reading
-    // as a solid block.
-    const TILE_LEGIBLE_MARKS = 14;
-
-    const formats = window.MullionFormats || { GROUPS: [], FORMATS: [], find: () => null, toPoints: () => ({}), label: () => "" };
-
-    const HOST_METHODS = ["status", "preview", "clearPreview", "generate", "clear", "setGridLayer", "resizeArtboards", "alignSelection", "textMetrics", "applyPageMargins", "selectionGeometry", "documentGrid", "drawTestLine"];
-    const LENGTH_FIELDS = ["columnGutter", "rowGutter", "marginTop", "marginRight", "marginBottom", "marginLeft", "baselineSpacing", "baselineOffset", "patternSize", "conPadding"];
-    const MARGIN_FIELDS = ["marginTop", "marginRight", "marginBottom", "marginLeft"];
-    const NUMBER_FIELDS = LENGTH_FIELDS.concat(["columns", "rows", "strokeWidth", "opacity", "dotSize", "rings", "spokes", "gutterOpacity", "overlayColumns", "patternAngle"]);
-    const BOOLEAN_FIELDS = ["extendToEdges", "lockLayer", "marginColorOn", "shadeGutters", "addBaseline", "squareModules"]
-        .concat(core ? core.COMPOSITION_FLAGS : [], core ? core.CONSTRUCTION_FLAGS : []);
-    const TEXT_FIELDS = ["columnRatios", "rowRatios"];
-    // Fields that are simply off when left blank.
-    const OFF_WHEN_EMPTY = { overlayColumns: 0 };
-    // Host vocabulary: Illustrator has artboards, InDesign has pages.
-    const NOUNS = {
-        illustrator: { one: "artboard", many: "artboards", title: "Artboard" },
-        indesign: { one: "page", many: "pages", title: "Page" }
-    };
-    const COLOR_FIELDS = ["strokeColor", "marginColor", "gutterColor", "conBoundsColor", "conKeylineColor", "conCircleColor"];
-    const CHOICE_FIELDS = ["type", "output", "lineStyle", "conExtend"];
-    const SELECT_FIELDS = { units: "pt", spiralFocus: "bottom-right", pattern: "square" };
-    // One arrow-key press should move a length by a useful amount in its own
-    // unit: a fixed step of 1 moves a gutter by a whole inch.
-    const UNIT_STEPS = { pt: 1, px: 1, mm: 0.5, in: 0.05 };
-    const GRID_NAMES = { columns: "column grid", modular: "modular grid", baseline: "baseline grid", composition: "set of composition guides", pattern: "pattern" };
-    const PATTERN_NAMES = { square: "Square grid", dots: "Dot grid", isometric: "Isometric grid", hexagon: "Hexagons", diagonal: "Diagonal grid", radial: "Radial grid" };
-    const PATTERN_SIZE_LABELS = { square: "Cell size", dots: "Spacing", isometric: "Triangle side", hexagon: "Hexagon side", diagonal: "Diamond size" };
-    const GUIDE_NAMES = {
-        compThirds: "Thirds", compFifths: "Fifths", compGolden: "Golden sections", compDiagonals: "Diagonals",
-        compCenter: "Center", compArmature: "Armature", compDynamic: "Dynamic rectangle", compVillard: "Villard", compSpiral: "Spiral"
-    };
-    const PANEL_MODES = ["grid", "layouts", "construct"];
-    const BOX_TYPES = { columns: true, modular: true };
-
-    // Some errors cover a pair of fields: the message names both sides.
-    const ERROR_FIELD_GROUPS = {
-        marginLeft: ["marginLeft", "marginRight"],
-        marginTop: ["marginTop", "marginBottom"]
-    };
-
-    const SUPERSEDED = Object.freeze({ ok: false, superseded: true });
-
-    // ------------------------------------------------------------------ storage
-
-    const storage = {
-        get(key) {
-            try {
-                const raw = window.localStorage.getItem(key);
-                return raw ? JSON.parse(raw) : null;
-            } catch (e) {
-                return null;
-            }
-        },
-        set(key, value) {
-            try {
-                window.localStorage.setItem(key, JSON.stringify(value));
-                return true;
-            } catch (e) {
-                return false;
-            }
-        },
-        updateUi(changes) {
-            const ui = this.get(STORAGE_UI) || {};
-            Object.assign(ui, changes);
-            return this.set(STORAGE_UI, ui);
-        }
-    };
-
     /*
-     * Every write can fail (private mode, a full or blocked store). Silently
-     * losing presets or settings is worse than saying so, but a failing store
-     * fails on every keystroke, so the panel reports it once per streak.
+     * Every shared constant, field list and vocabulary table comes from
+     * modules/constants.js. Destructured rather than used through a namespace
+     * object so the code below reads the same as it always has.
      */
-    let storageFailed = false;
+    const {
+        core,
+        layouts,
+        STORAGE_SETTINGS,
+        STORAGE_PRESETS,
+        STORAGE_UI,
+        PANEL_VERSION,
+        PREVIEW_DELAY_MS,
+        PREVIEW_MAX_SHAPES,
+        HOST_TIMEOUT_MS,
+        MUTATING_METHODS,
+        WORKING_DELAY_MS,
+        STATUS_THROTTLE_MS,
+        UNDO_MS,
+        UPDATE_CHECK_MS,
+        STEP_REPEAT_DELAY_MS,
+        STEP_REPEAT_MS,
+        SHORT_PANEL_PX,
+        FALLBACK_RECT,
+        MAX_SCHEMATIC_CELLS,
+        THUMBNAIL_MAX_MARKS,
+        TILE_LEGIBLE_MARKS,
+        formats,
+        HOST_METHODS,
+        LENGTH_FIELDS,
+        MARGIN_FIELDS,
+        NUMBER_FIELDS,
+        BOOLEAN_FIELDS,
+        TEXT_FIELDS,
+        OFF_WHEN_EMPTY,
+        NOUNS,
+        COLOR_FIELDS,
+        CHOICE_FIELDS,
+        SELECT_FIELDS,
+        UNIT_STEPS,
+        GRID_NAMES,
+        PATTERN_NAMES,
+        PATTERN_SIZE_LABELS,
+        GUIDE_NAMES,
+        PANEL_MODES,
+        BOX_TYPES,
+        ERROR_FIELD_GROUPS,
+        SUPERSEDED,
+        PRESET_FILE_FORMAT,
+        PRESET_FILE_VERSION,
+        MAX_IMPORT_PRESETS
+    } = window.MullionUI.constants;
 
-    // `quiet` is for the writes that happen on every keystroke: they report the
-    // first failure of a streak, not one message per stroke.
-    function storageWrite(key, value, what, quiet) {
-        if (storage.set(key, value)) {
-            storageFailed = false;
-            return true;
-        }
-        if (!quiet || !storageFailed) {
-            say("Couldn't save " + what + ". Panel storage is unavailable, so it will be lost when the panel closes.", "error");
-        }
-        storageFailed = true;
-        return false;
-    }
-
-    /*
-     * A copy of the presets kept outside the panel's own storage.
-     *
-     * CEP names each extension's storage area after the extension id AND the
-     * host application's version: `ILST_30.8.1_<id>`. Updating Illustrator —
-     * which happens every few weeks — produces a new, empty one, and presets a
-     * user spent months building are simply not there any more. Nothing warns
-     * them, and nothing in the panel could detect it from storage alone.
-     * Adobe's own bundled extension leaves one such folder behind per
-     * Illustrator version, which is how this was found.
-     *
-     * So presets are mirrored to a file under the user's data folder, which no
-     * Illustrator update touches, and restored when the panel starts up to find
-     * its storage empty. Best-effort throughout: this is a safety net, and a
-     * safety net that throws is worse than no safety net.
-     */
-    const VAULT_FOLDER = "GuideComposer";
-    const VAULT_FILE = "presets-backup.json";
-
-    function vaultPaths() {
-        try {
-            if (typeof CSInterface !== "function" || !(window.cep && window.cep.fs)) {
-                return null;
-            }
-            const base = new CSInterface().getSystemPath(SystemPath.USER_DATA);
-            if (!base) {
-                return null;
-            }
-            const separator = base.indexOf("\\") !== -1 ? "\\" : "/";
-            const dir = base + separator + VAULT_FOLDER;
-            return { dir: dir, file: dir + separator + VAULT_FILE };
-        } catch (e) {
-            return null;
-        }
-    }
-
-    function vaultSave(presets) {
-        const paths = vaultPaths();
-        if (!paths) {
-            return false;
-        }
-        try {
-            const fs = window.cep.fs;
-            // makedir reports an error when the folder is already there, which
-            // is the normal case; the write that follows is the real test.
-            if (fs.makedir) {
-                fs.makedir(paths.dir);
-            }
-            return !fs.writeFile(paths.file, JSON.stringify({
-                format: PRESET_FILE_FORMAT,
-                version: PRESET_FILE_VERSION,
-                savedBy: PANEL_VERSION,
-                presets: presets.map((preset) => ({ name: preset.name, settings: preset.settings }))
-            })).err;
-        } catch (e) {
-            return false;
-        }
-    }
-
-    function vaultLoad() {
-        const paths = vaultPaths();
-        if (!paths) {
-            return [];
-        }
-        try {
-            const read = window.cep.fs.readFile(paths.file);
-            if (read.err || typeof read.data !== "string") {
-                return [];
-            }
-            const data = JSON.parse(read.data);
-            if (!data || data.format !== PRESET_FILE_FORMAT || !Array.isArray(data.presets)) {
-                return [];
-            }
-            return data.presets
-                .filter((preset) => preset && typeof preset.name === "string" && preset.name &&
-                    preset.settings && typeof preset.settings === "object")
-                .slice(0, MAX_IMPORT_PRESETS);
-        } catch (e) {
-            return [];
-        }
-    }
-
-    // Every preset write goes through here, so the backup can never fall behind
-    // the storage it exists to outlive.
-    function writePresets(presets, what) {
-        if (!storageWrite(STORAGE_PRESETS, presets, what)) {
-            return false;
-        }
-        vaultSave(presets);
-        return true;
-    }
-
-    /*
-     * Runs once at startup. Storage that is empty while a backup exists was
-     * almost certainly orphaned by an Illustrator update, not emptied by the
-     * user: deleting the last preset rewrites the backup as empty too.
-     */
-    function restorePresetsIfOrphaned() {
-        if (loadPresets().length) {
-            return 0;
-        }
-        const saved = vaultLoad();
-        if (!saved.length) {
-            return 0;
-        }
-        const presets = saved.map((preset) => ({
-            name: preset.name,
-            settings: settingsFromStored(preset.settings),
-            savedAt: new Date().toISOString()
-        }));
-        presets.sort((a, b) => a.name.localeCompare(b.name));
-        return storageWrite(STORAGE_PRESETS, presets, "the restored presets", true) ? presets.length : 0;
-    }
-
-    function storageWriteUi(changes) {
-        const ok = storage.updateUi(changes);
-        if (!ok && !storageFailed) {
-            storageFailed = true;
-            say("Couldn't save how the panel is set up. Panel storage is unavailable.", "error");
-        } else if (ok) {
-            storageFailed = false;
-        }
-        return ok;
-    }
+    // Settings, presets, and the backup that survives an Illustrator update: modules/storage.js.
+    const {
+        configureStorage, storage, storageWrite, storageWriteUi,
+        loadPresets, writePresets, restorePresetsIfOrphaned
+    } = window.MullionUI;
 
     // ------------------------------------------------------------------ bridges
 
@@ -714,186 +520,11 @@
         };
     }
 
-    // -------------------------------------------------------------------- queue
+    // Host calls run one at a time: modules/queue.js.
+    const { createQueue } = window.MullionUI;
 
-    /*
-     * Runs host calls one at a time. Calls marked coalesce replace a pending
-     * call of the same method, so a burst of preview requests collapses to the
-     * latest settings. Replaced and dropped calls resolve with SUPERSEDED.
-     */
-    function createQueue(bridge, onBusyChange, onStalledChange) {
-        const jobs = [];
-        let active = null;
-        let timeoutMs = HOST_TIMEOUT_MS;
-        // A call the panel gave up on, while the host is still running it.
-        let stalled = null; // { method }
-        const background = { preview: true, status: true, clearPreview: true, setGridLayer: true, textMetrics: true, selectionGeometry: true };
-
-        function isBusy() {
-            return Boolean(stalled || (active && !background[active.method]) || jobs.some((j) => !background[j.method]));
-        }
-
-        function pump() {
-            onBusyChange(isBusy());
-            if (active || jobs.length === 0) {
-                return;
-            }
-            const job = jobs.shift();
-            active = job;
-            onBusyChange(isBusy());
-            let timer = null;
-            const timeout = new Promise((resolve) => {
-                timer = window.setTimeout(() => resolve({
-                    ok: false,
-                    timedOut: true,
-                    error: {
-                        code: "TIMEOUT",
-                        message: appName() + " didn't respond to " + job.method + ". If a dialog is open there, close it. " +
-                            "The panel waits for that request to finish before changing the document again.",
-                        fields: []
-                    }
-                }), timeoutMs);
-            });
-            const call = bridge.call(job.method, job.payload)
-                .catch((err) => ({ ok: false, error: { code: "PANEL_ERROR", message: String((err && err.message) || err), fields: [] } }));
-            Promise.race([call, timeout]).then((result) => {
-                window.clearTimeout(timer);
-                active = null;
-                if (result.timedOut) {
-                    /*
-                     * The host is still executing this call. Re-enabling the
-                     * buttons here would let a second Generate run while the
-                     * first is still drawing, which with "Add to existing
-                     * grids" silently doubles the grid. Hold every mutating
-                     * call until the host answers.
-                     */
-                    stalled = { method: job.method };
-                    onStalledChange(stalled);
-                    call.then(() => {
-                        stalled = null;
-                        onStalledChange(null);
-                        pump();
-                    });
-                }
-                job.resolve(result);
-                pump();
-            });
-        }
-
-        return {
-            enqueue(method, payload, options) {
-                return new Promise((resolve) => {
-                    if (stalled && MUTATING_METHODS[method]) {
-                        resolve({
-                            ok: false,
-                            error: {
-                                code: "HOST_BUSY",
-                                message: appName() + " is still working on the last request. The panel waits for it to finish so the grid isn't drawn twice.",
-                                fields: []
-                            }
-                        });
-                        return;
-                    }
-                    if (options && options.coalesce) {
-                        const pending = jobs.find((j) => j.method === method);
-                        if (pending) {
-                            const replaced = pending.resolve;
-                            pending.payload = payload;
-                            pending.resolve = resolve;
-                            replaced(SUPERSEDED);
-                            return;
-                        }
-                    }
-                    jobs.push({ method, payload, resolve });
-                    pump();
-                });
-            },
-            drop(method) {
-                for (let i = jobs.length - 1; i >= 0; i--) {
-                    if (jobs[i].method === method) {
-                        jobs[i].resolve(SUPERSEDED);
-                        jobs.splice(i, 1);
-                    }
-                }
-                onBusyChange(isBusy());
-            },
-            stalled() {
-                return stalled;
-            },
-            // Development hook, so the timed-out path can be exercised in a browser.
-            setTimeout(ms) {
-                timeoutMs = Number(ms) || HOST_TIMEOUT_MS;
-            }
-        };
-    }
-
-    // -------------------------------------------------------------------- theme
-
-    function clampChannel(value) {
-        return Math.max(0, Math.min(255, Math.round(value)));
-    }
-
-    function rgb(r, g, b) {
-        return "rgb(" + clampChannel(r) + ", " + clampChannel(g) + ", " + clampChannel(b) + ")";
-    }
-
-    function applyTheme(skin) {
-        if (!skin || !skin.panelBackgroundColor || !skin.panelBackgroundColor.color) {
-            return;
-        }
-        const c = skin.panelBackgroundColor.color;
-        const shift = (d) => rgb(c.red + d, c.green + d, c.blue + d);
-        const luminance = (0.2126 * c.red + 0.7152 * c.green + 0.0722 * c.blue) / 255;
-        const dark = luminance < 0.5;
-
-        const tokens = dark
-            ? {
-                "--bg": shift(0),
-                "--bg-sunken": shift(-12),
-                "--fg": "#ececec",
-                "--muted": luminance < 0.25 ? "#a9a9a9" : "#cfcfcf",
-                "--rule": "rgba(255, 255, 255, 0.1)",
-                "--field": shift(-20),
-                "--field-border": shift(22),
-                "--field-border-hover": shift(42),
-                "--hover": "rgba(255, 255, 255, 0.07)",
-                "--pressed": "rgba(255, 255, 255, 0.15)",
-                "--accent": luminance < 0.25 ? "#378ef0" : "#5ea2f2",
-                "--accent-fg": "#ffffff",
-                "--focus": "#6cb2ff",
-                "--danger": luminance < 0.25 ? "#ff8a80" : "#ffb3ab",
-                "--paper-edge": "rgba(0, 0, 0, 0.45)",
-                "--guide": "#22c3e6"
-            }
-            : {
-                "--bg": shift(0),
-                "--bg-sunken": shift(-10),
-                "--fg": "#1b1b1b",
-                "--muted": luminance > 0.85 ? "#5a5a5a" : "#353535",
-                "--rule": "rgba(0, 0, 0, 0.12)",
-                "--field": luminance > 0.85 ? "#ffffff" : shift(30),
-                "--field-border": shift(-48),
-                "--field-border-hover": shift(-72),
-                "--hover": "rgba(0, 0, 0, 0.05)",
-                "--pressed": "rgba(0, 0, 0, 0.12)",
-                "--accent": luminance > 0.85 ? "#1473e6" : "#0d5bb8",
-                "--accent-fg": "#ffffff",
-                "--focus": "#0d66d0",
-                "--danger": luminance > 0.85 ? "#c9252d" : "#9e1119",
-                "--paper-edge": "rgba(0, 0, 0, 0.3)",
-                "--guide": "#0b9ec4"
-            };
-
-        const rootStyle = document.documentElement.style;
-        Object.keys(tokens).forEach((name) => rootStyle.setProperty(name, tokens[name]));
-        if (skin.baseFontFamily) {
-            rootStyle.setProperty("--font", '"' + String(skin.baseFontFamily).replace(/"/g, "") + '", system-ui, sans-serif');
-        }
-        if (skin.baseFontSize) {
-            rootStyle.setProperty("--font-size", Math.max(10, Math.min(13, Number(skin.baseFontSize) || 11)) + "px");
-        }
-        document.documentElement.dataset.theme = dark ? "dark" : "light";
-    }
+    // Panel colours follow the host's interface brightness: modules/theme.js.
+    const { applyTheme } = window.MullionUI;
 
     // ----------------------------------------------------------------- elements
 
@@ -1213,7 +844,7 @@
     let geometryKey = "";
 
     const bridge = window.__adobe_cep__ && typeof window.CSInterface === "function" ? createCepBridge() : createMockBridge();
-    const queue = createQueue(bridge, onBusyChange, onStalledChange);
+    const queue = createQueue(bridge, onBusyChange, onStalledChange, appName);
 
     // ------------------------------------------------------------------ status
 
@@ -2960,12 +2591,9 @@
 
     // ------------------------------------------------------- export / import
 
-    const PRESET_FILE_FORMAT = "mullion-presets";
-    const PRESET_FILE_VERSION = 1;
     // Import is the one place the panel reads a file someone else wrote: bound
     // what it will take on, so a huge or generated file can't hang the panel.
     const MAX_IMPORT_BYTES = 512 * 1024;
-    const MAX_IMPORT_PRESETS = 200;
 
     function presetFileText() {
         return JSON.stringify({
@@ -3086,13 +2714,6 @@
 
     // ----------------------------------------------------------------- presets
 
-    function loadPresets() {
-        const list = storage.get(STORAGE_PRESETS);
-        if (!Array.isArray(list)) {
-            return [];
-        }
-        return list.filter((p) => p && typeof p.name === "string" && p.name && p.settings && typeof p.settings === "object");
-    }
 
     // Preset menu values are "user:<name>". Ready-made layouts live in the library.
     function renderPresets(selectedValue) {
@@ -4087,6 +3708,8 @@
     // -------------------------------------------------------------------- init
 
     function init() {
+        // modules/storage.js needs these two from the controller; see its header.
+        configureStorage({ say, plural, settingsFromStored });
         if (!core) {
             say("GuideComposer is missing its grid engine. Reinstall the extension.", "error");
             return;

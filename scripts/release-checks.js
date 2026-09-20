@@ -51,7 +51,7 @@ function versions(root) {
     // The panel's own copy: this is the number a user reads in More, and the
     // one Copy diagnostics puts in a bug report. It was the only version site
     // nothing checked, so a release could ship a panel reporting the last one.
-    const panel = read(root, "client/app.js").match(/PANEL_VERSION = "([^"]+)"/);
+    const panel = read(root, "client/modules/constants.js").match(/PANEL_VERSION = "([^"]+)"/);
     return {
         bundle: attr(manifest, "ExtensionBundleVersion"),
         extension: extensionTag ? extensionTag[1] : null,
