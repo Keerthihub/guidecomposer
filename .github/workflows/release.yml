@@ -155,17 +155,11 @@ jobs:
             if (-not $identity.HasPrivateKey) { throw "The signing certificate has no private key" }
             "Loaded signing identity: $($identity.Subject)"
 
-            # Adobe documents both services for ZXPSignCmd. Try the second if
-            # the first is temporarily unavailable; never keep an untimestamped
-            # release package.
-            $timestampExit = $null
-            foreach ($timestampUrl in @("http://time.certum.pl/", "http://timestamp.comodoca.com/rfc3161")) {
-              Remove-Item $out -ErrorAction SilentlyContinue
-              & $tool -sign "dist\$name" $out $cert $env:ZXP_CERT_PASSWORD -tsa $timestampUrl
-              $timestampExit = $LASTEXITCODE
-              if ($timestampExit -eq 0) { break }
-              "Timestamp provider failed with Adobe signer exit $timestampExit; trying the fallback."
-            }
+            # Apple currently returns a SHA-256 RFC 3161 response that Adobe's
+            # legacy signer can validate. Never keep an untimestamped release.
+            Remove-Item $out -ErrorAction SilentlyContinue
+            & $tool -sign "dist\$name" $out $cert $env:ZXP_CERT_PASSWORD -tsa http://timestamp.apple.com/ts01
+            $timestampExit = $LASTEXITCODE
             if ($timestampExit -ne 0) {
               # Adobe's tool otherwise exits silently. A disposable, untimed
               # attempt distinguishes a TSA/network failure from a certificate
@@ -174,7 +168,7 @@ jobs:
               $plainExit = $LASTEXITCODE
               Remove-Item $withoutTimestamp -ErrorAction SilentlyContinue
               if ($plainExit -eq 0) {
-                throw "Both timestamp providers failed (last exit $timestampExit), while disposable untimed signing succeeded. No untimed package was kept."
+                throw "Timestamped signing failed (exit $timestampExit), while disposable untimed signing succeeded. No untimed package was kept."
               }
               throw "Signing failed both with a timestamp (exit $timestampExit) and without one (exit $plainExit)."
             }

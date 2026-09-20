@@ -70,11 +70,11 @@ npm run build
 $version = node -p "require('./package.json').version"
 $password = Read-Host "Certificate password" -AsSecureString
 $plain = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($password))
-& C:\Tools\ZXPSignCmd.exe -sign dist\guidecomposer "dist\guidecomposer-$version.zxp" C:\Certificates\guidecomposer-signing.p12 $plain -tsa http://time.certum.pl/
+& C:\Tools\ZXPSignCmd.exe -sign dist\guidecomposer "dist\guidecomposer-$version.zxp" C:\Certificates\guidecomposer-signing.p12 $plain -tsa http://timestamp.apple.com/ts01
 & C:\Tools\ZXPSignCmd.exe -verify "dist\guidecomposer-$version.zxp" -certinfo
 ```
 
-The timestamp (`-tsa`) keeps the signature valid after the certificate expires. If the timestamp server is unreachable, try another RFC 3161 server rather than signing without one. Adobe's Windows 4.1.103 tool crashed while using DigiCert on the GitHub runner tested on 2026-09-20; Certum and Comodo both granted valid RFC 3161 test requests, so the release workflow tries those two documented services in that order.
+The timestamp (`-tsa`) keeps the signature valid after the certificate expires. If the timestamp server is unreachable, do not publish an untimestamped package. Adobe's Windows 4.1.103 tool rejected Certum's response and crashed with DigiCert and Comodo on the GitHub runner tested on 2026-09-20. Apple's endpoint granted a valid SHA-256 RFC 3161 test request and is the compatible default used by the release workflow.
 
 ### What the release workflow does
 

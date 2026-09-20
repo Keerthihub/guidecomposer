@@ -6,7 +6,7 @@
 #   MULLION_CERT          path to your .p12 certificate (keep it outside the repository)
 # Optional:
 #   MULLION_CERT_PASSWORD certificate password; prompted for when unset
-#   MULLION_TSA           timestamp server (default http://time.certum.pl/)
+#   MULLION_TSA           timestamp server (default http://timestamp.apple.com/ts01)
 #
 # Nothing here writes the certificate or password to disk.
 set -euo pipefail
@@ -16,7 +16,7 @@ cd "$ROOT"
 
 : "${ZXPSIGNCMD:?Set ZXPSIGNCMD to the ZXPSignCmd binary path}"
 : "${MULLION_CERT:?Set MULLION_CERT to your .p12 certificate path}"
-TSA="${MULLION_TSA:-http://time.certum.pl/}"
+TSA="${MULLION_TSA:-http://timestamp.apple.com/ts01}"
 
 case "$(cd "$(dirname "$MULLION_CERT")" && pwd)" in
     "$ROOT"|"$ROOT"/*) echo "Keep the certificate outside the repository: $MULLION_CERT" >&2; exit 1 ;;
