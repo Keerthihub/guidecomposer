@@ -32,6 +32,7 @@ GitHub's **Security > Report a vulnerability** form.
 
 - [Features](#features)
 - [Verification status](#verification-status)
+- [Architecture](docs/ARCHITECTURE.md) — how the code fits together, and why
 - [Project layout](#project-layout)
 - [Development](#development)
 - [Load the panel in Illustrator](#load-the-panel-in-illustrator)
