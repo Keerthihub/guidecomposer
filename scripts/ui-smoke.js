@@ -31,6 +31,20 @@ const SHOTS = shotsIndex !== -1 ? path.resolve(process.argv[shotsIndex + 1]) : n
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+async function stopProcess(child) {
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    const exited = new Promise((resolve) => child.once("exit", resolve));
+    child.kill();
+    await Promise.race([exited, sleep(3000)]);
+    if (child.exitCode === null && child.signalCode === null) {
+        child.kill("SIGKILL");
+        await Promise.race([
+            new Promise((resolve) => child.once("exit", resolve)),
+            sleep(1000)
+        ]);
+    }
+}
+
 async function main() {
     if (!fs.existsSync(CHROME)) {
         console.error("Chrome not found. Set CHROME_PATH.");
@@ -1222,9 +1236,15 @@ async function main() {
             "a tall panel gets the drawing back");
     } finally {
         if (ws) ws.close();
-        chrome.kill();
-        await sleep(200);
-        fs.rmSync(profile, { recursive: true, force: true });
+        await stopProcess(chrome);
+        // Chrome can finish writing profile files just after its process exits,
+        // especially on macOS CI. Node retries ENOTEMPTY and similar races.
+        fs.rmSync(profile, {
+            recursive: true,
+            force: true,
+            maxRetries: 10,
+            retryDelay: 200
+        });
     }
 
     const relevantErrors = pageErrors.filter(Boolean);
