@@ -119,6 +119,11 @@ async function main() {
             } while (Date.now() < deadline);
             return value;
         };
+        const waitForText = (id, pattern, timeoutMs = 3000) => waitFor(
+            `new RegExp(${JSON.stringify(pattern.source)}, ${JSON.stringify(pattern.flags)}).test(` +
+            `document.getElementById(${JSON.stringify(id)}).textContent)`,
+            timeoutMs
+        );
         const load = async (query) => {
             await send("Page.navigate", { url: PAGE + query });
             await sleep(700);
@@ -194,8 +199,7 @@ async function main() {
         check(await evaluate(text("status")) === "", "nothing is drawn until the user asks for something");
         check(await evaluate(`window.__mullionTest.groupCount()`) === 0, "and the document is untouched");
         await evaluate(setField("columns", "11"));
-        await sleep(450);
-        check(/Previewing on Artboard 1/.test(await evaluate(text("status"))), "the first change draws it, with no further asking: " + await evaluate(text("status")));
+        check(await waitForText("status", /Previewing on Artboard 1/), "the first change draws it, with no further asking: " + await evaluate(text("status")));
         await evaluate(setField("columns", "12"));
         await evaluate(`(() => { const t = document.getElementById("preview-toggle"); t.checked = false; t.dispatchEvent(new Event("change")); })()`);
         await sleep(300);
@@ -423,8 +427,7 @@ async function main() {
         check(await evaluate(text("err-range")) === "", "range error clears");
         await shoot("dark-range");
         await evaluate(click("generate"));
-        await sleep(300);
-        check(/Added a column grid to 2 artboards \(52 shapes\)/.test(await evaluate(text("status"))), "generate on range: " + await evaluate(text("status")));
+        check(await waitForText("status", /Added a column grid to 2 artboards \(52 shapes\)/), "generate on range: " + await evaluate(text("status")));
 
         // ---------------------------------------------------------------- layer toggles
         check(await evaluate(`document.getElementById("toggle-visible").disabled`) === false, "show/hide enabled once a grid exists");
@@ -435,8 +438,7 @@ async function main() {
         await evaluate(click("toggle-visible"));
         check(await waitFor(`${text("status")} === "Grids shown."`), "show grids");
         await evaluate(click("toggle-lock"));
-        await sleep(200);
-        check(await evaluate(text("status")) === "Grids unlocked.", "unlock grids");
+        check(await waitForText("status", /^Grids unlocked\.$/), "unlock grids");
         check(await evaluate(`document.getElementById("toggle-lock").dataset.engaged`) === "false", "lock no longer engaged");
         await evaluate(click("toggle-lock"));
         await sleep(200);
@@ -453,34 +455,30 @@ async function main() {
         await evaluate(setField("columns", "8"));
         await evaluate(setField("columns", "9"));
         await evaluate(setField("columns", "10"));
-        await sleep(450);
-        check(/Previewing/.test(await evaluate(text("status"))), "rapid edits still end in a preview");
+        check(await waitForText("status", /Previewing/), "rapid edits still end in a preview");
         await evaluate(setField("type", "pattern"));
         await evaluate(setField("pattern", "dots"));
         await evaluate(setField("patternSize", "9"));
-        await sleep(450);
-        check(/Preview paused: 4,941 shapes/.test(await evaluate(text("status"))) && await evaluate(`document.getElementById("status").dataset.tone`) === "warning", "huge grids pause live preview: " + await evaluate(text("status")));
+        const hugeGridPaused = await waitFor(`/Preview paused: 4,941 shapes/.test(document.getElementById("status").textContent) && document.getElementById("status").dataset.tone === "warning"`);
+        check(hugeGridPaused, "huge grids pause live preview: " + await evaluate(text("status")));
         await evaluate(setField("patternSize", "24"));
         await evaluate(setField("pattern", "square"));
         await evaluate(setField("type", "columns"));
         const previewResumed = await waitFor(`/Previewing/.test(document.getElementById("status").textContent)`);
         check(previewResumed, "preview resumes for smaller grids: " + await evaluate(text("status")));
         await evaluate(click("generate"));
-        await sleep(300);
-        check(/Added a column grid to Artboard 1 \(22 shapes\)/.test(await evaluate(text("status"))), "generate reports result: " + await evaluate(text("status")));
+        check(await waitForText("status", /Added a column grid to Artboard 1 \(22 shapes\)/), "generate reports result: " + await evaluate(text("status")));
         check(await evaluate(`document.getElementById("preview-toggle").checked`) === true, "Generate keeps Preview on");
         await sleep(500);
         check(await evaluate(`document.getElementById("preview-toggle").checked`) === true, "preview is still on once Generate has finished");
         check(/Added a column grid to Artboard 1/.test(await evaluate(text("status"))), "the preview resuming after Generate keeps Generate's message: " + await evaluate(text("status")));
         await shoot("dark-generated");
         await evaluate(click("generate"));
-        await sleep(300);
-        check(/Replaced 1 grid on Artboard 1 with a column grid/.test(await evaluate(text("status"))), "generating again replaces: " + await evaluate(text("status")));
+        check(await waitForText("status", /Replaced 1 grid on Artboard 1 with a column grid/), "generating again replaces: " + await evaluate(text("status")));
         await evaluate(`(() => { const c = document.getElementById("add-mode"); c.checked = true; c.dispatchEvent(new Event("change", { bubbles: true })); })()`);
         await evaluate(setField("type", "baseline"));
         await evaluate(click("generate"));
-        await sleep(300);
-        check(/Added a baseline grid to Artboard 1/.test(await evaluate(text("status"))), "add mode combines grids: " + await evaluate(text("status")));
+        check(await waitForText("status", /Added a baseline grid to Artboard 1/), "add mode combines grids: " + await evaluate(text("status")));
         await evaluate(`(() => { const c = document.getElementById("add-mode"); c.checked = false; c.dispatchEvent(new Event("change", { bubbles: true })); })()`);
         await evaluate(setField("type", "columns"));
         await evaluate(click("clear"));
@@ -630,9 +628,8 @@ async function main() {
         check(await evaluate(`document.querySelector("[data-baseline-fields]").hidden`) === false, "baseline fields shown with Add a baseline grid");
         check(await evaluate(text("grid-count")) === "85 lines", "12 columns + 12 pt baseline = 85 lines");
         await evaluate(click("leading-from-text"));
-        await sleep(250);
-        check(await evaluate(value("baselineSpacing")) === "14", "From text sets the baseline to 14 pt");
-        check(/Baseline set to 14 pt from the selected text \(Helvetica, 11\/14\)/.test(await evaluate(text("status"))), "leading message");
+        check(await waitFor(`${value("baselineSpacing")} === "14"`), "From text sets the baseline to 14 pt");
+        check(await waitForText("status", /Baseline set to 14 pt from the selected text \(Helvetica, 11\/14\)/), "leading message");
         await evaluate(setField("addBaseline", false));
 
         // blocks: drag across modules in the drawing
@@ -675,9 +672,8 @@ async function main() {
         check((await evaluate(`document.getElementById("format-select").selectedOptions[0].textContent`)) === "A4 (297 × 210 mm)", "rotate swaps the format label");
         await evaluate(click("format-rotate"));
         await evaluate(click("format-apply"));
-        await sleep(300);
-        check(/Resized Artboard 1 to A4 \(210 × 297 mm\)/.test(await evaluate(text("status"))), "resize message: " + await evaluate(text("status")));
-        check(await evaluate(text("artboard-size")) === "595.276 × 841.89 pt", "readout shows the new size: " + await evaluate(text("artboard-size")));
+        check(await waitForText("status", /Resized Artboard 1 to A4 \(210 × 297 mm\)/), "resize message: " + await evaluate(text("status")));
+        check(await waitFor(`${text("artboard-size")} === "595.276 × 841.89 pt"`), "readout shows the new size: " + await evaluate(text("artboard-size")));
 
         // layout made for another size offers a resize
         await evaluate(mode("layouts"));
@@ -687,8 +683,7 @@ async function main() {
         check(offered === "Edit settings|Resize artboard to 1080 × 1350 px", "a second offer is added beside the first, not instead of it: " + offered);
         check(!/Edit settings/.test(await evaluate(`document.getElementById("status").firstChild.textContent`)), "the message itself never swallows an action's label: " + await evaluate(`document.getElementById("status").firstChild.textContent`));
         await evaluate(`Array.from(document.querySelectorAll("#status .link-button")).find(b => /^Resize/.test(b.textContent)).click()`);
-        await sleep(300);
-        check(await evaluate(text("artboard-size")) === "1080 × 1350 px", "one click resizes to the layout's size: " + await evaluate(text("artboard-size")));
+        check(await waitFor(`${text("artboard-size")} === "1080 × 1350 px"`), "one click resizes to the layout's size: " + await evaluate(text("artboard-size")));
         await evaluate(mode("grid"));
 
         // export / import
@@ -707,15 +702,13 @@ async function main() {
         await load("?theme=dark&selection");
         check(await evaluate(`localStorage.getItem("mullion.presets.v1").includes("Shared grid")`) === true, "presets survive the reload");
         await evaluate(`(() => { const s = document.getElementById("target-mode"); s.value = "selection"; s.dispatchEvent(new Event("change", { bubbles: true })); })()`);
-        await sleep(250);
-        check(await evaluate(text("artboard-name")) === "Object 1 of 2", "readout names the selected objects");
+        check(await waitFor(`${text("artboard-name")} === "Object 1 of 2"`), "readout names the selected objects");
         check(await evaluate(text("artboard-size")) === "200 × 200 pt", "drawing shows the first object's size");
         await evaluate(setField("marginTop", "10"));
         await evaluate(setField("columns", "2"));
         await evaluate(setField("columnGutter", "10"));
         await evaluate(click("generate"));
-        await sleep(300);
-        check(/Added a column grid to 2 objects/.test(await evaluate(text("status"))), "generate inside objects: " + await evaluate(text("status")));
+        check(await waitForText("status", /Added a column grid to 2 objects/), "generate inside objects: " + await evaluate(text("status")));
         await shoot("dark-selection");
         await evaluate(setField("marginTop", "150"));
         check(/less than the object height of 200 pt/.test(await evaluate(text("err-margins"))), "object-sized validation wording");
@@ -724,21 +717,18 @@ async function main() {
         await evaluate(`document.querySelector("#align-section").open = true`);
         await evaluate(setField("marginTop", "36"));
         await evaluate(click("align-check"));
-        await sleep(250);
-        check(/2 of 2 objects are off the grid/.test(await evaluate(text("status"))), "check reports off-grid objects: " + await evaluate(text("status")));
+        check(await waitForText("status", /2 of 2 objects are off the grid/), "check reports off-grid objects: " + await evaluate(text("status")));
         check(await evaluate(`document.querySelector("#status .link-button").textContent`) === "Snap to grid", "check offers Snap to grid");
         await evaluate(`document.querySelector("#status .link-button").click()`);
-        await sleep(250);
-        check(/Snapped 2 objects to the grid/.test(await evaluate(text("status"))), "snap: " + await evaluate(text("status")));
+        check(await waitForText("status", /Snapped 2 objects to the grid/), "snap: " + await evaluate(text("status")));
         await evaluate(click("align-check"));
-        await sleep(250);
-        check(/All 2 objects sit on the grid/.test(await evaluate(text("status"))), "re-check after snapping");
+        check(await waitForText("status", /All 2 objects sit on the grid/), "re-check after snapping");
         await evaluate(`(() => { const s = document.getElementById("target-mode"); s.value = "selection"; s.dispatchEvent(new Event("change", { bubbles: true })); })()`);
         check(await evaluate(`document.getElementById("format-apply").disabled`) === true, "resize is off while targeting objects");
 
         // ---------------------------------------------------------------- construct
         await evaluate(mode("construct"));
-        await sleep(300);
+        await waitFor(`document.getElementById("construct-card").dataset.state === "ready"`);
         check(await evaluate(shown("#construct-card")) && !(await evaluate(shown("#controls"))) && !(await evaluate(shown('[name="columns"]'))), "Construct mode shows construction settings only");
         check(await evaluate(`document.getElementById("construct-card").dataset.state`) === "ready", "construct card sees the selected artwork");
         check(await evaluate(text("construct-title")) === "Artwork selected", "construct title: " + await evaluate(text("construct-title")));
@@ -759,12 +749,10 @@ async function main() {
         await evaluate(setField("conCenter", true));
         await evaluate(setField("conDiagonals", true));
         await evaluate(click("generate"));
-        await sleep(300);
-        check(/Drew construction lines for the selected artwork/.test(await evaluate(text("status"))), "generate construction: " + await evaluate(text("status")));
+        check(await waitForText("status", /Drew construction lines for the selected artwork/), "generate construction: " + await evaluate(text("status")));
         check(await evaluate(`document.getElementById("status").dataset.tone`) === "ok", "success message styled as success");
         await evaluate(click("generate"));
-        await sleep(300);
-        check(/Redrew the construction lines/.test(await evaluate(text("status"))), "generating again replaces construction lines");
+        check(await waitForText("status", /Redrew the construction lines/), "generating again replaces construction lines");
         await evaluate(click("clear"));
         const constructionCleared = await waitFor(`/Cleared construction lines from Artboard 1/.test(document.getElementById("status").textContent)`);
         check(constructionCleared, "clear construction: " + await evaluate(text("status")));
@@ -825,19 +813,16 @@ async function main() {
         check(overlayOffered === "modular|baseline|composition|pattern", "every type except the one you are drawing can be added on top: " + overlayOffered);
 
         await evaluate(overlayChip("baseline"));
-        await sleep(200);
-        check(/column grid \+ baseline grid/.test(await evaluate(text("grid-metrics"))), "the readout names both grids: " + await evaluate(text("grid-metrics")));
+        check(await waitForText("grid-metrics", /column grid \+ baseline grid/), "the readout names both grids: " + await evaluate(text("grid-metrics")));
         const overlaid = await evaluate(`document.querySelectorAll("#schematic line").length`);
         check(overlaid > 26, "the drawing shows both grids (" + overlaid + " lines, 26 for columns alone)");
         await shoot("dark-overlay");
 
         await evaluate(click("generate"));
-        await sleep(400);
-        check(/Added a column grid/.test(await evaluate(text("status"))), "generate draws them together: " + await evaluate(text("status")));
+        check(await waitForText("status", /Added a column grid/), "generate draws them together: " + await evaluate(text("status")));
         check(await evaluate(`window.__mullionTest.groupCount()`) === 2, "two grids on the artboard, one per type");
         await evaluate(click("generate"));
-        await sleep(400);
-        check(/Replaced 2 grids/.test(await evaluate(text("status"))), "generating again replaces the whole stack: " + await evaluate(text("status")));
+        check(await waitForText("status", /Replaced 2 grids/), "generating again replaces the whole stack: " + await evaluate(text("status")));
         await evaluate(click("clear"));
         await sleep(400);
 
@@ -853,8 +838,7 @@ async function main() {
         await evaluate(`document.querySelectorAll("details.section").forEach((d) => { d.open = true; })`);
         await evaluate(setTarget("active"));
         await evaluate(click("load-document-grid"));
-        await sleep(300);
-        check(/No GuideComposer grid on this artboard/.test(await evaluate(text("status"))), "nothing to read before a grid exists: " + await evaluate(text("status")));
+        check(await waitForText("status", /No GuideComposer grid on this artboard/), "nothing to read before a grid exists: " + await evaluate(text("status")));
         await evaluate(setField("columns", "5"));
         await evaluate(click("generate"));
         await sleep(300);
@@ -865,8 +849,8 @@ async function main() {
         await evaluate(`(() => { const t = document.getElementById("preview-toggle"); t.checked = true; t.dispatchEvent(new Event("change")); })()`);
         await sleep(450);
         await evaluate(click("load-document-grid"));
-        await sleep(700);
-        check(await evaluate(value("columns")) === "5" && /Loaded the settings that drew this grid/.test(await evaluate(text("status"))), "a grid hands its settings back, and previewing doesn't talk over it: " + await evaluate(text("status")));
+        const documentGridLoaded = await waitFor(`${value("columns")} === "5" && /Loaded the settings that drew this grid/.test(${text("status")})`);
+        check(documentGridLoaded, "a grid hands its settings back, and previewing doesn't talk over it: " + await evaluate(text("status")));
         await evaluate(`(() => { const t = document.getElementById("preview-toggle"); t.checked = false; t.dispatchEvent(new Event("change")); })()`);
         await sleep(300);
         await evaluate(click("clear"));
@@ -879,8 +863,7 @@ async function main() {
         check(await evaluate(text("artboard-name")) === "Page 1", "InDesign page name in the readout");
         check(await evaluate(`document.querySelector('[data-host-only="indesign"]').hidden`) === false, "page margins control shown in InDesign");
         await evaluate(click("page-margins"));
-        await sleep(250);
-        check(/Set margins and columns on Page 1|Set margins and columns on 1 page/.test(await evaluate(text("status"))), "page margins message: " + await evaluate(text("status")));
+        check(await waitForText("status", /Set margins and columns on Page 1|Set margins and columns on 1 page/), "page margins message: " + await evaluate(text("status")));
         await load("?theme=dark");
         check(await evaluate(`document.querySelector('[data-host-only="indesign"]').hidden`) === true, "page margins control hidden in Illustrator");
 
@@ -958,8 +941,7 @@ async function main() {
         // ---------------------------------------------------------------- storage write failures
         await evaluate(`(() => { window.__realSet = Storage.prototype.setItem; Storage.prototype.setItem = function () { throw new Error("QuotaExceededError"); }; })()`);
         await evaluate(setField("columnGutter", "13"));
-        await sleep(450);
-        check(/Panel storage is unavailable/.test(await evaluate(text("status"))), "a settings save that fails is reported: " + await evaluate(text("status")));
+        check(await waitForText("status", /Panel storage is unavailable/), "a settings save that fails is reported: " + await evaluate(text("status")));
         await evaluate(click("preset-new"));
         await evaluate(`document.getElementById("preset-name").value = "Nowhere"`);
         await evaluate(click("preset-save"));
@@ -1048,8 +1030,7 @@ async function main() {
         const tileCount = await evaluate(`document.querySelectorAll("#library-grid .tile").length`);
         await evaluate(`(() => { const s = document.getElementById("format-select"); s.value = "a4"; s.dispatchEvent(new Event("change", { bubbles: true })); })()`);
         await evaluate(click("format-apply"));
-        await sleep(400);
-        check(await evaluate(`document.querySelectorAll("#library-grid .tile[data-probe]").length`) === tileCount,
+        check(await waitFor(`document.querySelectorAll("#library-grid .tile[data-probe]").length === ${tileCount}`),
             "a changed artboard repaints the tiles rather than rebuilding them");
         check(await evaluate(`document.getElementById("library-grid").scrollTop`) === 30 &&
             await evaluate(`document.activeElement.dataset.layout`) === "modular-4x6", "the scroll position and the focused tile survive the repaint");
@@ -1068,11 +1049,9 @@ async function main() {
         check(timeoutShown, "an abandoned call says so: " + await evaluate(text("status")));
         check(await evaluate(`document.getElementById("generate").disabled`) === true, "Generate stays unavailable while the host is still running it");
         await evaluate(`(() => { const b = document.getElementById("generate"); b.disabled = false; b.click(); })()`);
-        await sleep(200);
-        check(/still working on the last request/.test(await evaluate(text("status"))),
+        check(await waitForText("status", /still working on the last request/),
             "a second Generate is refused rather than applied twice: " + await evaluate(text("status")));
-        await sleep(1400);
-        check(/ready again/.test(await evaluate(text("status"))), "the panel recovers when the host finally answers: " + await evaluate(text("status")));
+        check(await waitForText("status", /ready again/, 2500), "the panel recovers when the host finally answers: " + await evaluate(text("status")));
         check(await evaluate(`document.getElementById("generate").disabled`) === false &&
             await evaluate(`document.getElementById("progress").hidden`) === true, "Generate and the working state return to normal");
 
@@ -1086,8 +1065,7 @@ async function main() {
             /Last error: That file isn't a presets file\./.test(diagnostics),
             "diagnostics carry panel version, host, OS, document, mode, settings and the last error");
         await evaluate(click("copy-diagnostics"));
-        await sleep(250);
-        check(/diagnostics/i.test(await evaluate(text("status"))), "Copy diagnostics says what happened: " + await evaluate(text("status")));
+        check(await waitForText("status", /diagnostics/i), "Copy diagnostics says what happened: " + await evaluate(text("status")));
 
         // ------------------------------------------------- an installed update is named, and it sticks
         await load("?theme=dark&hostversion=0.2.0");
