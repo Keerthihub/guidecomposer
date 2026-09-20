@@ -59,7 +59,9 @@ jobs:
     needs: guard
     runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: true
+      # Let every runner finish so one platform's failure cannot hide another's
+      # result. The sign job still requires the complete matrix to pass.
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest

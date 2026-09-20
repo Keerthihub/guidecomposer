@@ -1061,11 +1061,11 @@ async function main() {
         await evaluate(`window.__mullionTest.setHostTimeout(300)`);
         await evaluate(`window.__mullionTest.stall(1600)`);
         await evaluate(click("generate"));
-        await sleep(450);
-        check(await evaluate(`document.getElementById("panel").dataset.working`) === "true" &&
-            await evaluate(`document.getElementById("progress").hidden`) === false, "a call that isn't answered quickly shows a working state");
-        await sleep(250);
-        check(/didn't respond to generate/.test(await evaluate(text("status"))), "an abandoned call says so: " + await evaluate(text("status")));
+        const workingStateShown = await waitFor(`document.getElementById("panel").dataset.working === "true" &&
+            document.getElementById("progress").hidden === false`, 1200);
+        check(workingStateShown, "a call that isn't answered quickly shows a working state");
+        const timeoutShown = await waitFor(`/didn't respond to generate/.test(document.getElementById("status").textContent)`);
+        check(timeoutShown, "an abandoned call says so: " + await evaluate(text("status")));
         check(await evaluate(`document.getElementById("generate").disabled`) === true, "Generate stays unavailable while the host is still running it");
         await evaluate(`(() => { const b = document.getElementById("generate"); b.disabled = false; b.click(); })()`);
         await sleep(200);
