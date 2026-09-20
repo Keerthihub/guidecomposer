@@ -183,9 +183,16 @@ For **each** of macOS and Windows:
       screen and a standard one, in the light and dark interface.
 - [ ] Uninstall cleanly: no panel left in the menu, no error on next launch.
 
-For a borrowed Windows computer or remote beta tester, send
-`docs/WINDOWS-QA.md`; it contains the same release-critical checks in a
-one-hour hand-off format and states exactly what evidence to return.
+Step by step, on a clean account: **`MACOS-QA.md`** and **`WINDOWS-QA.md`**.
+Each is a one-hour hand-off sheet that needs no development tools and states
+exactly what evidence to return, so either can be sent to a borrowed computer or
+a remote beta tester.
+
+`MACOS-QA.md` opens by explaining why the development Mac cannot be used for
+this: the development link claims the *same extension id* as the signed package,
+so CEP may load either without saying which, and `PlayerDebugMode` is on there,
+which makes Illustrator accept unsigned extensions and turns a passing install
+into no evidence at all.
 
 **Done when:** you have done all of the above on both operating systems, and
 noted the exact OS builds and application versions — they go into

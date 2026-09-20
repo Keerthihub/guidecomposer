@@ -143,7 +143,7 @@ Test on **clean user accounts** (or virtual machines) on macOS and Windows, with
 
    List installed extensions with `--list all` (macOS) or `/list all` (Windows). Remove one with `--remove` / `/remove` followed by the name exactly as the list shows it.
 
-4. Verify in Illustrator **and InDesign**: install, launch, Draw test line, generate each grid type, Clear, restart the app, **update** (install the next version over this one), and **uninstall**.
+4. Verify in Illustrator: install, launch, Draw test line, generate each grid type, Clear, restart the app, **update** (install the next version over this one), and **uninstall**. Step by step, on a clean account: `../docs/MACOS-QA.md` and `../docs/WINDOWS-QA.md`. (InDesign is not declared in the manifest and will not show the panel — see `../docs/LAUNCH-CHECKLIST.md` step 8.)
 
 Don't promise customers that a `.zxp` installs by double-clicking. Document the installer command above, or a ZXP installer app you have tested, for both operating systems.
 
