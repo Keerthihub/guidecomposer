@@ -142,6 +142,13 @@ async function main() {
             await send("Page.navigate", { url: PAGE + query });
             await sleep(700);
         };
+        // A script that throws while the page loads leaves every later check
+        // failing for no stated reason. Surface it as soon as it happens.
+        const reportStartupErrors = () => {
+            if (pageErrors.length) {
+                console.log("STARTUP ERROR " + pageErrors.join(" | "));
+            }
+        };
         const check = (cond, label) => {
             console.log((cond ? "PASS " : "FAIL ") + label);
             if (!cond) failures.push(label);
@@ -195,6 +202,7 @@ async function main() {
         await load("?theme=dark");
         await evaluate("localStorage.clear()");
         await load("?theme=dark");
+        reportStartupErrors();
         check(await evaluate(text("artboard-name")) === "Artboard 1", "mock document artboard name shown");
         check(await evaluate(text("artboard-size")) === "612 × 792 pt", "artboard size readout");
         check(await evaluate(text("grid-metrics")) === "Columns 34 pt wide", "column width readout matches core (34 pt)");
