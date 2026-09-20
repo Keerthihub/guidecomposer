@@ -143,13 +143,38 @@ jobs:
           $cert = Join-Path $env:RUNNER_TEMP "cert.p12"
           [IO.File]::WriteAllBytes($cert, [Convert]::FromBase64String($env:ZXP_CERT_BASE64))
           $out = "dist\$name-$version.zxp"
+          $withoutTimestamp = Join-Path $env:RUNNER_TEMP "without-timestamp.zxp"
           try {
-            & $tool -sign "dist\$name" $out $cert $env:ZXP_CERT_PASSWORD -tsa http://timestamp.digicert.com
-            if ($LASTEXITCODE -ne 0) { throw "Signing failed" }
+            # Fail with an actionable message if the uploaded bundle cannot be
+            # opened or does not contain the private key. Never print its
+            # password or key material.
+            $flags = [Security.Cryptography.X509Certificates.X509KeyStorageFlags]::EphemeralKeySet
+            $identity = [Security.Cryptography.X509Certificates.X509Certificate2]::new(
+              $cert, $env:ZXP_CERT_PASSWORD, $flags
+            )
+            if (-not $identity.HasPrivateKey) { throw "The signing certificate has no private key" }
+            "Loaded signing identity: $($identity.Subject)"
+
+            & $tool -sign "dist\$name" $out $cert $env:ZXP_CERT_PASSWORD -tsa http://timestamp.digicert.com/
+            $timestampExit = $LASTEXITCODE
+            if ($timestampExit -ne 0) {
+              # Adobe's tool otherwise exits silently. A disposable, untimed
+              # attempt distinguishes a TSA/network failure from a certificate
+              # or package failure; it is deleted and can never be uploaded.
+              & $tool -sign "dist\$name" $withoutTimestamp $cert $env:ZXP_CERT_PASSWORD
+              $plainExit = $LASTEXITCODE
+              Remove-Item $withoutTimestamp -ErrorAction SilentlyContinue
+              if ($plainExit -eq 0) {
+                throw "Timestamped signing failed (exit $timestampExit), while disposable untimed signing succeeded. No untimed package was kept."
+              }
+              throw "Signing failed both with a timestamp (exit $timestampExit) and without one (exit $plainExit)."
+            }
             & $tool -verify $out -certinfo
             if ($LASTEXITCODE -ne 0) { throw "Verification failed" }
           } finally {
+            $identity = $null
             Remove-Item $cert -ErrorAction SilentlyContinue
+            Remove-Item $withoutTimestamp -ErrorAction SilentlyContinue
           }
           # The checksum customers can verify against the published release.
           $hash = (Get-FileHash $out -Algorithm SHA256).Hash.ToLower()
