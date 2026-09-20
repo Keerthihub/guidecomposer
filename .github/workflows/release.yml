@@ -153,7 +153,10 @@ jobs:
             # Fail with an actionable message if the uploaded bundle cannot be
             # opened or does not contain the private key. Never print its
             # password or key material.
-            $flags = [Security.Cryptography.X509Certificates.X509KeyStorageFlags]::EphemeralKeySet
+            # EphemeralKeySet is unsupported by .NET on macOS. The runner is
+            # disposable, and both the imported identity and source file are
+            # explicitly removed below.
+            $flags = [Security.Cryptography.X509Certificates.X509KeyStorageFlags]::DefaultKeySet
             $identity = [Security.Cryptography.X509Certificates.X509Certificate2]::new(
               $cert, $env:ZXP_CERT_PASSWORD, $flags
             )
@@ -180,6 +183,7 @@ jobs:
             & $tool -verify $out -certinfo
             if ($LASTEXITCODE -ne 0) { throw "Verification failed" }
           } finally {
+            if ($identity) { $identity.Dispose() }
             $identity = $null
             Remove-Item $cert -ErrorAction SilentlyContinue
             Remove-Item $withoutTimestamp -ErrorAction SilentlyContinue
