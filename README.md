@@ -11,10 +11,12 @@ GuideComposer draws column, modular, and baseline grids, classic grid systems, c
 - Free and open source (MIT). Never sold, nothing gated — see [Licence and third-party code](#licence-and-third-party-code)
 - No network access, no accounts, no Node.js inside the panel
 
-GuideComposer is currently preparing for its first public release. When the
-first signed build is available, download it from this repository's
-**Releases** page. User documentation lives in [docs/](docs/README.md), and the
-remaining pre-release work is tracked in
+GuideComposer is currently preparing for its first public release. A signed,
+timestamped `0.1.0` beta has passed Adobe's signature verification, but it has
+not yet completed clean-machine installation testing and has not been published
+as a GitHub Release. When that testing is complete, download the public build
+from this repository's **Releases** page. User documentation lives in
+[docs/](docs/README.md), and the remaining pre-release work is tracked in
 [docs/LAUNCH-CHECKLIST.md](docs/LAUNCH-CHECKLIST.md).
 
 Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before
@@ -101,8 +103,8 @@ whenever the code changes, and never let it drift into marketing copy).
 | InDesign host | Tests against a strict fake InDesign DOM, including a dry run of the real QA script (`tests/indesign-qa.test.js`): 31 checks covering text selections, localised stroke names, facing pages, the baseline reference point, page insertion, master spreads, guides, rollback and a 200-page document — all passing against the model | Nothing in InDesign itself. **InDesign has still never been run, and is therefore not declared in the manifest and does not ship.** `npm run qa:indesign` runs those same 31 checks in a real InDesign; when it passes, add `IDSN` back to the manifest and to `tests/release.test.js` |
 | Panel | `npm run test:ui` — headless Chrome smoke test of every control and all three modes, in all four brightness themes, and down to the smallest panel the manifest allows. CI runs it on Ubuntu, macOS **and Windows** runners | Headless Chrome is not CEP's embedded Chromium inside a host app. The panel has never been opened in Illustrator on Windows |
 | Windows | Unit tests, build and panel smoke test all run on a Windows runner in CI | Nothing. No one has installed the panel in Illustrator on Windows |
-| Rename tool | `npm run check` plus the **Rename rehearsal** CI job, which copies the whole tree, renames it, and re-runs the ES3 check, the tests, the build and the panel smoke test against the copy | Never run with the real final name (which does not exist yet) |
-| Signing | Workflow written, with the signing tool pinned by commit and verified by SHA-256 | Nothing. **No package has ever been signed**, so no one has installed a signed `.zxp`, and the update and uninstall paths are unobserved |
+| Rename tool | The final product name is **GuideComposer** and the id is `com.keerthi.guidecomposer`. `npm run check` plus the **Rename rehearsal** CI job copies the whole tree, renames it, and re-runs the ES3 check, the tests, the build and the panel smoke test against the copy | — |
+| Signing | [Manual signed-release run 35479947697](https://github.com/Keerthihub/guidecomposer/actions/runs/35479947697) built `guidecomposer-0.1.0.zxp` with Adobe's pinned signer, added a valid timestamp, and passed Adobe verification. Its SHA-256 is `1fbf403066c040b871baa82942a141ba7bb2bd70ed9a316e34f0b67d730526cc`; the downloaded copy was verified again locally | No one has installed the signed `.zxp` on a clean account, so launch, update and uninstall paths remain unobserved |
 | Installation, update, uninstall | — | Nothing. See step 7 of [docs/LAUNCH-CHECKLIST.md](docs/LAUNCH-CHECKLIST.md) |
 
 **Host version ranges.** `CSXS/manifest.xml` declares `ILST [26.0,99.9]`, and
@@ -382,7 +384,10 @@ Customer-facing pages (compatibility, troubleshooting, updating) are in
 
 ## Renaming
 
-Choose the final name and extension id before your first public release, then run:
+The final name is **GuideComposer** and its extension id is
+`com.keerthi.guidecomposer`; both are now frozen. The rename command below is
+kept for maintainers creating a separate fork, not for future GuideComposer
+releases:
 
 ```sh
 npm run rename -- --name "Your Product" --id com.yourstudio.yourproduct --dry-run   # preview

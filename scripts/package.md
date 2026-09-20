@@ -105,6 +105,14 @@ The workflow artefact is only a hand-off between jobs and expires in 7 days. The
 Release is the permanent copy — it is what lets you hand a customer the previous
 version a year later, which workflow artefacts never could.
 
+The signing path was proven by manual workflow run
+[`35479947697`](https://github.com/Keerthihub/guidecomposer/actions/runs/35479947697)
+on 2026-09-20. Adobe verification accepted the signature and timestamp for
+`guidecomposer-0.1.0.zxp`; its SHA-256 is
+`1fbf403066c040b871baa82942a141ba7bb2bd70ed9a316e34f0b67d730526cc`.
+This was a private beta artefact, not a permanent GitHub Release, and does not
+replace the clean-account install, update and uninstall checks below.
+
 To verify a downloaded package by hand:
 
 ```sh

@@ -108,14 +108,22 @@ scripts/create-signing-cert-mac.sh <country-code> "<state-or-province>"
 - [x] Generated password stored in the macOS Keychain as
       `GuideComposer-ZXP-Signing`; the `.p12` is readable only by its owner.
 - [ ] Back up the certificate somewhere you will still have it in five years.
-- [ ] Both added to GitHub as repository secrets: `ZXP_CERT_BASE64`
+- [x] A signer-compatible copy and its password added to GitHub as encrypted
+      repository secrets: `ZXP_CERT_BASE64`
       (`base64 -i cert.p12`) and `ZXP_CERT_PASSWORD`.
 
-**Done when:** the secrets exist and a manual run of the **Signed release**
-workflow completes signing and verification. Adobe's macOS 4.1.1 signer can
-create the certificate on this Mac but crashes while packaging on macOS 26; the
-release workflow therefore remains the authoritative signing path and uses the
-newer pinned Windows 4.1.103 signer.
+**Done:** the secrets exist, and
+[manual run 35479947697](https://github.com/Keerthihub/guidecomposer/actions/runs/35479947697)
+completed the tests, signing, timestamping and Adobe verification. The workflow
+uses Adobe's pinned macOS 4.1.3 signer on an Intel macOS 15 runner. The original
+certificate is unchanged; its compatible copy has the same certificate
+fingerprint and only repackages the private key for Adobe's legacy signer.
+
+Beta package evidence: `guidecomposer-0.1.0.zxp`, SHA-256
+`1fbf403066c040b871baa82942a141ba7bb2bd70ed9a316e34f0b67d730526cc`.
+The downloaded package also passed checksum, ZIP-integrity and Adobe signature
+verification locally. The GitHub workflow artefact expires; the local copy is
+under the ignored `dist/signed-beta/` directory and is not a public release.
 
 **Why it matters later:** updates signed with a *different* certificate may
 refuse to install over the previous version. Use one certificate for the life of
@@ -134,6 +142,8 @@ macOS, Windows and Linux before anything is signed.
 - [ ] Versions agreed in `package.json`, `CSXS/manifest.xml` (twice),
       `host/index.jsx`, and a dated `CHANGELOG.md` section
       (`node scripts/release-checks.js` proves it).
+- [x] A manual `0.1.0` beta run proved the complete signing and verification
+      path without publishing a release.
 - [ ] Tag pushed (`git tag v1.0.0 && git push origin v1.0.0`).
 - [ ] The workflow published a GitHub Release with the `.zxp`, its `.sha256`,
       and the changelog notes.
