@@ -95,17 +95,19 @@ jobs:
   sign:
     name: Sign the package
     needs: [guard, verify]
-    runs-on: windows-latest
+    # Adobe's Apple timestamp chain is accepted by its macOS signer but not by
+    # its Windows signer. The Intel label is required for Adobe's x86_64 tool.
+    runs-on: macos-15-intel
     env:
       # ZXPSignCmd is pinned to the commit that last changed the binary in
       # Adobe's CEP-Resources repository, and verified against the SHA-256 of
       # that file, because the signing certificate and its password are in this
       # job's environment. Recorded 2026-09-20 from Adobe's commit described
-      # as "added new Windows version with SHA2 fix".
-      #   file:   ZXPSignCMD/4.1.3/x64/ZXPSignCmd.exe (4,542,464 bytes)
-      #   commit: 8897cfaf9801b0ad5321951199dd831a82964583
-      ZXPSIGNCMD_COMMIT: 8897cfaf9801b0ad5321951199dd831a82964583
-      ZXPSIGNCMD_SHA256: FFC2223167225CE61D024EB463FC5AD1A1BE16133F99EF334A646F7311916C98
+      # as "mac build".
+      #   file:   ZXPSignCMD/4.1.3/macOS/ZXPSignCmd (6,391,280 bytes)
+      #   commit: 45667fc2953688ea4dec45361e5e5efb80f30211
+      ZXPSIGNCMD_COMMIT: 45667fc2953688ea4dec45361e5e5efb80f30211
+      ZXPSIGNCMD_SHA256: BC773FAE0B97416FC7A462E7DADCC00270428A9913480C9B78B5606FF1CFB095
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -119,13 +121,15 @@ jobs:
       - name: Download and verify ZXPSignCmd
         shell: pwsh
         run: |
-          $tool = Join-Path $env:RUNNER_TEMP "ZXPSignCmd.exe"
-          $url = "https://raw.githubusercontent.com/Adobe-CEP/CEP-Resources/$env:ZXPSIGNCMD_COMMIT/ZXPSignCMD/4.1.3/x64/ZXPSignCmd.exe"
+          $tool = Join-Path $env:RUNNER_TEMP "ZXPSignCmd"
+          $url = "https://raw.githubusercontent.com/Adobe-CEP/CEP-Resources/$env:ZXPSIGNCMD_COMMIT/ZXPSignCMD/4.1.3/macOS/ZXPSignCmd"
           Invoke-WebRequest $url -OutFile $tool
           $actual = (Get-FileHash $tool -Algorithm SHA256).Hash
           if ($actual -ne $env:ZXPSIGNCMD_SHA256) {
             throw "ZXPSignCmd SHA-256 mismatch. Expected $env:ZXPSIGNCMD_SHA256, got $actual. Do not sign with this file; verify the change in Adobe's repository and update the pin deliberately."
           }
+          & chmod +x $tool
+          if ($LASTEXITCODE -ne 0) { throw "Could not make ZXPSignCmd executable" }
           "Verified ZXPSignCmd $actual"
 
       - name: Sign
@@ -139,10 +143,11 @@ jobs:
           }
           $name = "${{ needs.guard.outputs.name }}"
           $version = "${{ needs.guard.outputs.version }}"
-          $tool = Join-Path $env:RUNNER_TEMP "ZXPSignCmd.exe"
+          $tool = Join-Path $env:RUNNER_TEMP "ZXPSignCmd"
           $cert = Join-Path $env:RUNNER_TEMP "cert.p12"
           [IO.File]::WriteAllBytes($cert, [Convert]::FromBase64String($env:ZXP_CERT_BASE64))
-          $out = "dist\$name-$version.zxp"
+          $inputDir = Join-Path "dist" $name
+          $out = Join-Path "dist" "$name-$version.zxp"
           $withoutTimestamp = Join-Path $env:RUNNER_TEMP "without-timestamp.zxp"
           try {
             # Fail with an actionable message if the uploaded bundle cannot be
@@ -158,13 +163,13 @@ jobs:
             # Apple currently returns a SHA-256 RFC 3161 response that Adobe's
             # legacy signer can validate. Never keep an untimestamped release.
             Remove-Item $out -ErrorAction SilentlyContinue
-            & $tool -sign "dist\$name" $out $cert $env:ZXP_CERT_PASSWORD -tsa http://timestamp.apple.com/ts01
+            & $tool -sign $inputDir $out $cert $env:ZXP_CERT_PASSWORD -tsa http://timestamp.apple.com/ts01
             $timestampExit = $LASTEXITCODE
             if ($timestampExit -ne 0) {
               # Adobe's tool otherwise exits silently. A disposable, untimed
               # attempt distinguishes a TSA/network failure from a certificate
               # or package failure; it is deleted and can never be uploaded.
-              & $tool -sign "dist\$name" $withoutTimestamp $cert $env:ZXP_CERT_PASSWORD
+              & $tool -sign $inputDir $withoutTimestamp $cert $env:ZXP_CERT_PASSWORD
               $plainExit = $LASTEXITCODE
               Remove-Item $withoutTimestamp -ErrorAction SilentlyContinue
               if ($plainExit -eq 0) {
@@ -181,7 +186,7 @@ jobs:
           }
           # The checksum customers can verify against the published release.
           $hash = (Get-FileHash $out -Algorithm SHA256).Hash.ToLower()
-          "$hash  $name-$version.zxp" | Out-File -FilePath "dist\$name-$version.zxp.sha256" -Encoding ascii
+          "$hash  $name-$version.zxp" | Out-File -FilePath (Join-Path "dist" "$name-$version.zxp.sha256") -Encoding ascii
           "Signed $out"
           "SHA-256: $hash"
 
