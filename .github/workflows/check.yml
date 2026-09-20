@@ -126,6 +126,11 @@ jobs:
             echo "$leftovers"
             exit 1
           fi
+          # Documentation tests deliberately inspect only tracked files. The
+          # rehearsal copy has no original .git directory, so give it a local
+          # index that represents exactly the renamed tree before testing it.
+          git init -q
+          git add -A
       - name: Full checks on the renamed copy
         run: |
           set -euo pipefail
