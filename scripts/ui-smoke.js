@@ -442,14 +442,14 @@ async function main() {
         await sleep(200);
 
         await evaluate(click("clear"));
-        await sleep(300);
-        check(/Cleared 2 grids from 2 artboards/.test(await evaluate(text("status"))), "clear on range: " + await evaluate(text("status")));
+        const rangeCleared = await waitFor(`/Cleared 2 grids from 2 artboards/.test(document.getElementById("status").textContent)`);
+        check(rangeCleared, "clear on range: " + await evaluate(text("status")));
         await evaluate(setTarget("active"));
 
         // ---------------------------------------------------------------- preview and generate
         await evaluate(`(() => { const t = document.getElementById("preview-toggle"); t.checked = true; t.dispatchEvent(new Event("change")); })()`);
-        await sleep(450);
-        check(/Previewing on Artboard 1/.test(await evaluate(text("status"))), "preview runs after debounce: " + await evaluate(text("status")));
+        const previewDebounced = await waitFor(`/Previewing on Artboard 1/.test(document.getElementById("status").textContent)`);
+        check(previewDebounced, "preview runs after debounce: " + await evaluate(text("status")));
         await evaluate(setField("columns", "8"));
         await evaluate(setField("columns", "9"));
         await evaluate(setField("columns", "10"));
