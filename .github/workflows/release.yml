@@ -100,12 +100,12 @@ jobs:
       # ZXPSignCmd is pinned to the commit that last changed the binary in
       # Adobe's CEP-Resources repository, and verified against the SHA-256 of
       # that file, because the signing certificate and its password are in this
-      # job's environment. Recorded 2026-09-19 by downloading the file at this
-      # commit and at master: both hashed to the value below.
-      #   file:   ZXPSignCMD/4.1.103/win64/ZXPSignCmd.exe (5,518,896 bytes)
-      #   commit: de5053ce92705e4a4ec68f519fc962dfbae70724
-      ZXPSIGNCMD_COMMIT: de5053ce92705e4a4ec68f519fc962dfbae70724
-      ZXPSIGNCMD_SHA256: DC2E711A46504830062AC1AFEDE1F8EE08C1E21399B6C30D7D38CF907C35BCF5
+      # job's environment. Recorded 2026-09-20 from Adobe's commit described
+      # as "added new Windows version with SHA2 fix".
+      #   file:   ZXPSignCMD/4.1.3/x64/ZXPSignCmd.exe (4,542,464 bytes)
+      #   commit: 8897cfaf9801b0ad5321951199dd831a82964583
+      ZXPSIGNCMD_COMMIT: 8897cfaf9801b0ad5321951199dd831a82964583
+      ZXPSIGNCMD_SHA256: FFC2223167225CE61D024EB463FC5AD1A1BE16133F99EF334A646F7311916C98
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -120,7 +120,7 @@ jobs:
         shell: pwsh
         run: |
           $tool = Join-Path $env:RUNNER_TEMP "ZXPSignCmd.exe"
-          $url = "https://raw.githubusercontent.com/Adobe-CEP/CEP-Resources/$env:ZXPSIGNCMD_COMMIT/ZXPSignCMD/4.1.103/win64/ZXPSignCmd.exe"
+          $url = "https://raw.githubusercontent.com/Adobe-CEP/CEP-Resources/$env:ZXPSIGNCMD_COMMIT/ZXPSignCMD/4.1.3/x64/ZXPSignCmd.exe"
           Invoke-WebRequest $url -OutFile $tool
           $actual = (Get-FileHash $tool -Algorithm SHA256).Hash
           if ($actual -ne $env:ZXPSIGNCMD_SHA256) {

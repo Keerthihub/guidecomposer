@@ -11,7 +11,7 @@ CEP extensions ship as signed `.zxp` files. Don't package GuideComposer as `.ccx
 
   On the current development Mac, Adobe's macOS 4.1.1 tool creates certificates
   successfully but crashes while packaging on macOS 26. Use the GitHub workflow
-  for releases; it uses Adobe's newer Windows 4.1.103 signer. Keep the local
+  for releases; it uses Adobe's newer Windows 4.1.3 signer. Keep the local
   commands below as a fallback for systems where Adobe's macOS binary runs.
 
 **Create a certificate.** Adobe accepts self-signed certificates for ZXP
@@ -74,7 +74,7 @@ $plain = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServ
 & C:\Tools\ZXPSignCmd.exe -verify "dist\guidecomposer-$version.zxp" -certinfo
 ```
 
-The timestamp (`-tsa`) keeps the signature valid after the certificate expires. If the timestamp server is unreachable, do not publish an untimestamped package. Adobe's Windows 4.1.103 tool rejected Certum's response and crashed with DigiCert and Comodo on the GitHub runner tested on 2026-09-20. Apple's endpoint granted a valid SHA-256 RFC 3161 test request and is the compatible default used by the release workflow.
+The timestamp (`-tsa`) keeps the signature valid after the certificate expires. If the timestamp server is unreachable, do not publish an untimestamped package. Adobe's older Windows 4.1.103 tool rejected or crashed with every tested TSA on the GitHub runner. The release workflow uses Adobe's 4.1.3 build, published with its Windows SHA-2 fix, and Apple's endpoint granted a valid SHA-256 RFC 3161 test request on 2026-09-20.
 
 ### What the release workflow does
 
