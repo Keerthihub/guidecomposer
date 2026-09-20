@@ -1237,14 +1237,20 @@ async function main() {
     } finally {
         if (ws) ws.close();
         await stopProcess(chrome);
-        // Chrome can finish writing profile files just after its process exits,
-        // especially on macOS CI. Node retries ENOTEMPTY and similar races.
-        fs.rmSync(profile, {
-            recursive: true,
-            force: true,
-            maxRetries: 10,
-            retryDelay: 200
-        });
+        // Chrome helper processes can finish writing profile files after the
+        // parent exits. The runner removes its temp directory anyway, so a
+        // final ENOTEMPTY here must not turn passing panel checks into a test
+        // failure. Node still retries first to keep local runs tidy.
+        try {
+            fs.rmSync(profile, {
+                recursive: true,
+                force: true,
+                maxRetries: 10,
+                retryDelay: 200
+            });
+        } catch (cleanupError) {
+            console.warn("Could not remove the temporary Chrome profile: " + cleanupError.message);
+        }
     }
 
     const relevantErrors = pageErrors.filter(Boolean);
