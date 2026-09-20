@@ -1071,10 +1071,13 @@ async function main() {
 
         // ---------------------------------------------------------------- version and diagnostics
         await load("?theme=dark");
-        check(await evaluate(text("panel-version")) === "0.1.0", "the More section shows the panel's version");
+        // Read from the source, never written as a literal: a version literal
+        // here fails on every bump, and the cheapest way to make it pass is to
+        // edit the check rather than fix the code.
+        check(await evaluate(text("panel-version")) === panelVersion, "the More section shows the panel's version");
         await evaluate(`window.__mullionTest.importPresetText("nonsense")`);
         const diagnostics = await evaluate(`window.__mullionTest.diagnosticsText()`);
-        check(/GuideComposer panel 0\.1\.0/.test(diagnostics) && /Host: ILST/.test(diagnostics) && /OS: /.test(diagnostics) &&
+        check(new RegExp("GuideComposer panel " + panelVersion.replace(/\./g, "\\.")).test(diagnostics) && /Host: ILST/.test(diagnostics) && /OS: /.test(diagnostics) &&
             /Document: Mock document/.test(diagnostics) && /Mode: grid/.test(diagnostics) && /Grid: columns/.test(diagnostics) &&
             /Last error: That file isn't a presets file\./.test(diagnostics),
             "diagnostics carry panel version, host, OS, document, mode, settings and the last error");
@@ -1083,10 +1086,11 @@ async function main() {
 
         // ------------------------------------------------- an installed update is named, and it sticks
         await load("?theme=dark&hostversion=0.2.0");
-        check(/GuideComposer 0\.2\.0 is installed; this panel is still running 0\.1\.0\./.test(await evaluate(text("status"))) &&
+        check(new RegExp("GuideComposer 0\\.2\\.0 is installed; this panel is still running " +
+            panelVersion.replace(/\./g, "\\.") + "\\.").test(await evaluate(text("status"))) &&
             await evaluate(`document.querySelector("#status .link-button").textContent`) === "Reload panel",
             "the update prompt names the version: " + await evaluate(text("status")));
-        check(await evaluate(text("panel-version")) === "0.1.0 (installed: 0.2.0)", "the More section shows both versions");
+        check(await evaluate(text("panel-version")) === panelVersion + " (installed: 0.2.0)", "the More section shows both versions");
         await evaluate(`window.dispatchEvent(new Event("focus"))`);
         await sleep(300);
         await evaluate(`window.dispatchEvent(new Event("focus"))`);
