@@ -203,8 +203,19 @@ design has gone wrong somewhere.
 | --- | --- |
 | `npm test` | The engine's exact output, the host logic against a fake Illustrator DOM, and that the docs describe the code they claim to |
 | `npm run test:ui` | The real panel, in a real browser, clicked through end to end |
+| `npm run qa:panel` | The real panel inside a running Illustrator, driven over CEP's debugging port — the gap between the two above. Open the panel first |
 | `npm run qa:illustrator` | The host code in a running Illustrator, in documents it creates and closes |
+| `npm run qa:indesign` | The same, in InDesign |
 
 The unit tests are fast and the first place to add one. The panel smoke test is
 what catches a module that throws on load — it prints any startup error before
 the checks that would fail because of it.
+
+`qa:panel` exists because the other two leave a gap: `test:ui` drives the whole
+panel but in headless Chrome against a mock host, and `qa:illustrator` runs the
+host code but never the panel that calls it. Nothing covered the thing a user
+actually does — open the panel in Illustrator and press a button. That gap is
+how the module split could have shipped having only ever run in headless
+Chrome: `index.html` went from loading two panel scripts to nine, and a script
+that fails in CEP's embedded Chromium leaves the panel blank while every
+headless test still passes.

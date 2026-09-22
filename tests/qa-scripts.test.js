@@ -57,3 +57,27 @@ test("no QA script saves a document", () => {
         assert.doesNotMatch(source, /SaveOptions\.(YES|SAVECHANGES)/, `${name} may save changes on close`);
     }
 });
+
+/*
+ * The live panel QA is JavaScript rather than ExtendScript, and drives
+ * Illustrator from outside instead of running inside it. It carries exactly the
+ * same danger — it runs against whatever the user has open — so it is held to
+ * the same rule, by its own shape rather than by the .jsx helpers above.
+ */
+test("the live panel QA closes only the document it created", () => {
+    const source = fs.readFileSync(path.join(QA, "panel/live-panel-qa.js"), "utf8");
+
+    assert.doesNotMatch(source, /while\s*\(\s*app\.documents\.length\s*\)/,
+        "closes documents in a loop over everything open");
+    assert.doesNotMatch(source, /app\.documents\[\s*0\s*\]\.close/,
+        "closes the frontmost document, which may be the user's");
+    assert.doesNotMatch(source, /SaveOptions\.(YES|SAVECHANGES)/, "may save changes on close");
+
+    // It must record what was open before, and close by that recorded name.
+    assert.match(source, /const before = openDocumentNames\(\)/, "does not record what was already open");
+    assert.match(source, /before\.indexOf\(scratch\) === -1/, "does not check the document is its own before closing");
+    assert.match(source, /app\.documents\[i\]\.name === ' \+ JSON\.stringify\(scratch\)/,
+        "does not close by the name of the document it created");
+    assert.match(source, /every document this test opened was closed/,
+        "should report whether it cleaned up after itself");
+});
