@@ -143,6 +143,53 @@ WHAT IT NEVER DOES
 `;
 }
 
+
+/*
+ * Signing the same commit twice produces two valid packages with different
+ * bytes, because each signature carries its own timestamp. That is how a zip
+ * came to be published beside a .zxp it did not match: the release page then
+ * offered two different builds, and anyone checking the zip's contents against
+ * the published checksum would have concluded the download was tampered with.
+ *
+ * So if this version is already published, the package being wrapped has to be
+ * the published one. Set GUIDECOMPOSER_SKIP_RELEASE_CHECK=1 to build anyway —
+ * for a version that has not been released yet, or when there is no network.
+ */
+function assertMatchesPublished(sha) {
+    if (process.env.GUIDECOMPOSER_SKIP_RELEASE_CHECK === "1") {
+        return "skipped";
+    }
+    let published;
+    try {
+        published = execFileSync("gh", ["release", "view", `v${VERSION}`, "--json", "assets", "-q",
+            `.assets[] | select(.name == "${NAME}.zxp.sha256") | .name`], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    } catch (e) {
+        return "no release published for this version";
+    }
+    if (!published) {
+        return "the release publishes no checksum to compare against";
+    }
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "guidecomposer-release-"));
+    try {
+        execFileSync("gh", ["release", "download", `v${VERSION}`, "--pattern", `${NAME}.zxp.sha256`, "--dir", tmp],
+            { stdio: ["ignore", "ignore", "ignore"] });
+        const theirs = fs.readFileSync(path.join(tmp, `${NAME}.zxp.sha256`), "utf8").trim().split(/\s+/)[0];
+        if (theirs !== sha) {
+            throw new Error(
+                `This package is not the one published as v${VERSION}.\n` +
+                `  published: ${theirs}\n` +
+                `  this file: ${sha}\n\n` +
+                "Two signing runs of the same commit produce different bytes. Wrap the published\n" +
+                "package, or the zip will contradict the checksum on the release page.\n" +
+                `Download it with: gh release download v${VERSION}`
+            );
+        }
+        return "matches the published release";
+    } finally {
+        fs.rmSync(tmp, { recursive: true, force: true });
+    }
+}
+
 function main() {
     const zxp = findSignedPackage();
     const shaFile = zxp + ".sha256";
@@ -157,6 +204,7 @@ function main() {
     }
 
     const fileCount = assertPlatformIndependent(zxp);
+    const releaseCheck = assertMatchesPublished(sha);
 
     const text = [
         ["LICENSE.txt", fs.readFileSync(path.join(ROOT, "LICENSE"), "utf8")],
@@ -186,6 +234,7 @@ function main() {
     const size = (fs.statSync(out).size / 1024).toFixed(0);
     console.log(`Built ${path.relative(process.cwd(), out)} (${size} KB)`);
     console.log(`  from ${path.relative(ROOT, zxp)} — ${fileCount} files, all web code`);
+    console.log(`  release check: ${releaseCheck}`);
     console.log(`  sha256 ${sha}`);
     console.log("\nContents:");
     execFileSync("unzip", ["-Z1", out], { encoding: "utf8" }).trim().split("\n").forEach((f) => console.log("  " + f));
