@@ -5,6 +5,17 @@ A free, open-source layout-grid panel for Adobe Illustrator.
 GuideComposer draws column, modular, and baseline grids, classic grid systems, composition guides, and patterns, on artboards, pages, or inside selected objects. It draws construction lines around logos, checks and snaps artwork to the grid, and ships with a visual library of 128 layouts. Grids live on their own layer and carry ownership tags, so previews, regenerating, and clearing never touch your artwork.
 
 
+<table>
+<tr>
+<td width="50%"><img src="docs/images/panel-grid.png" alt="The Grid tab: a 3 by 4 modular grid previewed on a Letter artboard, with columns, rows, gutters and margins below it"></td>
+<td width="50%"><img src="docs/images/panel-layouts.png" alt="The Layouts tab: a gallery of grid systems including the golden spiral, harmonic armature, dynamic rectangle and Villard's figure, each drawn on your own artboard"></td>
+</tr>
+<tr>
+<td align="center"><b>Grid</b> — every setting, previewed live</td>
+<td align="center"><b>Layouts</b> — 128 systems, drawn on your artboard</td>
+</tr>
+</table>
+
 - Platform: CEP panel extension (Illustrator has no UXP support)
 - Declared support: Illustrator 2022 (26.0) or later; macOS and Windows. **The declared range is wider than what has been run** — see [Verification status](#verification-status), and give customers [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) instead of that table.
 - **This release ships Illustrator only.** `CSXS/manifest.xml` declares `ILST` alone, so the panel does not appear in InDesign. The gate on that — `npm run qa:indesign` passing in a real InDesign — **has now been met**: 32 checks, 0 failures, InDesign 2026 (21.6.0), 2026-09-23. Shipping InDesign is therefore a decision rather than a blocker, and it needs its own clean-account install testing first.
