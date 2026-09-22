@@ -11,13 +11,17 @@ GuideComposer draws column, modular, and baseline grids, classic grid systems, c
 - Free and open source (MIT). Never sold, nothing gated — see [Licence and third-party code](#licence-and-third-party-code)
 - No network access, no accounts, no Node.js inside the panel
 
-GuideComposer is currently preparing for its first public release. A signed,
-timestamped `0.1.0` beta has passed Adobe's signature verification, but it has
-not yet completed clean-machine installation testing and has not been published
-as a GitHub Release. When that testing is complete, download the public build
-from this repository's **Releases** page. User documentation lives in
-[docs/](docs/README.md), and the remaining pre-release work is tracked in
-[docs/LAUNCH-CHECKLIST.md](docs/LAUNCH-CHECKLIST.md).
+**Status: first release, still being verified.** `v0.1.1` is published on the
+**Releases** page, signed and timestamped, and it has been confirmed to install
+on a clean macOS account with CEP debug mode off — the test that proves the
+signature is real rather than waved through by a developer setting. What has
+**not** finished is the rest of that clean-account run: the full workflow,
+updating in place, and uninstalling. It has never been installed on Windows.
+
+Treat it accordingly, and read
+[Verification status](#verification-status) before relying on it. User
+documentation lives in [docs/](docs/README.md); the remaining pre-release work
+is tracked in [docs/LAUNCH-CHECKLIST.md](docs/LAUNCH-CHECKLIST.md).
 
 Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before
 opening an issue or pull request. Large changes should begin with an issue so

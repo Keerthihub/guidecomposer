@@ -1,12 +1,12 @@
 # What GuideComposer runs on
 
-Last updated for GuideComposer [VERSION].
+Last updated for GuideComposer 0.1.1.
 
 ## Applications
 
 | Application | Versions | Status |
 | --- | --- | --- |
-| Adobe Illustrator | 2022 (26.0) and later, including [TESTED_ILLUSTRATOR_VERSIONS] | Supported |
+| Adobe Illustrator | 2022 (26.0) and later. Tested in Illustrator 2026 (30.8.1) | Supported |
 | Adobe InDesign | — | Not in this release. Planned; see below. |
 | Any other Adobe application | — | Not supported. GuideComposer is not offered for Photoshop, After Effects, Premiere Pro, or Express. |
 
@@ -34,9 +34,11 @@ publish a fix.
 | Windows on Arm | Untested. It should work wherever Illustrator itself runs, but we have not tried it. |
 | Linux, ChromeOS, iPad | Not supported — Illustrator for those platforms does not take this kind of plugin. |
 
-We have run GuideComposer on [TESTED_MACOS_VERSIONS] and [TESTED_WINDOWS_VERSIONS]. On
-other versions of macOS or Windows, if your Illustrator runs, GuideComposer is
-expected to run.
+We have run GuideComposer on macOS 26.4.1 (Apple Silicon). **It has not yet been
+run on Windows at all**, or on [TESTED_WINDOWS_VERSIONS] — the automated tests
+and the build run on Windows in CI, but nobody has installed the panel in
+Illustrator there. On other versions of macOS, if your Illustrator runs,
+GuideComposer is expected to run.
 
 Minimum system requirements are Adobe's, not ours: if your computer runs
 Illustrator 2022 or later, it runs GuideComposer. The plugin adds no meaningful memory

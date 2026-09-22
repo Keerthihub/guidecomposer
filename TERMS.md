@@ -40,7 +40,8 @@ the whole of it for the free extension. Save your work and keep backups:
 GuideComposer draws into and deletes from your documents at your instruction.
 
 **Support is not guaranteed for free users.** Bug reports are welcome at
-[ISSUES_URL] and we read them all, but nothing here promises a reply or a fix.
+https://github.com/Keerthihub/guidecomposer/issues and we read them all, but
+nothing here promises a reply or a fix.
 Supporter Pack customers get the support described below.
 
 ---

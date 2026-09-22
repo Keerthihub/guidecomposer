@@ -351,11 +351,7 @@ support copy. "Files" lists every file the token appears in.
 | `[REFUND_POLICY]` | Your refund terms for the pack, in full | `TERMS.md` |
 | `[STORE_NAME]` | The store you sell the pack through | `PRIVACY.md`, `TERMS.md` |
 | `[ORDER_DETAILS]` | What that store passes to you about a buyer | `PRIVACY.md` |
-| `[VERSION]` | The version these documents were written for | `docs/COMPATIBILITY.md` |
 | `[DATE]` | The date these documents were last updated | `PRIVACY.md`, `TERMS.md` |
-| `[ISSUES_URL]` | Where free users report bugs — your GitHub issues page | `TERMS.md` |
-| `[TESTED_ILLUSTRATOR_VERSIONS]` | The Illustrator versions you have actually run it in | `docs/COMPATIBILITY.md` |
-| `[TESTED_MACOS_VERSIONS]` | The macOS versions you tested (from step 7) | `docs/COMPATIBILITY.md` |
 | `[TESTED_WINDOWS_VERSIONS]` | The Windows versions and builds you tested (from step 7) | `docs/COMPATIBILITY.md` |
 
 Two things deliberately left blank because no one but you can know them: the
