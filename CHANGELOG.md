@@ -2,7 +2,34 @@
 
 All notable changes to GuideComposer are recorded here. Versions follow [Semantic Versioning](https://semver.org/).
 
-## [0.1.1] - Unreleased
+## Unreleased
+
+Changes made after 0.1.1 was published. None of them are in the package on the
+Releases page; they ship with the next version.
+
+### Verified for the first time
+
+- **The panel was run inside Illustrator, not just against a mock.** `npm run qa:panel` drives the real panel over CEP's debugging port: every module present, each grid type generated against the real host, overlays, gallery tiles, and the preset backup file actually written. 11 checks. Until now `test:ui` covered the panel but in headless Chrome, and `qa:illustrator` covered the host but never the panel — so nothing covered opening the panel in Illustrator and pressing a button.
+- **InDesign was run in InDesign.** 32 checks, 0 failures, InDesign 2026 (21.6.0). It found two real bugs first; see below.
+
+### Fixed
+
+- **Baseline grids were placed one margin too low in InDesign**, for any document measuring its baseline grid from the top of the margin. The adapter asked for an enum constant InDesign does not have, ExtendScript threw, and a `try`/`catch` turned that into "measured from the page" — so the margin was counted twice. The hand-written fake InDesign used for testing had the same wrong name, so every test agreed with the bug.
+- **The one-command InDesign proof could never have run.** Its AppleScript sent `do script` to a file rather than to InDesign. Nothing caught it because the script had never been run in InDesign.
+
+### Added
+
+- `npm run zip` builds the file you hand to a person: the signed package, its checksum, install steps for macOS and Windows, the licence, and the pages people need afterwards. It refuses to build with an unfilled placeholder in any included file, or around a package that is not the one published.
+- The README shows the panel, captured from it running inside Illustrator.
+
+### Documentation
+
+- Support for the free extension is GitHub issues, and the user-facing pages now say so instead of naming an email address that does not exist.
+- The README no longer claims nothing has been released while a release sits on the Releases page, and records Windows as untested rather than implying otherwise.
+
+---
+
+## [0.1.1] - 2026-09-21
 
 Second release candidate. Everything in 0.1.0 plus one fix that had to happen
 before anyone installed it.
