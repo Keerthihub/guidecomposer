@@ -45,9 +45,16 @@ const ENUMS = {
         INTERACT_WITH_ALL: "UserInteractionLevels.INTERACT_WITH_ALL",
         NEVER_INTERACT: "UserInteractionLevels.NEVER_INTERACT"
     },
+    /*
+     * The names InDesign really uses. They were guessed here as TOP_OF_PAGE and
+     * TOP_OF_MARGIN, which made this fake agree with a bug in the adapter: the
+     * adapter read the same wrong name, ExtendScript threw, a try/catch turned
+     * that into "false", and baseline grids came out one margin too low. The
+     * simulation could not catch it, because the simulation shared the mistake.
+     */
     BaselineGridRelativeOption: {
-        TOP_OF_PAGE: "BaselineGridRelativeOption.TOP_OF_PAGE",
-        TOP_OF_MARGIN: "BaselineGridRelativeOption.TOP_OF_MARGIN"
+        TOP_OF_PAGE_OF_BASELINE_GRID_RELATIVE_OPTION: "BaselineGridRelativeOption.TOP_OF_PAGE_OF_BASELINE_GRID_RELATIVE_OPTION",
+        TOP_OF_MARGIN_OF_BASELINE_GRID_RELATIVE_OPTION: "BaselineGridRelativeOption.TOP_OF_MARGIN_OF_BASELINE_GRID_RELATIVE_OPTION"
     }
 };
 
@@ -358,7 +365,7 @@ class Document {
         this.gridPreferences = {
             baselineDivision: 12,
             baselineStart: 36,
-            baselineGridRelativeOption: ENUMS.BaselineGridRelativeOption.TOP_OF_PAGE
+            baselineGridRelativeOption: ENUMS.BaselineGridRelativeOption.TOP_OF_PAGE_OF_BASELINE_GRID_RELATIVE_OPTION
         };
         this.documentPreferences = { facingPages: false, pageWidth: "612pt", pageHeight: "792pt" };
         this._undoStack = [];
@@ -394,8 +401,23 @@ class Document {
     get masterSpreads() { return collection(this.masterSpreadList); }
 
     // What the tests use to check a transaction can be undone.
-    recordUndoPoint() {
-        this._undoStack.push(this.pageList.map((page) => page.items.slice()));
+    recordUndoPoint(name) {
+        this._undoStack.push({ name, pages: this.pageList.map((page) => page.items.slice()) });
+    }
+
+    // The name InDesign would show on Edit > Undo.
+    get undoName() {
+        const top = this._undoStack[this._undoStack.length - 1];
+        return top ? top.name : "";
+    }
+
+    // The call a script can actually make; app.undo() raises.
+    undo() {
+        if (!this._undoStack.length) {
+            return;
+        }
+        const snapshot = this._undoStack.pop();
+        this.pageList.forEach((page, i) => { page.items = snapshot.pages[i].slice(); });
     }
 
     get layers() {
@@ -476,13 +498,15 @@ function createInDesignHost() {
             get activePage() { return currentApp._activePage; },
             set activePage(page) { currentApp._activePage = page; }
         },
-        // Undo is modelled only as far as GuideComposer relies on it: the last
-        // transaction's changes are reversed by restoring what it recorded.
+        /*
+         * InDesign refuses app.undo() while a script is running — it raises
+         * "Unable to undo the last command." A script undoes through the
+         * document instead. Modelled here because the fake previously let
+         * app.undo() work, so the QA script was written against a call that
+         * cannot succeed in the application it was written for.
+         */
         undo() {
-            const doc = this.activeDocument;
-            if (!doc || !doc._undoStack.length) return;
-            const snapshot = doc._undoStack.pop();
-            doc.pageList.forEach((page, i) => { page.items = snapshot[i].slice(); });
+            throw new Error("Unable to undo the last command.");
         },
         doScript(fn, language, args, undoMode, name) {
             const record = { name, undoMode, language, threw: false };
@@ -490,7 +514,7 @@ function createInDesignHost() {
             // ENTIRE_SCRIPT makes the whole run one undo step; the fake records
             // what the document looked like so app.undo() can restore it.
             if (this.activeDocument && undoMode === ENUMS.UndoModes.ENTIRE_SCRIPT) {
-                this.activeDocument.recordUndoPoint();
+                this.activeDocument.recordUndoPoint(name);
             }
             try {
                 return fn();

@@ -39,8 +39,13 @@ rm -f "$OUT/indesign-qa.json"
 osascript - "$BOOTSTRAP" > /dev/null 2>&1 <<'APPLESCRIPT'
 on run argv
     set bootstrap to item 1 of argv
+    -- Resolve the file OUTSIDE the tell block. Written as
+    -- `do script (POSIX file bootstrap)`, AppleScript sends `do script` to the
+    -- file object rather than to InDesign and the run dies with error -1708.
+    -- Nothing caught it because this runner had never been run in InDesign.
+    set bootstrapFile to POSIX file bootstrap
     tell application id "com.adobe.InDesign"
-        do script (POSIX file bootstrap) language javascript
+        do script bootstrapFile language javascript
     end tell
 end run
 APPLESCRIPT

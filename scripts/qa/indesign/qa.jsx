@@ -154,7 +154,15 @@
         var doc = newDocument(false);
         call("generate", { settings: COLS, target: { mode: "active" } });
         var withGrid = ownedItems(doc).length;
-        app.undo();
+        /*
+         * doc.undo(), not app.undo(). InDesign refuses app.undo() while a
+         * script is running — "Unable to undo the last command." — which is a
+         * real difference from Illustrator, where the same QA undoes happily.
+         */
+        var name = doc.undoName;
+        doc.undo();
+        record("the undo step carries GuideComposer's name", String(name).indexOf("GuideComposer") === 0,
+            "Edit > Undo would say: " + name);
         record("one undo removes the whole grid", withGrid === 1 && ownedItems(doc).length === 0,
             "items " + withGrid + " -> " + ownedItems(doc).length);
     });
@@ -249,15 +257,33 @@
         record("inside and outside margins land on the right edges", true, sides.join(" | "));
     });
 
+    /*
+     * Lengths must be read with the measurement unit pinned, exactly as the
+     * adapter writes them. Read raw, this returns the number in whatever the
+     * document's ruler happens to use — on a default InDesign document that is
+     * picas, so a correct 40 pt baseline reads back as 3.33 and the check fails
+     * while the product is right.
+     */
+    function baselineStartInPoints(doc) {
+        var prefs = app.scriptPreferences;
+        var previous = prefs.measurementUnit;
+        prefs.measurementUnit = MeasurementUnits.POINTS;
+        try {
+            return doc.gridPreferences.baselineStart;
+        } finally {
+            prefs.measurementUnit = previous;
+        }
+    }
+
     test("the baseline grid follows the document's reference point", function () {
         var doc = newDocument(false);
         var settings = { type: "baseline", units: "pt", baselineSpacing: 14, baselineOffset: 4, marginTop: 36, marginRight: 36, marginBottom: 36, marginLeft: 36, output: "lines", strokeColor: "#E0457B", strokeWidth: 0.5, opacity: 100, lineStyle: "solid", lockLayer: false };
-        doc.gridPreferences.baselineGridRelativeOption = BaselineGridRelativeOption.TOP_OF_PAGE;
+        doc.gridPreferences.baselineGridRelativeOption = BaselineGridRelativeOption.TOP_OF_PAGE_OF_BASELINE_GRID_RELATIVE_OPTION;
         call("applyPageMargins", { settings: settings, target: { mode: "active" } });
-        var fromPage = doc.gridPreferences.baselineStart;
-        doc.gridPreferences.baselineGridRelativeOption = BaselineGridRelativeOption.TOP_OF_MARGIN;
+        var fromPage = baselineStartInPoints(doc);
+        doc.gridPreferences.baselineGridRelativeOption = BaselineGridRelativeOption.TOP_OF_MARGIN_OF_BASELINE_GRID_RELATIVE_OPTION;
         call("applyPageMargins", { settings: settings, target: { mode: "active" } });
-        var fromMargin = doc.gridPreferences.baselineStart;
+        var fromMargin = baselineStartInPoints(doc);
         record("the baseline grid is not offset twice", fromPage === 40 && fromMargin === 4,
             "from page top=" + fromPage + " (expected 40), from margin=" + fromMargin + " (expected 4)");
     });

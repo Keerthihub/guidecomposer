@@ -1124,7 +1124,7 @@
             // document says otherwise, in which case the margin is already counted.
             var fromMargin = false;
             try {
-                fromMargin = doc.gridPreferences.baselineGridRelativeOption === BaselineGridRelativeOption.TOP_OF_MARGIN;
+                fromMargin = doc.gridPreferences.baselineGridRelativeOption === topOfMarginOption();
             } catch (e) {
                 fromMargin = false;
             }
@@ -1135,6 +1135,35 @@
         // The baseline grid belongs to the document, not to the chosen pages.
         return { pages: indices.length, baseline: !!baseline, facingPages: facing, mirroredPages: mirrored, baselineIsDocumentWide: !!baseline };
     };
+
+
+    /*
+     * InDesign spells this enum constant
+     * TOP_OF_MARGIN_OF_BASELINE_GRID_RELATIVE_OPTION, not TOP_OF_MARGIN.
+     *
+     * Reading a name the enum does not have throws in ExtendScript, and the
+     * caller's try/catch turned that into `false` — so for a document whose
+     * baseline grid is measured from the margin, we added the margin a second
+     * time and the grid came out one margin too low. Silently, and only in real
+     * InDesign: the fake DOM used for testing had been written with the same
+     * wrong name, so the simulation agreed with the bug.
+     *
+     * Both spellings are tried, so this keeps working if Adobe ever shortens it.
+     */
+    function topOfMarginOption() {
+        try {
+            if (BaselineGridRelativeOption.TOP_OF_MARGIN_OF_BASELINE_GRID_RELATIVE_OPTION !== undefined) {
+                return BaselineGridRelativeOption.TOP_OF_MARGIN_OF_BASELINE_GRID_RELATIVE_OPTION;
+            }
+        } catch (e) {
+            // Not this spelling; fall through.
+        }
+        try {
+            return BaselineGridRelativeOption.TOP_OF_MARGIN;
+        } catch (e2) {
+            return null;
+        }
+    }
 
     // --------------------------------------------------------------- drawing
 

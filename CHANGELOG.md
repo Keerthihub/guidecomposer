@@ -105,6 +105,13 @@ First release candidate.
 - Applying a layout in other units converts the lengths it doesn't set (24 pt spacing no longer becomes 24 in).
 - When the extension's files change while the panel is open, the panel says so and offers Reload panel, so it never runs stale code against newer host scripts.
 
+### InDesign, run in InDesign for the first time
+
+- `npm run qa:indesign` now passes **32 checks, 0 failures, in a real InDesign 2026 (21.6.0)**. Until now the InDesign adapter had only ever been tested against a hand-written simulation of InDesign. The first real run found two bugs the simulation could not, which is exactly what it was written to do.
+- **Fixed: the baseline grid was placed one margin too low** in any document whose baseline grid is measured from the top of the margin rather than the top of the page. InDesign spells the enum constant `TOP_OF_MARGIN_OF_BASELINE_GRID_RELATIVE_OPTION`; the adapter asked for `TOP_OF_MARGIN`, ExtendScript threw, and a `try`/`catch` turned that into "measured from the page" — so the margin was added a second time. Silently, and correctly, in every test: the fake InDesign had been written with the same wrong name, so the simulation agreed with the bug.
+- **Fixed: the one-command InDesign proof could never have run.** `scripts/qa/run-indesign-qa.sh` built its AppleScript as `do script (POSIX file …)`, which sends `do script` to the file rather than to InDesign and dies with error -1708. Nothing caught it because the script had never been run in InDesign.
+- Also learned, and now modelled: InDesign refuses `app.undo()` while a script is running, so a script undoes through `doc.undo()`; and lengths must be read with the measurement unit pinned, or a correct 40 pt baseline reads back as 3.33 on a document whose ruler is in picas.
+
 ### Licence and distribution
 
 - **Free and open source under the MIT licence.** The extension is not sold, and nothing in it is gated behind a payment: there is no licence key, no trial, no locked feature, and no account. Revenue, where there is any, comes from optional materials and custom work sold beside it, which are not part of this repository.

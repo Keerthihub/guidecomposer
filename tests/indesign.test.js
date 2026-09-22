@@ -8,7 +8,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { createInDesignHost, Rectangle, TextFrame, TextSelection, Group } = require("./helpers/fake-indesign.js");
+const { createInDesignHost, ENUMS, Rectangle, TextFrame, TextSelection, Group } = require("./helpers/fake-indesign.js");
 
 const OWNER = "com.keerthi.guidecomposer";
 const COLUMNS = {
@@ -350,7 +350,11 @@ test("the baseline grid follows the document's own reference point", () => {
     host.call("applyPageMargins", { settings, target: { mode: "active" } });
     assert.equal(doc.gridPreferences.baselineStart, 40, "measured from the top of the page: margin + offset");
 
-    doc.gridPreferences.baselineGridRelativeOption = "BaselineGridRelativeOption.TOP_OF_MARGIN";
+    // Taken from the enum, not written out: spelling this by hand is how the
+    // real bug survived — the adapter, the fake and this test all agreed on a
+    // constant name InDesign does not have.
+    doc.gridPreferences.baselineGridRelativeOption =
+        ENUMS.BaselineGridRelativeOption.TOP_OF_MARGIN_OF_BASELINE_GRID_RELATIVE_OPTION;
     host.call("applyPageMargins", { settings, target: { mode: "active" } });
     assert.equal(doc.gridPreferences.baselineStart, 4, "measured from the margin: the margin is not counted twice");
 });
