@@ -34,10 +34,11 @@ publish a fix.
 | Windows on Arm | Untested. It should work wherever Illustrator itself runs, but we have not tried it. |
 | Linux, ChromeOS, iPad | Not supported — Illustrator for those platforms does not take this kind of plugin. |
 
-We have run GuideComposer on macOS 26.4.1 (Apple Silicon). **It has not yet been
-run on Windows at all**, or on [TESTED_WINDOWS_VERSIONS] — the automated tests
-and the build run on Windows in CI, but nobody has installed the panel in
-Illustrator there. On other versions of macOS, if your Illustrator runs,
+We have run GuideComposer on macOS 26.4.1 (Apple Silicon). **Its installation
+has not been verified on Windows.** The automated tests and the build run on
+Windows in CI, and the package contains no platform-specific code — it is the
+same file on both systems — but nobody has recorded installing the panel in
+Illustrator on Windows. On other versions of macOS, if your Illustrator runs,
 GuideComposer is expected to run.
 
 Minimum system requirements are Adobe's, not ours: if your computer runs
@@ -73,5 +74,6 @@ a screen reader.
 
 ---
 
-If you are unsure whether your setup is supported, email [SUPPORT_EMAIL] before
+If you are unsure whether your setup is supported, ask at
+https://github.com/Keerthihub/guidecomposer/issues before
 buying and ask — we would rather answer a question than issue a refund.

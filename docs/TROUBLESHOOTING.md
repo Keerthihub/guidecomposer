@@ -137,12 +137,16 @@ you are about to do any of those.
 - **If the panel won't open:** open the Creative Cloud desktop app's plugins
   list (**Stock & Marketplace > Plugins > Manage plugins**). The installed
   version is shown next to GuideComposer.
-- **The file you bought** is named with its version, for example
-  `guidecomposer-0.1.0.zxp`.
+- **The file you downloaded** is named with its version, for example
+  `guidecomposer-0.1.1.zxp`.
 
 ## Reporting a problem
 
-Email [SUPPORT_EMAIL] with:
+GuideComposer is free and open source, and support runs through GitHub issues:
+https://github.com/Keerthihub/guidecomposer/issues
+
+Search there first — someone may have hit the same thing. If not, open a new
+issue with:
 
 1. **The diagnostics text** (**More > Copy diagnostics**), pasted into the
    email. If you can't open the panel, tell us instead:
@@ -159,8 +163,10 @@ Email [SUPPORT_EMAIL] with:
 5. **A screenshot or short screen recording**, if the problem is visual.
 6. **Whether it happens every time**, or only sometimes.
 
-If the problem involves a specific document, tell us its page or artboard size
-and units. Please don't send client files unless we ask; a small example file
-that shows the same problem is more useful.
+If the problem involves a specific document, say its artboard size and units.
+**Never attach client work.** A small example file that shows the same problem
+is more useful anyway, and an issue is public.
 
-We answer at [SUPPORT_EMAIL] within [SUPPORT_RESPONSE_TIME].
+Every issue is read. Because this is a free project maintained in spare time,
+no reply or fix is promised by any particular date — a clear report with the
+diagnostics text is the single best way to get one.

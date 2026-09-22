@@ -340,10 +340,10 @@ support copy. "Files" lists every file the token appears in.
 | `[PUBLISHER_NAME]` | The name you sell the pack under — a person or a company | `PRIVACY.md`, `TERMS.md` |
 | `[PUBLISHER_ADDRESS]` | The postal address on the pack's terms. Required by consumer law in many places; a registered business address, not your home, if you can | `PRIVACY.md`, `TERMS.md` |
 | `[JURISDICTION]` | Country (and state/province) whose law governs the pack's terms | `TERMS.md` |
-| `[SUPPORT_EMAIL]` | The support address from step 4 | `PRIVACY.md`, `TERMS.md`, `SECURITY.md`, `docs/TROUBLESHOOTING.md`, `docs/COMPATIBILITY.md` |
+| `[SUPPORT_EMAIL]` | The support address from step 4. Only the paid pack and security reports need one — free-extension support runs through GitHub issues, which are already linked in the user-facing docs | `PRIVACY.md`, `TERMS.md`, `SECURITY.md` |
 | `[SUPPORT_LANGUAGE]` | The language(s) you answer in | `TERMS.md` |
 | `[SUPPORT_PERIOD]` | How long pack support lasts after purchase (e.g. "12 months") | `TERMS.md` |
-| `[SUPPORT_RESPONSE_TIME]` | How quickly you answer (e.g. "two working days") | `docs/TROUBLESHOOTING.md`, `SECURITY.md` |
+| `[SUPPORT_RESPONSE_TIME]` | How quickly you acknowledge a security report | `SECURITY.md` |
 | `[DATA_REQUEST_RESPONSE_TIME]` | How quickly you answer a data request (e.g. "within 30 days") | `PRIVACY.md` |
 | `[RETENTION_PERIOD]` | How long you keep support email | `PRIVACY.md` |
 | `[SEAT_HOLDER]` | Who may use the pack's materials (e.g. "one named person") | `TERMS.md` |
@@ -352,7 +352,6 @@ support copy. "Files" lists every file the token appears in.
 | `[STORE_NAME]` | The store you sell the pack through | `PRIVACY.md`, `TERMS.md` |
 | `[ORDER_DETAILS]` | What that store passes to you about a buyer | `PRIVACY.md` |
 | `[DATE]` | The date these documents were last updated | `PRIVACY.md`, `TERMS.md` |
-| `[TESTED_WINDOWS_VERSIONS]` | The Windows versions and builds you tested (from step 7) | `docs/COMPATIBILITY.md` |
 
 Two things deliberately left blank because no one but you can know them: the
 identity you trade under, and what you charge for the pack. The permanent

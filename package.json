@@ -16,7 +16,8 @@
     "sign:mac": "scripts/sign-zxp.sh",
     "rename": "node scripts/rename.js",
     "release:check": "node scripts/release-checks.js",
-    "qa:panel": "node scripts/qa/panel/live-panel-qa.js"
+    "qa:panel": "node scripts/qa/panel/live-panel-qa.js",
+    "zip": "node scripts/make-zip.js"
   },
   "engines": {
     "node": ">=20"
